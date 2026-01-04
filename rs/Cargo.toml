@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/axiomkit_io",
+  "crates/axiomkit_log",
+  "crates/axiomkit_manifest",
+]
+resolver = "2"

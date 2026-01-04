@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.dist/
+build/
+dist/
+*.egg-info/
+
+# R
+.Rhistory
+.Rproj.user/
+renv/library/
+renv/staging/
+
+# Rust
+target/
+
+# OS
+.DS_Store
