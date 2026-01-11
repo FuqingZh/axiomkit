@@ -1,0 +1,3 @@
+[venv]
+backend = "conda"
+in_project = false
