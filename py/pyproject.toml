@@ -5,7 +5,7 @@ description = "Default template for PDM package"
 authors = [
     {name = "Fuqing Zhang", email = "fu.qing.zhang.work@gmail.com"},
 ]
-dependencies = ["polars>=1.37.0", "xlsxwriter>=3.2.9"]
+dependencies = ["polars>=1.37.0", "xlsxwriter>=3.2.9", "loguru>=0.7.3"]
 requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
@@ -17,3 +17,7 @@ build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
+
+
+[tool.pdm.dev-dependencies]
+test = ["pytest>=8.0"]
