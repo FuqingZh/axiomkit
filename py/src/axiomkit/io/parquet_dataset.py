@@ -11,6 +11,12 @@ C_HIVE_NULL = "__HIVE_DEFAULT_PARTITION__"
 N_SIZE_BYTES_SEG_MAX = 240
 N_SIZE_BYTES_SUFFIX = 1 + 8  # ~ + 8-char hash
 N_SIZE_BYTES_CUT = N_SIZE_BYTES_SEG_MAX - N_SIZE_BYTES_SUFFIX
+N_SIZE_BYTES_HASH_DEFAULT = 8  # 64-bit -> 16 hex; reduce collision risk
+
+
+def _hash_hex(s: str, *, size_digest: int):
+    """Computes a hexadecimal hash of the input string with given digest size (bytes)."""
+    return hashlib.blake2b(s.encode("utf-8"), digest_size=int(size_digest)).hexdigest()
 
 
 def _hash8(s: str) -> str:
@@ -19,19 +25,36 @@ def _hash8(s: str) -> str:
     return hashlib.blake2b(s.encode("utf-8"), digest_size=4).hexdigest()
 
 
-def _truncate_bytes(s: str):
+def _truncate_bytes(
+    s: str,
+    *,
+    size_bytes_seg_max: int = N_SIZE_BYTES_SEG_MAX,
+    size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
+) -> str:
     s = unicodedata.normalize("NFKC", s)  # normalize unicode
-    if len(s_ := s.encode("utf-8")) <= N_SIZE_BYTES_SEG_MAX:
+    if len(s_ := s.encode("utf-8")) <= size_bytes_seg_max:
         return s
 
-    s_cut = s_[:N_SIZE_BYTES_CUT]
+    n_hash_hex = 2 * size_bytes_hash
+    if (n_cut := size_bytes_seg_max - (1 + n_hash_hex)) < 16:
+        raise ValueError(
+            "Arg `size_bytes_seg_max` too small for hash suffix: "
+            f"max_seg_bytes={size_bytes_seg_max}, hash_bytes={size_bytes_hash}. "
+            "Increase `size_bytes_seg_max` or decrease `size_bytes_hash`."
+        )
+    s_cut = s_[:n_cut]
     while s_cut and (s_cut[-1] & 0b1100_0000) == 0b1000_0000:
         s_cut = s_cut[:-1]
     s_cut = s_cut.decode("utf-8", errors="ignore")
-    return f"{s_cut}~{_hash8(s)}"
+    return f"{s_cut}~{_hash_hex(s, size_digest=size_bytes_hash)}"
 
 
-def _sanitize_partition_cols(expr: pl.Expr) -> pl.Expr:
+def _sanitize_partition_cols(
+    expr: pl.Expr,
+    *,
+    size_bytes_seg_max: int = N_SIZE_BYTES_SEG_MAX,
+    size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
+) -> pl.Expr:
     expr_ = (
         expr.cast(pl.Utf8, strict=False)
         .str.strip_chars()
@@ -40,6 +63,7 @@ def _sanitize_partition_cols(expr: pl.Expr) -> pl.Expr:
         .str.replace_all(r"[\\/]", "_")  # replace path separators
         .str.replace_all(r'[:*?"<>|]', "_")  # replace Windows illegal chars
         .str.replace_all(r"\s+", " ")  # normalize whitespace
+        .str.replace_all(r"\u0000", "_")  # replace null bytes
         # prevent directory traversal and hidden files
         .str.replace_all(r"^\.+", "")  # drop leading dots
         .str.replace_all(r"\.\.", "_")  # prevent directory traversal (..)
@@ -56,14 +80,43 @@ def _sanitize_partition_cols(expr: pl.Expr) -> pl.Expr:
     # This optimization prevents applying Python callbacks to all strings for performance reasons,
     # reduces the total cost from O(N) Python calls to O(K), where K is the number of long strings,
     # and K << N in typical scenarios.
-    b_is_long = expr_.str.len_bytes() > N_SIZE_BYTES_SEG_MAX
+    b_is_long = expr_.str.len_bytes() > size_bytes_seg_max
     expr_ = (
         pl.when(b_is_long)
-        .then(expr_.map_elements(_truncate_bytes, return_dtype=pl.Utf8))
+        .then(
+            expr_.map_elements(
+                lambda x: _truncate_bytes(
+                    x,
+                    size_bytes_seg_max=size_bytes_seg_max,
+                    size_bytes_hash=size_bytes_hash,
+                ),
+                return_dtype=pl.Utf8,
+            )
+        )
         .otherwise(expr_)
     )
 
     return expr_
+
+
+def _validate_overwrite_permissions(dir_out: Path, dir_allowed: Path | None) -> None:
+    cfg_dir_out_abs = dir_out.expanduser().resolve()
+    if cfg_dir_out_abs == Path("/"):
+        raise PermissionError("Refusing to overwrite root directory '/'.")
+    if cfg_dir_out_abs == Path.home():
+        raise PermissionError("Refusing to overwrite user's home directory.")
+    if cfg_dir_out_abs.exists() and cfg_dir_out_abs.is_symlink():
+        raise PermissionError(
+            f"Refusing to overwrite symbolic link directory: `{cfg_dir_out_abs}`."
+        )
+    if dir_allowed is not None:
+        dir_allowed_abs = dir_allowed.expanduser().resolve()
+        try:
+            cfg_dir_out_abs.relative_to(dir_allowed_abs)
+        except ValueError:
+            raise PermissionError(
+                f"Output directory `{cfg_dir_out_abs}` is outside the allowed directory `{dir_allowed_abs}`."
+            )
 
 
 def _compressed_bytes_per_row(
@@ -107,7 +160,9 @@ def write_parquet_dataset(
     lvl_compression: int = 5,
     size_mib_per_file_max: int = 8 * 16,
     size_mib_per_row_group_max: int = 8 * 4,
+    size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
     if_overwrite: bool = True,
+    dir_allowed: Path | None = None,
 ) -> None:
     """
     Writes a Polars DataFrame to a directory in Parquet format, with optional partitioning.
@@ -182,12 +237,13 @@ def write_parquet_dataset(
         n_size_mib_per_row_group_max += 8 - (n_size_mib_per_row_group_max % 8)
     n_size_bytes_per_file_max = n_size_mib_per_file_max * (1 << 20)
 
-    if (not if_overwrite) and any(dir_out.iterdir()):
+    if (not if_overwrite) and dir_out.exists() and any(dir_out.iterdir()):
         raise FileExistsError(
             f"Arg `if_overwrite` is False, but output directory `{dir_out}` is not empty."
         )
 
     if if_overwrite and dir_out.exists():
+        _validate_overwrite_permissions(dir_out=dir_out, dir_allowed=dir_allowed)
         shutil.rmtree(dir_out, ignore_errors=True)
     dir_out.mkdir(parents=True, exist_ok=True)
 
@@ -224,7 +280,12 @@ def write_parquet_dataset(
             )
 
         df = df.with_columns(
-            [_sanitize_partition_cols(pl.col(_c)).alias(_c) for _c in cols_partitioning]
+            [
+                _sanitize_partition_cols(
+                    pl.col(_c), size_bytes_hash=size_bytes_hash
+                ).alias(_c)
+                for _c in cols_partitioning
+            ]
         )
 
     n_size_bytes_per_row = _compressed_bytes_per_row(
