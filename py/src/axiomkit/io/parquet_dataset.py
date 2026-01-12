@@ -182,6 +182,11 @@ def write_parquet_dataset(
         n_size_mib_per_row_group_max += 8 - (n_size_mib_per_row_group_max % 8)
     n_size_bytes_per_file_max = n_size_mib_per_file_max * (1 << 20)
 
+    if (not if_overwrite) and any(dir_out.iterdir()):
+        raise FileExistsError(
+            f"Arg `if_overwrite` is False, but output directory `{dir_out}` is not empty."
+        )
+
     if if_overwrite and dir_out.exists():
         shutil.rmtree(dir_out, ignore_errors=True)
     dir_out.mkdir(parents=True, exist_ok=True)
@@ -199,7 +204,7 @@ def write_parquet_dataset(
     df = df.lazy() if isinstance(df, pl.DataFrame) else df
     b_is_empty = df.limit(1).collect().height == 0
     if b_is_empty:
-        pl.LazyFrame(schema=df.schema).sink_parquet(
+        pl.LazyFrame(schema=df.collect_schema()).sink_parquet(
             path=dir_out / "__EMPTY__.parquet",
             compression="zstd",
             compression_level=lvl_compression,
