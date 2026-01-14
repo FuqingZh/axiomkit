@@ -19,12 +19,6 @@ def _hash_hex(s: str, *, size_digest: int):
     return hashlib.blake2b(s.encode("utf-8"), digest_size=int(size_digest)).hexdigest()
 
 
-def _hash8(s: str) -> str:
-    """Computes an 8-character hexadecimal hash of the input string."""
-
-    return hashlib.blake2b(s.encode("utf-8"), digest_size=4).hexdigest()
-
-
 def _truncate_bytes(
     s: str,
     *,
