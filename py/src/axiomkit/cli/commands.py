@@ -1,7 +1,7 @@
 import argparse
 from collections.abc import Callable, Sequence
 
-from .params_defs import COMMON_PARAM_KEYS, T_TEST_PARAM_KEYS, build_param_registry
+from .params import COMMON_PARAM_KEYS, T_TEST_PARAM_KEYS, build_param_registry
 from .registry import CommandRegistry, CommandSpec, ParserRegistry
 
 CommandRegistrar = Callable[[CommandRegistry], None]

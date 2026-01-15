@@ -1,8 +1,8 @@
 from functools import lru_cache
 
 from .actions import NumericRangeAction, PathAction
-from .params_defs import build_param_registry
-from .present import CliHeadings
+from .params import build_param_registry
+from .console import CliHeadings
 from .registry import (
     CommandRegistry,
     CommandSpec,

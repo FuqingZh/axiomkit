@@ -1,4 +1,3 @@
-from atexit import register
 from enum import StrEnum
 
 from .actions import NumericRangeAction, PathAction
