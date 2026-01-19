@@ -255,13 +255,23 @@ def _generate_sheet_slices(
         l_row_slices.append((n_row_start, n_row_end))
         n_row_start = n_row_end
 
+    n_parts_total = len(l_col_slices) * len(l_row_slices)
+
     l_sheet_parts: list[SheetPart] = []
     n_idx_part = 1
     for _col_start, _col_end in l_col_slices:
         for _row_start, _row_end in l_row_slices:
+            # IMPORTANT:
+            # - If we do NOT split, keep the original sheet name (no "_1").
+            # - Only add suffix when we actually have >1 parts.
+            c_part_sheet_name = (
+                sheet_name
+                if n_parts_total == 1
+                else _make_sheet_name(sheet_name, n_idx_part)
+            )
             l_sheet_parts.append(
                 SheetPart(
-                    sheet_name=_make_sheet_name(sheet_name, n_idx_part),
+                    sheet_name=c_part_sheet_name,
                     row_start_inclusive=_row_start,
                     row_end_exclusive=_row_end,
                     col_start_inclusive=_col_start,
@@ -270,7 +280,7 @@ def _generate_sheet_slices(
             )
             n_idx_part += 1
 
-    if len(l_sheet_parts) > 1:
+    if n_parts_total > 1:
         report.warn(
             f"Excel limit overflow: split into {len(l_sheet_parts)} sheets (columns-first, then rows)."
         )
@@ -682,7 +692,7 @@ class XlsxFormatter:
             {
                 "font_name": default_font,
                 "font_size": default_font_size,
-                "align": "center",
+                "align": "right",
                 "valign": "vcenter",
             }
         )
@@ -785,9 +795,12 @@ class XlsxFormatter:
         cols_idx_integer: tuple[int, ...],
         cols_idx_decimal: tuple[int, ...],
         cols_fmt_overrides: dict[int, xlsxwriter.format.Format],
-    ) -> None:
+    ) -> list[xlsxwriter.format.Format]:
         if width_df <= 0:
-            return
+            return []
+
+        # Track final per-column format for downstream operations (e.g. autofit).
+        l_fmt_by_col: list[xlsxwriter.format.Format] = [self.fmt_text] * width_df
 
         # default text for all
         ws.set_column(first_col=0, last_col=width_df - 1, cell_format=self.fmt_text)
@@ -805,12 +818,72 @@ class XlsxFormatter:
 
         for _start, _end in _find_contiguous_ranges(l_cols_idx_dec_sorted):
             ws.set_column(first_col=_start, last_col=_end, cell_format=self.fmt_dec)
+            for _i in range(_start, _end + 1):
+                l_fmt_by_col[_i] = self.fmt_dec
         for _start, _end in _find_contiguous_ranges(l_cols_idx_int_sorted):
             ws.set_column(first_col=_start, last_col=_end, cell_format=self.fmt_int)
+            for _i in range(_start, _end + 1):
+                l_fmt_by_col[_i] = self.fmt_int
 
         for _col_idx, _fmt in cols_fmt_overrides.items():
             if 0 <= _col_idx < width_df:
                 ws.set_column(first_col=_col_idx, last_col=_col_idx, cell_format=_fmt)
+
+                l_fmt_by_col[_col_idx] = _fmt
+
+        return l_fmt_by_col
+
+    @staticmethod
+    def _estimate_width_len(
+        value: Any,
+        *,
+        if_is_numeric_col: bool,
+        if_is_integer_col: bool,
+        if_keep_na: bool,
+    ) -> int:
+        """Estimate display string length for column width calculation.
+
+        Notes
+        -----
+        - Excel column width is not strictly character count; this is a pragmatic
+          heuristic good enough for most reports.
+        - For numeric columns we approximate based on the workbook formats used
+          by this writer (int: "0", dec: "0.0000").
+        """
+        if value is None:
+            return 0
+
+        s = str(value)
+        n_ascii = sum(1 for _chr in s if ord(_chr) < 128)
+        n_non_ascii = len(s) - n_ascii
+        n_estimated_string_length = n_ascii + int(1.6 * n_non_ascii)
+        if not if_is_numeric_col:
+            if not s:
+                return 0
+            return n_estimated_string_length
+
+        try:
+            n_val = float(value)
+        except Exception:
+            return n_estimated_string_length
+
+        if not math.isfinite(n_val):
+            if not if_keep_na:
+                return 0
+            return len(_convert_nan_inf_to_str(n_val))
+
+        if if_is_integer_col:
+            # avoid 1.0-like strings
+            try:
+                return len(str(int(n_val)))
+            except Exception:
+                return len(str(n_val))
+
+        # decimal default: 4 digits
+        try:
+            return len(f"{n_val:.4f}")
+        except Exception:
+            return len(str(n_val))
 
     def _write_header(
         self,
@@ -891,6 +964,11 @@ class XlsxFormatter:
         df_header: Any | None = None,
         cols_integer: Sequence[ColRef] | None = None,
         cols_decimal: Sequence[ColRef] | None = None,
+        if_autofit_columns: bool = True,
+        num_autofit_rows_max: int | None = 20_000,
+        num_autofit_min_width: int = 8,
+        num_autofit_max_width: int = 60,
+        num_autofit_padding: int = 2,
         col_freeze: int = 0,
         row_freeze: int | None = None,
         if_merge_header: bool = True,
@@ -1039,7 +1117,10 @@ class XlsxFormatter:
                 < _sheet_slice.col_end_exclusive
             }
 
-            self._set_column_formats(
+            # Column formats.
+            # Note: we also keep the final per-column formats for optional
+            # post-write operations (e.g. autofit width).
+            l_fmt_by_col_ = self._set_column_formats(
                 cfg_worksheet_,
                 width_df=df_slice_.width,
                 cols_idx_numeric=tup_cols_idx_numeric_slice_,
@@ -1055,6 +1136,21 @@ class XlsxFormatter:
                 ]
                 for _row_iter in l_header_grid
             ]
+
+            # Autofit: initialize width estimates from header text before any
+            # in-place merge-related normalization (vertical blank-out).
+            # Note: for horizontally merged headers, only the left-most cell holds
+            # the text. This is acceptable because the merged region spans multiple
+            # columns.
+            l_col_width_lens: list[int] = [0] * df_slice_.width
+            if if_autofit_columns and df_slice_.width > 0:
+                for _col_idx in range(df_slice_.width):
+                    for _row in l_header_grid_slice_:
+                        if (c := _row[_col_idx]):
+                            l_col_width_lens[_col_idx] = max(
+                                l_col_width_lens[_col_idx], len(str(c))
+                            )
+
             self._write_header(
                 cfg_worksheet_,
                 header_grid=l_header_grid_slice_,
@@ -1084,6 +1180,13 @@ class XlsxFormatter:
             n_row_start_data_ = n_rows_header
             l_is_numeric_col = [_idx in set_cols_idx_numeric for _idx in range(n_cols_)]
 
+            set_cols_idx_int_slice_ = set(tup_cols_idx_integer_slice_)
+            l_is_integer_col = [
+                _idx in set_cols_idx_int_slice_ for _idx in range(n_cols_)
+            ]
+
+            n_rows_seen_for_autofit = 0
+
             # Fast path: write_row with python values (no per-cell formats)
             if not b_any_cell_override:
                 for _row_idx, _df_chunk in _create_row_chunks(
@@ -1101,6 +1204,24 @@ class XlsxFormatter:
                             )
                             for _col_idx, _col_val in enumerate(_row_val)
                         ]
+
+                        # Update width estimates (bounded by num_autofit_rows_max).
+                        if if_autofit_columns and (
+                            num_autofit_rows_max is None
+                            or n_rows_seen_for_autofit < num_autofit_rows_max
+                        ):
+                            for _col_idx, _cell_val in enumerate(l_row_vals):
+                                l_col_width_lens[_col_idx] = max(
+                                    l_col_width_lens[_col_idx],
+                                    self._estimate_width_len(
+                                        _cell_val,
+                                        if_is_numeric_col=l_is_numeric_col[_col_idx],
+                                        if_is_integer_col=l_is_integer_col[_col_idx],
+                                        if_keep_na=if_keep_na,
+                                    ),
+                                )
+                            n_rows_seen_for_autofit += 1
+
                         cfg_worksheet_.write_row(
                             row=n_row_idx_excel_0based_ + _row_idx_chunk,
                             col=0,
@@ -1116,6 +1237,19 @@ class XlsxFormatter:
                     n_row_idx_excel_0based_ = n_row_start_data_ + _row_cursor
                     for _row_idx_chunk, _row_val in enumerate(_df_chunk.iter_rows()):
                         for _col_idx, _col_val in enumerate(_row_val):
+                            if if_autofit_columns and (
+                                num_autofit_rows_max is None
+                                or n_rows_seen_for_autofit < num_autofit_rows_max
+                            ):
+                                l_col_width_lens[_col_idx] = max(
+                                    l_col_width_lens[_col_idx],
+                                    self._estimate_width_len(
+                                        _col_val,
+                                        if_is_numeric_col=l_is_numeric_col[_col_idx],
+                                        if_is_integer_col=l_is_integer_col[_col_idx],
+                                        if_keep_na=if_keep_na,
+                                    ),
+                                )
                             _write_cell_with_format(
                                 cfg_worksheet_,
                                 addons,
@@ -1125,6 +1259,26 @@ class XlsxFormatter:
                                 if_is_numeric_col=l_is_numeric_col[_col_idx],
                                 if_keep_na=if_keep_na,
                             )
+
+                        if if_autofit_columns and (
+                            num_autofit_rows_max is None
+                            or n_rows_seen_for_autofit < num_autofit_rows_max
+                        ):
+                            n_rows_seen_for_autofit += 1
+
+            # Apply autofit widths at the end to avoid overriding formats mid-write.
+            if if_autofit_columns and df_slice_.width > 0:
+                n_min = max(1, int(num_autofit_min_width))
+                n_max = min(255, max(n_min, int(num_autofit_max_width)))
+                n_pad = max(0, int(num_autofit_padding))
+                for _col_idx in range(df_slice_.width):
+                    n_w = min(n_max, max(n_min, l_col_width_lens[_col_idx] + n_pad))
+                    cfg_worksheet_.set_column(
+                        first_col=_col_idx,
+                        last_col=_col_idx,
+                        width=n_w,
+                        cell_format=l_fmt_by_col_[_col_idx],
+                    )
 
             report.sheets.append(
                 SheetPart(
