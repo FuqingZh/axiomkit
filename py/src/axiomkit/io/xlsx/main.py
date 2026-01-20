@@ -10,28 +10,27 @@ import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from .addons import XlsxAddon, addon_requires_cell_write, write_cell_with_format
-from .chunking import create_row_chunks, get_row_chunk_size
-from .constants import N_LEN_EXCEL_SHEET_NAME_MAX
-from .dataframe import (
-    assert_no_duplicate_columns,
-    get_sorted_indices_from_refs,
-    to_polars,
-)
-from .defaults import DEFAULT_XLSX_FORMATS
-from .formats import XlsxFormatSpec
-from .header_merge import (
-    BorderSpec,
+from .conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
+from .hook import XlsxAddon, addon_requires_cell_write, write_cell_with_format
+from .service import (
+    create_row_chunks,
     find_contiguous_ranges,
+    generate_sheet_slices,
+    get_row_chunk_size,
+    normalize_sheet_name,
     plan_horizontal_merges,
     plan_vertical_visual_merge_borders,
     remove_vertical_run_text,
     track_horizontal_merge_cells,
 )
-from .models import XlsxReport, SheetPart
-from .split import generate_sheet_slices, normalize_sheet_name,
-from .types import ColRef
-from .value_conversion import convert_cell_value, convert_nan_inf_to_str
+from .spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
+from .util import (
+    assert_no_duplicate_columns,
+    convert_cell_value,
+    convert_nan_inf_to_str,
+    get_sorted_indices_from_refs,
+    to_polars,
+)
 
 
 class XlsxFormatter:
@@ -73,11 +72,11 @@ class XlsxFormatter:
         self,
         file_out: os.PathLike[str] | str,
         *,
-        fmt_text: XlsxFormatSpec | None = None,
-        fmt_integer: XlsxFormatSpec | None = None,
-        fmt_decimal: XlsxFormatSpec | None = None,
-        fmt_scientific: XlsxFormatSpec | None = None,
-        fmt_header: XlsxFormatSpec | None = None,
+        fmt_text: SpecCellFormat | None = None,
+        fmt_integer: SpecCellFormat | None = None,
+        fmt_decimal: SpecCellFormat | None = None,
+        fmt_scientific: SpecCellFormat | None = None,
+        fmt_header: SpecCellFormat | None = None,
     ):
         self.file_out = Path(file_out)
         self.wb = xlsxwriter.Workbook(
@@ -88,7 +87,7 @@ class XlsxFormatter:
                 "nan_inf_to_errors": False,
             },
         )
-        self._format_cache: dict[XlsxFormatSpec, Any] = {}
+        self._format_cache: dict[SpecCellFormat, Any] = {}
 
         self.fmt_text = DEFAULT_XLSX_FORMATS["text"] if fmt_text is None else fmt_text
         self.fmt_int = (
@@ -109,20 +108,7 @@ class XlsxFormatter:
             tuple[int, int, int, int], xlsxwriter.format.Format
         ] = {}
         self._existing_sheet_names: set[str] = set()
-        self._reports: list[XlsxReport] = []
-
-    def _get_or_create_format(self, spec: XlsxFormatSpec) -> Any:
-        fmt = self._format_cache.get(spec)
-        if fmt is None:
-            fmt = self.wb.add_format(spec.to_xlsxwriter())
-            self._format_cache[spec] = fmt
-        return fmt
-
-    def close(self) -> None:
-        self.wb.close()
-
-    def report(self) -> tuple[XlsxReport, ...]:
-        return tuple(self._reports)
+        self._reports: list[SpecXlsxReport] = []
 
     def __enter__(self) -> "XlsxFormatter":
         return self
@@ -131,6 +117,22 @@ class XlsxFormatter:
         self, exc_type: type | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         self.close()
+
+    def get_default_xlsx_formats(self):
+        return DEFAULT_XLSX_FORMATS
+
+    def close(self) -> None:
+        self.wb.close()
+
+    def report(self) -> tuple[SpecXlsxReport, ...]:
+        return tuple(self._reports)
+
+    def _get_or_create_format(self, spec: SpecCellFormat) -> Any:
+        fmt = self._format_cache.get(spec)
+        if fmt is None:
+            fmt = self.wb.add_format(spec.to_xlsxwriter())
+            self._format_cache[spec] = fmt
+        return fmt
 
     @staticmethod
     def _infer_numeric_cols(df: pl.DataFrame) -> tuple[int, ...]:
@@ -218,7 +220,9 @@ class XlsxFormatter:
         self._existing_sheet_names.add(c_candidate_name)
         return c_candidate_name
 
-    def _get_header_fmt(self, border: BorderSpec | None) -> xlsxwriter.format.Format:
+    def _get_header_fmt(
+        self, border: SpecCellBorder | None
+    ) -> xlsxwriter.format.Format:
         # default full border
         if border is None:
             tup_border_format_key = (1, 1, 1, 1)
@@ -311,7 +315,7 @@ class XlsxFormatter:
         n_cols = len(header_grid[0])
 
         l_header_grid = header_grid
-        dict_border_plan: dict[tuple[int, int], BorderSpec] = {}
+        dict_border_plan: dict[tuple[int, int], SpecCellBorder] = {}
         b_visual_merge_vertical = bool(if_merge and n_rows > 1)
         if b_visual_merge_vertical and n_rows > 1:
             dict_border_plan = plan_vertical_visual_merge_borders(l_header_grid)
@@ -356,7 +360,7 @@ class XlsxFormatter:
                 # For merged block, pick a border spec that at least draws outer box.
                 # (Excel treats merged region as one cell; internal per-col borders irrelevant.)
                 cfg_block_format_ = self._get_header_fmt(
-                    BorderSpec(top=1, bottom=1, left=1, right=1)
+                    SpecCellBorder(top=1, bottom=1, left=1, right=1)
                 )
                 ws.merge_range(
                     first_row=_row_idx,
@@ -386,7 +390,7 @@ class XlsxFormatter:
         padding_autofit_width: int = 2,
         addons: Sequence[XlsxAddon] = (),
     ) -> Self:
-        report = XlsxReport(
+        report = SpecXlsxReport(
             sheets=[],
             warnings=[],
         )
@@ -704,7 +708,7 @@ class XlsxFormatter:
                     )
 
             report.sheets.append(
-                SheetPart(
+                SpecSheetSlice(
                     sheet_name=c_sheet_name_unique_,
                     row_start_inclusive=_sheet_slice.row_start_inclusive,
                     row_end_exclusive=_sheet_slice.row_end_exclusive,
