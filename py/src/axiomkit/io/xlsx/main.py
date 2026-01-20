@@ -1,689 +1,39 @@
-"""axiomkit XLSX writer.
-
-This module provides `XlsxFormatter`, a small convenience wrapper around
-`xlsxwriter.Workbook` to export tabular data (via Polars) to Excel.
-
-It includes:
-- Excel sheet splitting for row/column limits
-- Header merge planning (true horizontal merges + visual vertical merges)
-- Fast-path body writing with optional addon hooks
-"""
-
 import math
 import os
-from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Sequence
 from pathlib import Path
-from types import MappingProxyType, TracebackType
-from typing import Any, Literal, Protocol, Self, TypeAlias
+from types import TracebackType
+from typing import Any, Literal, Self
 
 import polars as pl
 import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-################################################################################
-# #region Constants
-
-N_NROWS_EXCEL_MAX = 1_048_576
-N_NCOLS_EXCEL_MAX = 16_384
-N_LEN_EXCEL_SHEET_NAME_MAX = 31
-_EXCEL_ILLEGAL = ("*", ":", "?", "/", "\\", "[", "]")
-
-ColRef: TypeAlias = str | int
-
-
-# #endregion
-################################################################################
-# #region Dataclasses
-@dataclass(frozen=True, slots=True)
-class SheetPart:
-    sheet_name: str
-    row_start_inclusive: int
-    row_end_exclusive: int  # exclusive in source df rows
-    col_start_inclusive: int
-    col_end_exclusive: int  # exclusive in source df cols
-
-
-@dataclass(slots=True)
-class XlsxReport:
-    sheets: list[SheetPart]
-    warnings: list[str]
-
-    def warn(self, msg: str) -> None:
-        self.warnings.append(str(msg))
-
-
-@dataclass(frozen=True, slots=True)
-class HorizontalMerge:
-    row_idx_start: int
-    col_idx_start: int
-    col_idx_end: int  # inclusive
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
-class BorderSpec:
-    top: int
-    bottom: int
-    left: int
-    right: int
-
-
-@dataclass(frozen=True, slots=True)
-class XlsxFormatSpec:
-    # 字段名严格对齐 XlsxWriter format properties keys
-    font_name: str | None = None
-    font_size: int | None = None
-    bold: bool | None = None
-    italic: bool | None = None
-
-    align: str | None = None
-    valign: str | None = None
-    border: int | None = None
-    text_wrap: bool | None = None
-
-    top: int | None = None
-    bottom: int | None = None
-    left: int | None = None
-    right: int | None = None
-
-    num_format: str | None = None
-    bg_color: str | None = None
-    font_color: str | None = None
-
-    def with_(self, **kwargs: Any) -> "XlsxFormatSpec":
-        return replace(self, **kwargs)
-
-    def merge(self, other: "XlsxFormatSpec") -> "XlsxFormatSpec":
-        # 右侧非 None 覆盖左侧
-        data = {
-            k: (
-                getattr(other, k) if getattr(other, k) is not None else getattr(self, k)
-            )
-            for k in self.__dataclass_fields__
-        }
-        return XlsxFormatSpec(**data)
-
-    def to_xlsxwriter(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
-
-
-_LIT_FMT_KEYS = Literal["text", "integer", "decimal", "scientific", "header"]
-_cls_base_fmt_spec = XlsxFormatSpec(font_name="Times New Roman", font_size=10, border=1)
-
-DEFAULT_XLSX_FORMATS: Mapping[_LIT_FMT_KEYS, XlsxFormatSpec] = MappingProxyType(
-    {
-        "text": _cls_base_fmt_spec.with_(align="left", valign="vcenter"),
-        "header": _cls_base_fmt_spec.with_(bold=True, align="center", valign="vcenter"),
-        "integer": XlsxFormatSpec(num_format="0", border=1),
-        "decimal": XlsxFormatSpec(num_format="0.0000", border=1),
-        "scientific": XlsxFormatSpec(num_format="0.00E+0", border=1),
-    }
+from .addons import XlsxAddon, addon_requires_cell_write, write_cell_with_format
+from .chunking import create_row_chunks, get_row_chunk_size
+from .constants import N_LEN_EXCEL_SHEET_NAME_MAX
+from .dataframe import (
+    assert_no_duplicate_columns,
+    get_sorted_indices_from_refs,
+    to_polars,
 )
+from .defaults import DEFAULT_XLSX_FORMATS
+from .formats import XlsxFormatSpec
+from .header_merge import (
+    BorderSpec,
+    find_contiguous_ranges,
+    plan_horizontal_merges,
+    plan_vertical_visual_merge_borders,
+    remove_vertical_run_text,
+    track_horizontal_merge_cells,
+)
+from .models import XlsxReport, SheetPart
+from .split import generate_sheet_slices, normalize_sheet_name,
+from .types import ColRef
+from .value_conversion import convert_cell_value, convert_nan_inf_to_str
 
 
-# #endregion
-################################################################################
-# #region XlsxAddon
-class XlsxAddon(Protocol):
-    """
-    v1 addon contract (performance-first):
-
-    - Column-level overrides MUST be O(1) / near O(1) per column.
-    - Per-cell overrides are allowed but will force the writer into the slow per-cell path.
-      Use only when necessary.
-
-    Capability declaration
-    ----------------------
-    Addons SHOULD explicitly declare whether they need per-cell formatting by
-    implementing `requires_cell_write()` (preferred) or a boolean attribute
-    `requires_cell_write`.
-
-    If neither is provided, the writer may fall back to a compatibility probe
-    (deprecated) to decide the path.
-    """
-
-    def requires_cell_write(self) -> bool:  # optional, preferred
-        return False
-
-    def get_column_format_overrides(
-        self,
-        *,
-        df: pl.DataFrame,
-        fmt_sci: xlsxwriter.format.Format,
-    ) -> dict[int, xlsxwriter.format.Format]:
-        """
-        Return {col_idx_0based: Format} column-level overrides.
-        Default: {}
-        """
-        return {}
-
-    def get_cell_format_override(
-        self,
-        *,
-        row_idx: int,
-        col_idx: int,
-        value: Any,
-    ) -> xlsxwriter.format.Format | None:
-        """
-        Return a per-cell format. If any addon returns non-None,
-        writer will fall back to slow per-cell write path.
-
-        Default: None (recommended for speed).
-        """
-        return None
-
-
-def _addon_requires_cell_write(ad: XlsxAddon) -> bool:
-    """
-    Decide whether an addon forces the slow per-cell body write path.
-
-    Preferred (explicit) contract:
-      - method: `requires_cell_write() -> bool`
-      - attribute: `requires_cell_write: bool`
-
-    Backward-compatible fallback (deprecated):
-      - probe `get_cell_format_override(row_idx=0, col_idx=0, value="__probe__")`
-        and treat any non-None return (or exception) as requiring per-cell writes.
-    """
-    # explicit: method
-    meth = getattr(ad, "requires_cell_write", None)
-    if callable(meth):
-        try:
-            return bool(meth())
-        except Exception:
-            # conservative: if addon misbehaves, choose safety (slow path)
-            return True
-
-    # explicit: attribute
-    if hasattr(ad, "requires_cell_write"):
-        try:
-            return bool(getattr(ad, "requires_cell_write"))
-        except Exception:
-            return True
-
-    # compatibility probe (deprecated)
-    try:
-        return (
-            ad.get_cell_format_override(row_idx=0, col_idx=0, value="__probe__")
-            is not None
-        )
-    except Exception:
-        return True
-
-
-# #endregion
-################################################################################
-# #region DataFrame
-
-
-def _to_polars(df: Any) -> pl.DataFrame:
-    return df if isinstance(df, pl.DataFrame) else pl.DataFrame(df)
-
-
-def _resolve_col_index(df: pl.DataFrame, ref: ColRef) -> int:
-    if isinstance(ref, int):
-        return ref
-    try:
-        return df.columns.index(ref)
-    except ValueError as e:
-        raise KeyError(f"Column not found: {ref!r}") from e
-
-
-def _get_sorted_indices_from_refs(
-    df: pl.DataFrame, refs: Sequence[ColRef] | None
-) -> tuple[int, ...]:
-    if not refs:
-        return ()
-    idx = {_resolve_col_index(df, _r) for _r in refs}
-    return tuple(sorted(idx))
-
-
-def _assert_no_duplicate_columns(df: pl.DataFrame) -> None:
-    l_cols = df.columns
-
-    # fast path: no duplicates
-    if len(l_cols) == len(set(l_cols)):
-        return
-
-    # slow path: collect details only when duplicates exist
-    dict_pos: dict[str, list[int]] = defaultdict(list)
-    for _idx, _val in enumerate(l_cols):
-        dict_pos[_val].append(_idx)
-
-    c_msg = "; ".join(
-        f"{c_name!r} x{len(l_pos)} at indices {l_pos}"
-        for c_name, l_pos in dict_pos.items()
-        if len(l_pos) > 1
-    )
-    raise ValueError(f"Duplicate column names detected: {c_msg}")
-
-
-# #endregion
-################################################################################
-# #region ExcelSplitRestrictions/Strategies
-
-
-def _normalize_sheet_name(name: str, *, replace_to: str = "_") -> str:
-    for ch in _EXCEL_ILLEGAL:
-        name = name.replace(ch, replace_to)
-    name = name.strip() or "Sheet"
-    return name[:N_LEN_EXCEL_SHEET_NAME_MAX]
-
-
-def _make_sheet_name(base_name: str, part_idx_1based: int) -> str:
-    c_sheet_name_suffix = f"_{part_idx_1based}"
-    n_len_base_name_max = N_LEN_EXCEL_SHEET_NAME_MAX - len(c_sheet_name_suffix)
-    c_sheet_name_base = base_name[: max(1, n_len_base_name_max)]
-    return f"{c_sheet_name_base}{c_sheet_name_suffix}"
-
-
-def _generate_sheet_slices(
-    *,
-    height_df: int,
-    width_df: int,
-    height_header: int,
-    sheet_name: str,
-    report: XlsxReport,
-) -> list[SheetPart]:
-    if height_header <= 0:
-        raise ValueError("height_header must be >= 1.")
-    if (n_rows_data_max := N_NROWS_EXCEL_MAX - height_header) <= 0:
-        raise ValueError(
-            f"Header too tall: height_header={height_header} exceeds Excel limit."
-        )
-
-    l_col_slices: list[tuple[int, int]] = []
-    n_col_start = 0
-    while n_col_start < width_df:
-        n_col_end = min(width_df, n_col_start + N_NCOLS_EXCEL_MAX)
-        l_col_slices.append((n_col_start, n_col_end))
-        n_col_start = n_col_end
-
-    l_row_slices: list[tuple[int, int]] = []
-    n_row_start = 0
-    while n_row_start < height_df:
-        n_row_end = min(height_df, n_row_start + n_rows_data_max)
-        l_row_slices.append((n_row_start, n_row_end))
-        n_row_start = n_row_end
-
-    n_parts_total = len(l_col_slices) * len(l_row_slices)
-
-    l_sheet_parts: list[SheetPart] = []
-    n_idx_part = 1
-    for _col_start, _col_end in l_col_slices:
-        for _row_start, _row_end in l_row_slices:
-            # IMPORTANT:
-            # - If we do NOT split, keep the original sheet name (no "_1").
-            # - Only add suffix when we actually have >1 parts.
-            c_part_sheet_name = (
-                sheet_name
-                if n_parts_total == 1
-                else _make_sheet_name(sheet_name, n_idx_part)
-            )
-            l_sheet_parts.append(
-                SheetPart(
-                    sheet_name=c_part_sheet_name,
-                    row_start_inclusive=_row_start,
-                    row_end_exclusive=_row_end,
-                    col_start_inclusive=_col_start,
-                    col_end_exclusive=_col_end,
-                )
-            )
-            n_idx_part += 1
-
-    if n_parts_total > 1:
-        report.warn(
-            f"Excel limit overflow: split into {len(l_sheet_parts)} sheets (columns-first, then rows)."
-        )
-    return l_sheet_parts
-
-
-# #endregion
-################################################################################
-# #region Chunk&ValueConversion
-
-
-def _create_row_chunks(
-    df: pl.DataFrame, size_rows_chunk: int, cols_exprs: list[pl.Expr]
-):
-    n_rows_total = df.height
-    n_row_cursor = 0
-    while n_row_cursor < n_rows_total:
-        n_rows_per_chunk = min(size_rows_chunk, n_rows_total - n_row_cursor)
-        df_chunk = df.slice(offset=n_row_cursor, length=n_rows_per_chunk).select(
-            cols_exprs
-        )
-        yield n_row_cursor, df_chunk
-        n_row_cursor += n_rows_per_chunk
-
-
-def _convert_cell_value(
-    value: Any, if_is_numeric_col: bool, if_keep_na: bool
-) -> object:
-    if value is None:
-        return None
-    if not if_is_numeric_col:
-        return str(value)
-    if not math.isfinite(n_cell_float_value := float(value)):
-        return _convert_nan_inf_to_str(n_cell_float_value) if if_keep_na else None
-
-    return n_cell_float_value
-
-
-def _convert_nan_inf_to_str(x: float) -> str:
-    if math.isnan(x):
-        return "NaN"
-    elif math.isinf(x):
-        return "Inf" if x > 0 else "-Inf"
-    else:
-        raise ValueError("Input is neither NaN nor Inf.")
-
-
-def _get_cell_format_override(
-    addons: Sequence[XlsxAddon], *, row_idx: int, col_idx: int, value: Any
-) -> xlsxwriter.format.Format | None:
-    fmt_cell = None
-    for ad in addons:
-        fmt_cell = (
-            ad.get_cell_format_override(
-                row_idx=row_idx,
-                col_idx=col_idx,
-                value=value,
-            )
-            or fmt_cell
-        )
-    return fmt_cell
-
-
-def _write_cell_with_format(
-    ws: xlsxwriter.worksheet.Worksheet,
-    addons: Sequence[XlsxAddon],
-    *,
-    row_idx: int,
-    col_idx: int,
-    value: Any,
-    if_is_numeric_col: bool,
-    if_keep_na: bool,
-):
-    if value is None:
-        ws.write_blank(row=row_idx, col=col_idx, blank=None)
-        return
-
-    if not if_is_numeric_col:
-        c_cell_val = str(value)
-        cfg_fmt_cell = _get_cell_format_override(
-            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
-        )
-        ws.write_string(
-            row=row_idx,
-            col=col_idx,
-            string=c_cell_val,
-            cell_format=cfg_fmt_cell,
-        )
-
-        return
-
-    if not math.isfinite(n_cell_val := float(value)):
-        if not if_keep_na:
-            ws.write_blank(row=row_idx, col=col_idx, blank=None)
-            return
-
-        c_cell_val = _convert_nan_inf_to_str(n_cell_val)
-        cfg_fmt_cell = _get_cell_format_override(
-            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
-        )
-        ws.write_string(
-            row=row_idx,
-            col=col_idx,
-            string=c_cell_val,
-            cell_format=cfg_fmt_cell,
-        )
-        return
-
-    cfg_fmt_cell = _get_cell_format_override(
-        addons, row_idx=row_idx, col_idx=col_idx, value=n_cell_val
-    )
-    ws.write_number(
-        row=row_idx,
-        col=col_idx,
-        number=n_cell_val,
-        cell_format=cfg_fmt_cell,
-    )
-
-
-# #endregion
-################################################################################
-# #region HeaderMergeAlgorithm
-
-
-def _find_contiguous_ranges(sorted_indices: Sequence[int]) -> list[tuple[int, int]]:
-    """
-    Convert a sorted sequence of indices into a list of contiguous index ranges.
-
-    Args:
-        sorted_indices (Sequence[int]): Sorted sequence of integer indices to group
-            into contiguous ranges.
-
-    Returns:
-        list[tuple[int, int]]: A list of (start, end) tuples, each representing an
-            inclusive contiguous range of indices.
-
-    Examples:
-        >>> _find_contiguous_ranges([0, 1, 2, 4, 5, 7])
-        [(0, 2), (4, 5), (7, 7)]
-        >>> _find_contiguous_ranges([])
-        []
-    """
-    if not sorted_indices:
-        return []
-    l_contiguous_ranges: list[tuple[int, int]] = []
-    n_idx_start = n_idx_end = sorted_indices[0]
-    for _idx in sorted_indices[1:]:
-        if _idx == n_idx_end + 1:
-            n_idx_end = _idx
-        else:
-            l_contiguous_ranges.append((n_idx_start, n_idx_end))
-            n_idx_start = n_idx_end = _idx
-    l_contiguous_ranges.append((n_idx_start, n_idx_end))
-    return l_contiguous_ranges
-
-
-def _get_row_chunk_size(*, width_df: int) -> int:
-    """
-    Return an appropriate row chunk size for processing based on dataframe width.
-
-    Wider dataframes (with more columns) use smaller row chunks to limit the
-    total amount of data processed at once, while narrower dataframes can use
-    larger chunks.
-
-    Args:
-        width_df (int): The number of columns in the dataframe to be processed.
-
-    Returns:
-        int: Recommended number of rows per processing chunk:
-             - 1_000 rows if ``width_df >= 8_000``
-             - 2_000 rows if ``width_df >= 2_000`` and ``width_df < 8_000``
-             - 10_000 rows otherwise.
-    """
-    # v1: fixed + simple steps.
-    if width_df >= 8_000:
-        return 1_000
-    if width_df >= 2_000:
-        return 2_000
-    return 10_000
-
-
-def _plan_horizontal_merges(
-    header_grid: list[list[str]],
-) -> dict[int, list[HorizontalMerge]]:
-    dict_horizontal_merges_map: dict[int, list[HorizontalMerge]] = {}
-    if not header_grid:
-        return dict_horizontal_merges_map
-
-    n_rows = len(header_grid)
-    n_cols = len(header_grid[0])
-    for _row_idx in range(n_rows):
-        l_row_val_ = header_grid[_row_idx]
-        n_col_idx_ = 0
-        while n_col_idx_ < n_cols:
-            c_cell_val_ = l_row_val_[n_col_idx_]
-            if not c_cell_val_:
-                n_col_idx_ += 1
-                continue
-
-            n_col_idx_end_ = n_col_idx_ + 1
-            while n_col_idx_end_ < n_cols and l_row_val_[n_col_idx_end_] == c_cell_val_:
-                n_col_idx_end_ += 1
-
-            if n_col_idx_end_ - n_col_idx_ > 1:
-                dict_horizontal_merges_map.setdefault(_row_idx, []).append(
-                    HorizontalMerge(
-                        row_idx_start=_row_idx,
-                        col_idx_start=n_col_idx_,
-                        col_idx_end=n_col_idx_end_ - 1,
-                        text=c_cell_val_,
-                    )
-                )
-            n_col_idx_ = n_col_idx_end_
-
-    return dict_horizontal_merges_map
-
-
-def _iter_vertical_runs(
-    header_grid: Sequence[Sequence[str]],
-):
-    """
-    Yield vertical runs (length > 1) of identical, non-empty cells.
-
-    Emits tuples (col_idx, row_start, row_end, value).
-    """
-    if not header_grid:
-        return
-
-    n_rows = len(header_grid)
-    n_cols = len(header_grid[0])
-
-    for _col_idx in range(n_cols):
-        n_row_idx_start_ = 0
-        while n_row_idx_start_ < n_rows:
-            c_val_cell_current_ = header_grid[n_row_idx_start_][_col_idx]
-            if not c_val_cell_current_:
-                n_row_idx_start_ += 1
-                continue
-
-            n_row_idx_next_ = n_row_idx_start_ + 1
-
-            # is continuing run
-            while (
-                n_row_idx_next_ < n_rows
-                and header_grid[n_row_idx_next_][_col_idx] == c_val_cell_current_
-            ):
-                n_row_idx_next_ += 1
-
-            n_len_vertical_run = n_row_idx_next_ - n_row_idx_start_
-            if n_len_vertical_run > 1:
-                yield (
-                    _col_idx,
-                    n_row_idx_start_,
-                    n_row_idx_next_ - 1,
-                    c_val_cell_current_,
-                )
-
-            n_row_idx_start_ = n_row_idx_next_
-
-
-def _plan_vertical_visual_merge_borders(
-    header_grid: Sequence[Sequence[str]],
-) -> dict[tuple[int, int], BorderSpec]:
-    """
-    Generate border specifications for visualizing vertically merged header cells.
-
-    The function scans each column of the provided header grid and finds
-    consecutive rows that contain the same non-empty value. Each such run
-    is treated as a vertical merge block, and border information is generated
-    for all cells in the block.
-
-    Args:
-        header_grid: A 2D sequence of strings representing the header cells,
-            indexed as ``header_grid[row_index][column_index]``. All rows are
-            expected to have the same number of columns.
-
-    Returns:
-        dict[tuple[int, int], BorderSpec]: A mapping from ``(row_index,
-        column_index)`` cell coordinates to ``BorderSpec`` instances for cells
-        that belong to a vertical merge block. For each such cell, the border
-        spec indicates which borders (top, bottom, left, right) should be drawn
-        to render the merged region.
-    """
-    dict_plan_vertical_merge_border: dict[tuple[int, int], BorderSpec] = {}
-    for col_idx, row_start, row_end, _ in _iter_vertical_runs(header_grid):
-        for _row_idx_within_merge in range(row_start, row_end + 1):
-            dict_plan_vertical_merge_border[(_row_idx_within_merge, col_idx)] = (
-                BorderSpec(
-                    top=1 if _row_idx_within_merge == row_start else 0,
-                    bottom=1 if _row_idx_within_merge == row_end else 0,
-                    left=1,
-                    right=1,
-                )
-            )
-        # blank out text for non-top cells (handled by writer)
-    return dict_plan_vertical_merge_border
-
-
-def _remove_vertical_run_text(header_grid: list[list[str]]) -> list[list[str]]:
-    """
-    Clear text from vertically merged header cells, keeping only the top cell's text.
-
-    The function iterates over vertical runs of identical, non-empty header values
-    (as identified by :func:`_iter_vertical_runs`) and blanks out the text in all
-    cells below the first row of each run. This is typically used to prepare a
-    header grid for writing to an Excel worksheet where vertical merges are
-    represented visually, leaving only the top cell in each merged block
-    containing the header text.
-
-    The input grid is modified in place and also returned for convenience.
-
-    Args:
-        header_grid (list[list[str]]): A two-dimensional list of header cell
-            strings indexed as ``header_grid[row_index][column_index]``.
-
-    Returns:
-        list[list[str]]: The same header grid instance with non-top cells in each
-        vertical run cleared (set to an empty string).
-    """
-    if not header_grid:
-        return header_grid
-    for col_idx, row_start, row_end, _ in _iter_vertical_runs(header_grid):
-        for _row_idx_within_merge in range(row_start + 1, row_end + 1):
-            header_grid[_row_idx_within_merge][col_idx] = ""
-    return header_grid
-
-
-def _track_horizontal_merge_cells(
-    row_horizontal_merge_mapping: dict[int, list[HorizontalMerge]],
-) -> dict[tuple[int, int], bool]:
-    """
-    Mark cells covered by horizontal merges (except leftmost cell),
-    so we can skip writing them before merge_range.
-    """
-    dict_merged_cells_tracker: dict[tuple[int, int], bool] = {}
-    for _row_idx, _horizontal_merges in row_horizontal_merge_mapping.items():
-        for _merge in _horizontal_merges:
-            for _col_idx in range(_merge.col_idx_start + 1, _merge.col_idx_end + 1):
-                dict_merged_cells_tracker[(_row_idx, _col_idx)] = True
-    return dict_merged_cells_tracker
-
-
-# #endregion
-################################################################################
-
-
-# -----------------------------
-# Main writer
-# -----------------------------
 class XlsxFormatter:
     """
     Helper class for writing tabular data to an XLSX workbook using
@@ -838,7 +188,7 @@ class XlsxFormatter:
         if not math.isfinite(n_val):
             if not if_keep_na:
                 return 0
-            return len(_convert_nan_inf_to_str(n_val))
+            return len(convert_nan_inf_to_str(n_val))
 
         if if_is_integer_col:
             # avoid 1.0-like strings
@@ -930,11 +280,11 @@ class XlsxFormatter:
             else list()
         )
 
-        for _start, _end in _find_contiguous_ranges(l_cols_idx_dec_sorted):
+        for _start, _end in find_contiguous_ranges(l_cols_idx_dec_sorted):
             ws.set_column(first_col=_start, last_col=_end, cell_format=cfg_fmt_dec)
             for _i in range(_start, _end + 1):
                 l_fmt_by_col[_i] = cfg_fmt_dec
-        for _start, _end in _find_contiguous_ranges(l_cols_idx_int_sorted):
+        for _start, _end in find_contiguous_ranges(l_cols_idx_int_sorted):
             ws.set_column(first_col=_start, last_col=_end, cell_format=cfg_fmt_int)
             for _i in range(_start, _end + 1):
                 l_fmt_by_col[_i] = cfg_fmt_int
@@ -964,13 +314,13 @@ class XlsxFormatter:
         dict_border_plan: dict[tuple[int, int], BorderSpec] = {}
         b_visual_merge_vertical = bool(if_merge and n_rows > 1)
         if b_visual_merge_vertical and n_rows > 1:
-            dict_border_plan = _plan_vertical_visual_merge_borders(l_header_grid)
-            l_header_grid = _remove_vertical_run_text(l_header_grid)
+            dict_border_plan = plan_vertical_visual_merge_borders(l_header_grid)
+            l_header_grid = remove_vertical_run_text(l_header_grid)
 
         dict_horizontal_merges_by_row = (
-            _plan_horizontal_merges(l_header_grid) if if_merge else {}
+            plan_horizontal_merges(l_header_grid) if if_merge else {}
         )
-        dict_horizontal_merge_tracker = _track_horizontal_merge_cells(
+        dict_horizontal_merge_tracker = track_horizontal_merge_cells(
             dict_horizontal_merges_by_row
         )
 
@@ -1041,17 +391,17 @@ class XlsxFormatter:
             warnings=[],
         )
 
-        df_custom = _to_polars(df)
+        df_custom = to_polars(df)
         l_colnames_df = df_custom.columns
         n_width_df = df_custom.width
         n_height_df = df_custom.height
-        _assert_no_duplicate_columns(df_custom)
+        assert_no_duplicate_columns(df_custom)
 
         # build header grid
         l_header_grid = [list(df_custom.columns)]
         if df_header is not None:
-            df_header_custom = _to_polars(df_header)
-            _assert_no_duplicate_columns(df_header_custom)
+            df_header_custom = to_polars(df_header)
+            assert_no_duplicate_columns(df_header_custom)
             if df_header_custom.height == 0:
                 raise ValueError(
                     "df_header must have >= 1 row (0-row header is not allowed)."
@@ -1072,11 +422,11 @@ class XlsxFormatter:
             df_custom, tup_cols_idx_numeric
         )
 
-        tup_cols_idx_integer_specified = _get_sorted_indices_from_refs(
+        tup_cols_idx_integer_specified = get_sorted_indices_from_refs(
             df_custom, cols_integer
         )
         tup_cols_idx_decimal_specified = (
-            _get_sorted_indices_from_refs(df_custom, cols_decimal)
+            get_sorted_indices_from_refs(df_custom, cols_decimal)
             if cols_decimal
             else False
         )
@@ -1110,11 +460,11 @@ class XlsxFormatter:
 
         # header rows count influences split (Excel max rows)
         n_rows_header = len(l_header_grid)
-        l_sheet_parts = _generate_sheet_slices(
+        l_sheet_parts = generate_sheet_slices(
             height_df=n_height_df,
             width_df=n_width_df,
             height_header=n_rows_header,
-            sheet_name=_normalize_sheet_name(sheet_name),
+            sheet_name=normalize_sheet_name(sheet_name),
             report=report,
         )
 
@@ -1131,7 +481,7 @@ class XlsxFormatter:
         # determine whether we must fall back to slow per-cell body write
         # If any addon potentially returns a non-None cell format, we assume slow path.
         # (v1: we do a single probe with a cheap call contract; you can also pass addons=() for fast path.)
-        b_any_cell_override = any(_addon_requires_cell_write(_ad) for _ad in addons)
+        b_any_cell_override = any(addon_requires_cell_write(_ad) for _ad in addons)
 
         for _sheet_slice in l_sheet_parts:
             c_sheet_name_unique_ = self._ensure_unique_sheet_name(
@@ -1248,7 +598,7 @@ class XlsxFormatter:
                         pl.col(_val).cast(pl.String).alias(_val)
                     )
 
-            n_rows_chunk_ = _get_row_chunk_size(width_df=df_slice_.width)
+            n_rows_chunk_ = get_row_chunk_size(width_df=df_slice_.width)
             n_cols_ = df_slice_.width
             n_row_start_data_ = n_rows_header
             l_is_numeric_col = [_idx in set_cols_idx_numeric for _idx in range(n_cols_)]
@@ -1262,7 +612,7 @@ class XlsxFormatter:
 
             # Fast path: write_row with python values (no per-cell formats)
             if not b_any_cell_override:
-                for _row_idx, _df_chunk in _create_row_chunks(
+                for _row_idx, _df_chunk in create_row_chunks(
                     df=df_slice_,
                     size_rows_chunk=n_rows_chunk_,
                     cols_exprs=l_col_cast_expressions,
@@ -1270,7 +620,7 @@ class XlsxFormatter:
                     n_row_idx_excel_0based_ = n_row_start_data_ + _row_idx
                     for _row_idx_chunk, _row_val in enumerate(_df_chunk.iter_rows()):
                         l_row_vals = [
-                            _convert_cell_value(
+                            convert_cell_value(
                                 value=_col_val,
                                 if_is_numeric_col=l_is_numeric_col[_col_idx],
                                 if_keep_na=if_keep_na,
@@ -1302,7 +652,7 @@ class XlsxFormatter:
                         )
             else:
                 # Slow path: per-cell write to allow cell formats.
-                for _row_cursor, _df_chunk in _create_row_chunks(
+                for _row_cursor, _df_chunk in create_row_chunks(
                     df=df_slice_,
                     size_rows_chunk=n_rows_chunk_,
                     cols_exprs=l_col_cast_expressions,
@@ -1323,7 +673,7 @@ class XlsxFormatter:
                                         if_keep_na=if_keep_na,
                                     ),
                                 )
-                            _write_cell_with_format(
+                            write_cell_with_format(
                                 cfg_worksheet_,
                                 addons,
                                 row_idx=n_row_idx_excel_0based_ + _row_idx_chunk,
