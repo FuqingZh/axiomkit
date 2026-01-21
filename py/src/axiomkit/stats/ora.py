@@ -217,30 +217,38 @@ def calculate_ora(
 
     # #tag checkConsistency
     if background_elements is None:
-        background_elements = set(
-            lf_pairs.select(col_elements).unique().collect().to_series().to_list()
-        )
+        lf_bg_elements = lf_pairs.select(col_elements).unique()
     else:
-        lf_pairs = lf_pairs.filter(
-            pl.col(col_elements).is_in(
-                pl.Series(list(background_elements), dtype=pl.Utf8)
-            )
-        )
+        lf_bg_elements = pl.LazyFrame(
+            {col_elements: pl.Series(list(background_elements), dtype=pl.Utf8)}
+        ).unique()
+        lf_pairs = lf_pairs.join(lf_bg_elements, on=col_elements, how="inner")
 
-    if not (set_fg_elements_in_bg := foreground_elements & background_elements):
+    lf_fg_elements = pl.LazyFrame(
+        {col_elements: pl.Series(list(foreground_elements), dtype=pl.Utf8)}
+    ).unique()
+
+    lf_fg_in_bg = lf_fg_elements.join(lf_bg_elements, on=col_elements, how="inner")
+
+    df_totals = (
+        lf_bg_elements.select(pl.len().alias("BgTotal"))
+        .join(lf_fg_in_bg.select(pl.len().alias("FgTotal")), how="cross")
+        .collect(engine="streaming")
+    )
+    n_bg_total = int(df_totals["BgTotal"][0])
+    n_fg_total = int(df_totals["FgTotal"][0])
+
+    if n_fg_total == 0:
         logger.warning(
             "No foreground elements found in background elements, I will return an empty DataFrame with schema."
         )
         return df_empty
 
-    n_bg_total = len(background_elements)
-    n_fg_total = len(set_fg_elements_in_bg)
-
-    lf_status = lf_pairs.with_columns(
-        IsFg=pl.col(col_elements).is_in(
-            pl.Series(list(set_fg_elements_in_bg), dtype=pl.Utf8)
-        )
-    )
+    lf_status = lf_pairs.join(
+        lf_fg_in_bg.select(col_elements).with_columns(pl.lit(True).alias("IsFg")),
+        on=col_elements,
+        how="left",
+    ).with_columns(pl.col("IsFg").fill_null(False))
 
     # #endregion
     ############################################################
@@ -269,17 +277,15 @@ def calculate_ora(
 
     if df_results.height == 0:
         logger.warning(
-            logger.warning(
-                f"""
-                No terms pass filters. 
-                BgTotal={n_bg_total}, FgTotal={n_fg_total}, thr_bg_hits_min={thr_bg_hits_min}, thr_fg_hits_min={thr_fg_hits_min}. 
-                Possible causes: 
-                    (1) no mappings, 
-                    (2) background not overlapping mapping, 
-                    (3) very small fg∩bg, 
-                    (4) thresholds too stringent.
-                """
-            )
+            f"""
+            No terms pass filters.
+            BgTotal={n_bg_total}, FgTotal={n_fg_total}, thr_bg_hits_min={thr_bg_hits_min}, thr_fg_hits_min={thr_fg_hits_min}.
+            Possible causes:
+                (1) no mappings,
+                (2) background not overlapping mapping,
+                (3) very small fg∩bg,
+                (4) thresholds too stringent.
+            """
         )
         return df_empty
 
@@ -311,8 +317,8 @@ def calculate_ora(
             pl.col("PAdjust") <= thr_p_adjust,
         )
         .sort(
-            ["PAdjust", "PValue", "FoldEnrichment"],
-            descending=[False, False, True],
+            ["PAdjust", "PValue", "FoldEnrichment", col_terms],
+            descending=[False, False, True, False],
         )
         .select(
             [
