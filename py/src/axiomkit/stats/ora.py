@@ -107,18 +107,6 @@ def calculate_ora(
     Over-representation analysis (ORA) using hypergeometric test.
 
     Notes:
-        - Background universe:
-            - If ``background_elements`` is None, the universe is inferred from ``df``
-            (all unique elements present in the mapping table).
-            - If ``background_elements`` is provided,
-            BgTotal is ``len(background_elements)`` and the mapping table is restricted to those elements.
-            The provided universe may include elements not present in ``df`` (elements without any mapping);
-            those elements contribute to BgTotal but not to BgHits.
-        - Foreground definition:
-            - The effective foreground used in counting and in FgTotal is ``foreground_elements ∩ background_elements``.
-        - Multiple testing correction:
-            `rule_p_adjust="bh"` applies Benjamini–Hochberg FDR;
-            `"bonferroni"` applies Bonferroni; None skips adjustment (PAdjust == PValue).
         - Statistical model (per term):
             - Universe size: M = BgTotal
             - Number of "success" states in universe: n = BgHits
@@ -127,24 +115,40 @@ def calculate_ora(
             - P-value is computed as P(X >= k) where X ~ Hypergeometric(M, n, N)
 
     Args:
-        df (pl.DataFrame | pl.LazyFrame): DataFrame with at least two columns: col_elements and col_terms
+        df (pl.DataFrame | pl.LazyFrame): DataFrame with at least two columns: ``col_elements`` and ``col_terms``.
         col_elements (str, optional): Column name for elements. Defaults to "ElementId".
         col_terms (str, optional): Column name for terms. Defaults to "TermId".
-        foreground_elements (set[str], optional): Foreground elements.
-        background_elements (set[str] | None, optional): Background elements.
-            If None, the universe is inferred from `df`.
-            If provided, the mapping is restricted to these elements.
-            Defaults to None.
+        foreground_elements (set[str]): Foreground elements.
+            The effective foreground used in counting and in ``FgTotal`` is ``foreground_elements ∩ background_elements``.
+        background_elements (set[str] | None, optional): Background elements. Defaults to None.
+            - If None, the universe is inferred from `df` (all unique elements present in the mapping table);
+            - If provided, the mapping is restricted to these elements. 
+                `BgTotal` is ``len(background_elements)`` and the mapping table is restricted to those elements.
+                The provided universe may include elements not present in ``df`` (elements without any mapping),
+                those elements contribute to ``BgTotal`` but not to ``BgHits``.
         rule_p_adjust (Literal["bh", "bonferroni"] | None, optional): Method for p-value adjustment. Defaults to "bh".
+            - "bh": Benjamini–Hochberg FDR;
+            - "bonferroni": Bonferroni correction;
+            - None: no adjustment (PAdjust == PValue).
         thr_bg_hits_min (int, optional): Minimum number of background hits to consider a term. Defaults to 0.
         thr_fg_hits_min (int, optional): Minimum number of foreground hits to consider a term. Defaults to 0.
         thr_p_value (float, optional): P-value threshold for significance. Defaults to 0.05.
         thr_p_adjust (float, optional): Adjusted p-value threshold for significance. Defaults to 1.0.
-        if_keep_bg_members (bool, optional): Whether to keep background members in the result. Defaults to False.
         if_keep_fg_members (bool, optional): Whether to keep foreground members in the result. Defaults to True.
+        if_keep_bg_members (bool, optional): Whether to keep background members in the result. Defaults to False.
 
     Returns:
-        pl.DataFrame: DataFrame with ORA results
+        pl.DataFrame: DataFrame with ORA results and columns:
+            - Column named by `col_terms` (default: `TermId`): Term identifier
+            - `FgHits`: Number of foreground hits
+            - `FgTotal`: Total number of foreground elements
+            - `BgHits`: Number of background hits
+            - `BgTotal`: Total number of background elements
+            - `FoldEnrichment`: Fold enrichment of foreground hits over background hits
+            - `PValue`: Raw p-value from hypergeometric test
+            - `PAdjust`: Adjusted p-value
+            - `FgMembers` (optional): List of foreground members for each term
+            - `BgMembers` (optional): List of background members for each term
 
     Examples:
         >>> import polars as pl
@@ -213,16 +217,16 @@ def calculate_ora(
 
     # #tag checkDf
     lf = df.lazy() if isinstance(df, pl.DataFrame) else df
-    lf_pairs = lf.select([col_elements, col_terms]).unique([col_elements, col_terms])
+    lf_mappings = lf.select([col_elements, col_terms]).unique([col_elements, col_terms])
 
     # #tag checkConsistency
     if background_elements is None:
-        lf_bg_elements = lf_pairs.select(col_elements).unique()
+        lf_bg_elements = lf_mappings.select(col_elements).unique()
     else:
         lf_bg_elements = pl.LazyFrame(
             {col_elements: pl.Series(list(background_elements), dtype=pl.Utf8)}
         ).unique()
-        lf_pairs = lf_pairs.join(lf_bg_elements, on=col_elements, how="inner")
+        lf_mappings = lf_mappings.join(lf_bg_elements, on=col_elements, how="inner")
 
     lf_fg_elements = pl.LazyFrame(
         {col_elements: pl.Series(list(foreground_elements), dtype=pl.Utf8)}
@@ -230,13 +234,13 @@ def calculate_ora(
 
     lf_fg_in_bg = lf_fg_elements.join(lf_bg_elements, on=col_elements, how="inner")
 
-    df_totals = (
+    df_total_counts = (
         lf_bg_elements.select(pl.len().alias("BgTotal"))
         .join(lf_fg_in_bg.select(pl.len().alias("FgTotal")), how="cross")
         .collect(engine="streaming")
     )
-    n_bg_total = int(df_totals["BgTotal"][0])
-    n_fg_total = int(df_totals["FgTotal"][0])
+    n_bg_total = int(df_total_counts["BgTotal"][0])
+    n_fg_total = int(df_total_counts["FgTotal"][0])
 
     if n_fg_total == 0:
         logger.warning(
@@ -244,7 +248,7 @@ def calculate_ora(
         )
         return df_empty
 
-    lf_status = lf_pairs.join(
+    lf_mappings_marked = lf_mappings.join(
         lf_fg_in_bg.select(col_elements).with_columns(pl.lit(True).alias("IsFg")),
         on=col_elements,
         how="left",
@@ -254,8 +258,8 @@ def calculate_ora(
     ############################################################
     # #region calculateCounts
 
-    df_results = (
-        lf_status.group_by(col_terms)
+    df_ora = (
+        lf_mappings_marked.group_by(col_terms)
         .agg(
             BgHits=pl.col(col_elements).n_unique(),
             FgHits=pl.col(col_elements).filter(pl.col("IsFg")).n_unique(),
@@ -275,7 +279,7 @@ def calculate_ora(
         .collect(engine="streaming")
     )
 
-    if df_results.height == 0:
+    if df_ora.height == 0:
         logger.warning(
             f"""
             No terms pass filters.
@@ -293,8 +297,8 @@ def calculate_ora(
     ############################################################
     # #region calculatePValues
     nd_p_vals = _calculate_hypergeometric_right_tail_pvalue(
-        fg_hits=df_results["FgHits"].to_numpy(),
-        bg_hits=df_results["BgHits"].to_numpy(),
+        fg_hits=df_ora["FgHits"].to_numpy(),
+        bg_hits=df_ora["BgHits"].to_numpy(),
         bg_total=n_bg_total,
         fg_total=n_fg_total,
     )
@@ -303,12 +307,12 @@ def calculate_ora(
         case "bh":
             nd_p_adj = _calculate_bh_fdr(nd_p_vals)
         case "bonferroni":
-            nd_p_adj = np.minimum(nd_p_vals * df_results.height, 1.0)
+            nd_p_adj = np.minimum(nd_p_vals * df_ora.height, 1.0)
         case _:
             nd_p_adj = nd_p_vals
 
-    df_results = (
-        df_results.with_columns(
+    df_ora = (
+        df_ora.with_columns(
             pl.Series(name="PValue", values=nd_p_vals, dtype=pl.Float64),
             pl.Series(name="PAdjust", values=nd_p_adj, dtype=pl.Float64),
         )
@@ -337,11 +341,11 @@ def calculate_ora(
     # #endregion
     ############################################################
     # #region calculateMembers
-    if df_results.height > 0 and (if_keep_bg_members or if_keep_fg_members):
-        set_sign_terms = set(df_results[col_terms].to_list())
+    if df_ora.height > 0 and (if_keep_bg_members or if_keep_fg_members):
+        set_sign_terms = set(df_ora[col_terms].to_list())
 
         df_members = (
-            lf_status.filter(pl.col(col_terms).is_in(set_sign_terms))
+            lf_mappings_marked.filter(pl.col(col_terms).is_in(set_sign_terms))
             .group_by(col_terms)
             .agg(
                 *(
@@ -362,8 +366,8 @@ def calculate_ora(
             )
             .collect(engine="streaming")
         )
-        df_results = df_results.join(df_members, on=col_terms, how="left")
+        df_ora = df_ora.join(df_members, on=col_terms, how="left")
     # #endregion
     ############################################################
 
-    return df_results
+    return df_ora
