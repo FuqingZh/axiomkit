@@ -178,9 +178,15 @@ def write_parquet_dataset(
         size_mib_per_row_group_max (int, optional):
             The maximum size of each row group in MiB.
             Defaults to 32 MiB.
+        size_bytes_hash (int, optional):
+            The size in bytes of the hash suffix used when truncating long partition column values.
+            Defaults to 8 bytes.
         if_overwrite (bool, optional):
             Whether to overwrite the output directory if it already exists.
             Defaults to True.
+        dir_allowed (Path | None, optional):
+            If provided, restricts overwriting to within this allowed directory.
+            Defaults to None.
 
     Raises:
         ValueError: If the specified partition column is not found in the DataFrame.
