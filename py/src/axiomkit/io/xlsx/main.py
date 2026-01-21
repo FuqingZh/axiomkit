@@ -384,9 +384,9 @@ class XlsxFormatter:
         if_merge_header: bool = True,
         if_keep_na: bool = False,
         if_autofit_columns: bool = True,
-        lim_max_rows_autofit: int | None = 20_000,
-        lim_min_width_autofit_cell: int = 8,
-        lim_max_width_autofit_cell: int = 60,
+        lim_inferred_rows_autofit_max: int | None = 20_000,
+        lim_width_autofit_cell_min: int = 8,
+        lim_width_autofit_cell_max: int = 60,
         padding_autofit_width: int = 2,
         addons: Sequence[XlsxAddon] = (),
     ) -> Self:
@@ -634,8 +634,8 @@ class XlsxFormatter:
 
                         # Update width estimates (bounded by num_autofit_rows_max).
                         if if_autofit_columns and (
-                            lim_max_rows_autofit is None
-                            or n_rows_seen_for_autofit < lim_max_rows_autofit
+                            lim_inferred_rows_autofit_max is None
+                            or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
                         ):
                             for _col_idx, _cell_val in enumerate(l_row_vals):
                                 l_col_width_lens[_col_idx] = max(
@@ -665,8 +665,8 @@ class XlsxFormatter:
                     for _row_idx_chunk, _row_val in enumerate(_df_chunk.iter_rows()):
                         for _col_idx, _col_val in enumerate(_row_val):
                             if if_autofit_columns and (
-                                lim_max_rows_autofit is None
-                                or n_rows_seen_for_autofit < lim_max_rows_autofit
+                                lim_inferred_rows_autofit_max is None
+                                or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
                             ):
                                 l_col_width_lens[_col_idx] = max(
                                     l_col_width_lens[_col_idx],
@@ -688,15 +688,15 @@ class XlsxFormatter:
                             )
 
                         if if_autofit_columns and (
-                            lim_max_rows_autofit is None
-                            or n_rows_seen_for_autofit < lim_max_rows_autofit
+                            lim_inferred_rows_autofit_max is None
+                            or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
                         ):
                             n_rows_seen_for_autofit += 1
 
             # Apply autofit widths at the end to avoid overriding formats mid-write.
             if if_autofit_columns and df_slice_.width > 0:
-                n_min = max(1, int(lim_min_width_autofit_cell))
-                n_max = min(255, max(n_min, int(lim_max_width_autofit_cell)))
+                n_min = max(1, int(lim_width_autofit_cell_min))
+                n_max = min(255, max(n_min, int(lim_width_autofit_cell_max)))
                 n_pad = max(0, int(padding_autofit_width))
                 for _col_idx in range(df_slice_.width):
                     n_w = min(n_max, max(n_min, l_col_width_lens[_col_idx] + n_pad))
