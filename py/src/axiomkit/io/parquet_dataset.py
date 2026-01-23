@@ -307,19 +307,12 @@ def write_parquet_dataset(
         n_rows_per_row_group_max, max(10_000, n_rows_per_file_max // 2)
     )
 
-    _scheme_partitioning = (
-        pl.PartitionMaxSize(
-            base_path=dir_out,
-            max_size=n_rows_per_file_max,
-        )
-        if cols_partitioning is None
-        else pl.PartitionByKey(
-            base_path=dir_out,
-            by=cols_partitioning,
-        )
-    )
     df.sink_parquet(
-        _scheme_partitioning,
+        pl.PartitionBy(
+            base_path=dir_out,
+            key=cols_partitioning,
+            max_rows_per_file=n_rows_per_file_max,
+        ),
         compression="zstd",
         compression_level=lvl_compression,
         data_page_size=1 << 20,
