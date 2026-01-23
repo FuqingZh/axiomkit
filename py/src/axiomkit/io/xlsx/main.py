@@ -118,7 +118,8 @@ class XlsxFormatter:
     ) -> None:
         self.close()
 
-    def get_default_xlsx_formats(self):
+    @staticmethod
+    def get_default_xlsx_formats():
         return DEFAULT_XLSX_FORMATS
 
     def close(self) -> None:
@@ -666,7 +667,8 @@ class XlsxFormatter:
                         for _col_idx, _col_val in enumerate(_row_val):
                             if if_autofit_columns and (
                                 lim_inferred_rows_autofit_max is None
-                                or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
+                                or n_rows_seen_for_autofit
+                                < lim_inferred_rows_autofit_max
                             ):
                                 l_col_width_lens[_col_idx] = max(
                                     l_col_width_lens[_col_idx],

@@ -1,7 +1,7 @@
 Package: axiomkit
 Type: Package
 Title: Personal Portable Engineering Toolkit
-Version: 0.1.0
+Version: 0.0.001
 Authors@R: person("Fuqing Zhang", role = c("aut", "cre"), email = "fu.qing.zhang.work@gmail.com")
 Description: Personal, portable engineering toolkit.
 License: MIT
