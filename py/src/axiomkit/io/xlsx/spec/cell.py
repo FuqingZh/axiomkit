@@ -40,7 +40,11 @@ class SpecCellFormat:
         return SpecCellFormat(**data)
 
     def to_xlsxwriter(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if v is not None}
+        return {
+            k: getattr(self, k)
+            for k in self.__dataclass_fields__
+            if getattr(self, k) is not None
+        }
 
 @dataclass(frozen=True, slots=True)
 class SpecCellBorder:
