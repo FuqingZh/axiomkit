@@ -105,10 +105,22 @@ def write_cell_with_format(
     col_idx: int,
     value: Any,
     if_is_numeric_col: bool,
-    if_keep_na: bool,
+    if_keep_missing_values: bool,
 ):
     if value is None:
-        ws.write_blank(row=row_idx, col=col_idx, blank=None)
+        if not if_keep_missing_values:
+            ws.write_blank(row=row_idx, col=col_idx, blank=None)
+            return
+        c_cell_val = "NA"
+        cfg_fmt_cell = _get_cell_format_override(
+            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
+        )
+        ws.write_string(
+            row=row_idx,
+            col=col_idx,
+            string=c_cell_val,
+            cell_format=cfg_fmt_cell,
+        )
         return
 
     if not if_is_numeric_col:
@@ -126,7 +138,7 @@ def write_cell_with_format(
         return
 
     if not math.isfinite(n_cell_val := float(value)):
-        if not if_keep_na:
+        if not if_keep_missing_values:
             ws.write_blank(row=row_idx, col=col_idx, blank=None)
             return
 

@@ -11,12 +11,18 @@ def convert_nan_inf_to_str(x: float) -> str:
         raise ValueError("Input is neither NaN nor Inf.")
 
 
-def convert_cell_value(value: Any, if_is_numeric_col: bool, if_keep_na: bool) -> object:
+def convert_cell_value(
+    value: Any, if_is_numeric_col: bool, if_keep_missing_values: bool
+) -> object:
     if value is None:
-        return None
+        return "NA" if if_keep_missing_values else None
     if not if_is_numeric_col:
         return str(value)
     if not math.isfinite(n_cell_float_value := float(value)):
-        return convert_nan_inf_to_str(n_cell_float_value) if if_keep_na else None
+        return (
+            convert_nan_inf_to_str(n_cell_float_value)
+            if if_keep_missing_values
+            else None
+        )
 
     return n_cell_float_value

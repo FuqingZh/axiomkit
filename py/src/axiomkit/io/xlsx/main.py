@@ -160,7 +160,7 @@ class XlsxFormatter:
         *,
         if_is_numeric_col: bool,
         if_is_integer_col: bool,
-        if_keep_na: bool,
+        if_keep_missing_values: bool,
     ) -> int:
         """Estimate display string length for column width calculation.
 
@@ -172,7 +172,7 @@ class XlsxFormatter:
           by this writer (int: "0", dec: "0.0000").
         """
         if value is None:
-            return 0
+            return len("NA") if if_keep_missing_values else 0
 
         s = str(value)
         n_ascii = sum(1 for _chr in s if ord(_chr) < 128)
@@ -189,7 +189,7 @@ class XlsxFormatter:
             return n_estimated_string_length
 
         if not math.isfinite(n_val):
-            if not if_keep_na:
+            if not if_keep_missing_values:
                 return 0
             return len(convert_nan_inf_to_str(n_val))
 
@@ -382,9 +382,10 @@ class XlsxFormatter:
         cols_decimal: Sequence[ColRef] | None | Literal[False] = None,
         col_freeze: int = 0,
         row_freeze: int | None = None,
-        if_merge_header: bool = True,
-        if_keep_na: bool = False,
+        if_merge_header: bool = False,
+        if_keep_missing_values: bool = False,
         if_autofit_columns: bool = True,
+        rule_autofit_columns: Literal["header", "body", "all"] = "header",
         lim_inferred_rows_autofit_max: int | None = 20_000,
         lim_width_autofit_cell_min: int = 8,
         lim_width_autofit_cell_max: int = 60,
@@ -564,18 +565,21 @@ class XlsxFormatter:
             # Note: for horizontally merged headers, only the left-most cell holds
             # the text. This is acceptable because the merged region spans multiple
             # columns.
-            l_col_width_lens: list[int] = [0] * df_slice_.width
+            dict_col_widths: dict[str, list[int]] = {
+                "header": [0] * df_slice_.width,
+                "body": [0] * df_slice_.width,
+            }
             if if_autofit_columns and df_slice_.width > 0:
                 for _col_idx in range(df_slice_.width):
                     for _row in l_header_grid_slice_:
-                        if c := _row[_col_idx]:
-                            l_col_width_lens[_col_idx] = max(
-                                l_col_width_lens[_col_idx],
+                        if c_cell_value := _row[_col_idx]:
+                            dict_col_widths["header"][_col_idx] = max(
+                                dict_col_widths["header"][_col_idx],
                                 self._estimate_width_len(
-                                    c,
+                                    c_cell_value,
                                     if_is_numeric_col=False,
                                     if_is_integer_col=False,
-                                    if_keep_na=if_keep_na,
+                                    if_keep_missing_values=if_keep_missing_values,
                                 ),
                             )
 
@@ -628,7 +632,7 @@ class XlsxFormatter:
                             convert_cell_value(
                                 value=_col_val,
                                 if_is_numeric_col=l_is_numeric_col[_col_idx],
-                                if_keep_na=if_keep_na,
+                                if_keep_missing_values=if_keep_missing_values,
                             )
                             for _col_idx, _col_val in enumerate(_row_val)
                         ]
@@ -639,13 +643,13 @@ class XlsxFormatter:
                             or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
                         ):
                             for _col_idx, _cell_val in enumerate(l_row_vals):
-                                l_col_width_lens[_col_idx] = max(
-                                    l_col_width_lens[_col_idx],
+                                dict_col_widths["body"][_col_idx] = max(
+                                    dict_col_widths["body"][_col_idx],
                                     self._estimate_width_len(
                                         _cell_val,
                                         if_is_numeric_col=l_is_numeric_col[_col_idx],
                                         if_is_integer_col=l_is_integer_col[_col_idx],
-                                        if_keep_na=if_keep_na,
+                                        if_keep_missing_values=if_keep_missing_values,
                                     ),
                                 )
                             n_rows_seen_for_autofit += 1
@@ -670,13 +674,13 @@ class XlsxFormatter:
                                 or n_rows_seen_for_autofit
                                 < lim_inferred_rows_autofit_max
                             ):
-                                l_col_width_lens[_col_idx] = max(
-                                    l_col_width_lens[_col_idx],
+                                dict_col_widths["body"][_col_idx] = max(
+                                    dict_col_widths["body"][_col_idx],
                                     self._estimate_width_len(
                                         _col_val,
                                         if_is_numeric_col=l_is_numeric_col[_col_idx],
                                         if_is_integer_col=l_is_integer_col[_col_idx],
-                                        if_keep_na=if_keep_na,
+                                        if_keep_missing_values=if_keep_missing_values,
                                     ),
                                 )
                             write_cell_with_format(
@@ -686,7 +690,7 @@ class XlsxFormatter:
                                 col_idx=_col_idx,
                                 value=_col_val,
                                 if_is_numeric_col=l_is_numeric_col[_col_idx],
-                                if_keep_na=if_keep_na,
+                                if_keep_missing_values=if_keep_missing_values,
                             )
 
                         if if_autofit_columns and (
@@ -701,11 +705,22 @@ class XlsxFormatter:
                 n_max = min(255, max(n_min, int(lim_width_autofit_cell_max)))
                 n_pad = max(0, int(padding_autofit_width))
                 for _col_idx in range(df_slice_.width):
-                    n_w = min(n_max, max(n_min, l_col_width_lens[_col_idx] + n_pad))
+                    n_col_width_recorded_ = (
+                        dict_col_widths[rule_autofit_columns][_col_idx]
+                        if rule_autofit_columns != "all"
+                        else max(
+                            dict_col_widths["header"][_col_idx],
+                            dict_col_widths["body"][_col_idx],
+                        )
+                    )
+                    n_col_width_final_ = min(
+                        n_max,
+                        max(n_min, n_col_width_recorded_ + n_pad),
+                    )
                     cfg_worksheet_.set_column(
                         first_col=_col_idx,
                         last_col=_col_idx,
-                        width=n_w,
+                        width=n_col_width_final_,
                         cell_format=l_fmt_by_col_[_col_idx],
                     )
 
