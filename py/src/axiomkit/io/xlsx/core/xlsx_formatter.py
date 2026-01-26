@@ -10,9 +10,9 @@ import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from .conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
-from .hook import XlsxAddon, addon_requires_cell_write, write_cell_with_format
-from .service import (
+from ..conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
+from ..hook import XlsxAddon, addon_requires_cell_write, write_cell_with_format
+from ..service import (
     create_row_chunks,
     find_contiguous_ranges,
     generate_sheet_slices,
@@ -23,8 +23,8 @@ from .service import (
     remove_vertical_run_text,
     track_horizontal_merge_cells,
 )
-from .spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
-from .util import (
+from ..spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
+from ..util import (
     assert_no_duplicate_columns,
     convert_cell_value,
     convert_nan_inf_to_str,
