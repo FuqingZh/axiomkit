@@ -155,7 +155,7 @@ def write_parquet_dataset(
     size_mib_per_file_max: int = 8 * 16,
     size_mib_per_row_group_max: int = 8 * 4,
     size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
-    if_overwrite: bool = True,
+    if_overwrite: bool = False,
     dir_allowed: Path | None = None,
 ) -> None:
     """
@@ -183,7 +183,7 @@ def write_parquet_dataset(
             Defaults to 8 bytes.
         if_overwrite (bool, optional):
             Whether to overwrite the output directory if it already exists.
-            Defaults to True.
+            Defaults to False.
         dir_allowed (Path | None, optional):
             If provided, restricts overwriting to within this allowed directory.
             Defaults to None.
