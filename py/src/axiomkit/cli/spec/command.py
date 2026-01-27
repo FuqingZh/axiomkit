@@ -110,7 +110,7 @@ class RegistryCommand:
             >>> def build_list(p: argparse.ArgumentParser) -> None:
             ...     p.add_argument("--in", default="")
             >>> registry = RegistryCommand()
-            >>> registry.register(CommandSpec(id="list", help="", args_builder=build_list, aliases=("ls",)))
+            >>> registry.register(SpecCommand(id="list", help="", arg_builder=build_list, aliases=("ls",)))
             Suppose ``ns.stages`` currently contains the alias ``"ls"`` and that
             ``"ls"`` has been registered as an alias for the canonical id
             ``"list"``. Then:
@@ -144,7 +144,7 @@ class RegistryCommand:
         Build argparse subparsers for all registered commands, creating a
         subcommand interface on the given parser.
 
-        Each registered :class:`CommandSpec` becomes a subcommand. Any aliases
+        Each registered :class:`SpecCommand` becomes a subcommand. Any aliases
         registered for a command id are also exposed as subcommands that execute
         the same underlying command.
 
