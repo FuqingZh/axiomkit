@@ -1,5 +1,7 @@
-from .console import CliHeadings
-from .parser import (
+from functools import lru_cache
+
+from .service import build_param_registry
+from .spec import (
     ActionCommandPrefix,
     ActionHexColor,
     ActionNumericRange,
@@ -13,17 +15,29 @@ from .parser import (
     SpecParam,
 )
 
+
+@lru_cache(maxsize=1)
+def default_param_registry() -> RegistryParam:
+    """Get the default parameter registry."""
+    cls_registry = RegistryParam()
+    build_param_registry(cls_registry)
+    return cls_registry
+
+
 __all__ = [
-    "CliHeadings",
+    "BuilderParser",
+    "SmartFormatter",
+    # Actions
     "ActionCommandPrefix",
     "ActionHexColor",
     "ActionNumericRange",
     "ActionPath",
-    "BuilderParser",
-    "SmartFormatter",
+    # Specs
     "SpecParam",
+    # Enums
     "EnumParamKey",
     "EnumGroupKey",
+    # Registry
     "RegistryParam",
     "RegistryCommand",
 ]
