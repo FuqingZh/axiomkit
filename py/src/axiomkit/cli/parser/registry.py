@@ -5,8 +5,7 @@ from typing import Protocol, Self, cast
 from loguru import logger
 
 from .base import ArgAdder, RegistryCore, SmartFormatter
-from .enum import EnumGroupKey, EnumScope
-from .spec import SpecCommand, SpecParam
+from .spec import EnumGroupKey, EnumScope, SpecCommand, SpecParam
 
 
 class RegistryParser(Protocol):
