@@ -7,8 +7,9 @@ from typing import Any, cast
 
 from loguru import logger
 
-from .core import ArgAdder, RegistryCore
-from .parser import BuilderParser, EnumGroupKey
+from .base import ArgAdder, RegistryCore
+from .group import EnumGroupKey
+from .parser import BuilderParser
 
 
 class EnumMethodAnova(StrEnum):

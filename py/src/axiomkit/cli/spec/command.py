@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from .core import RegistryCore, SmartFormatter
+from .base import RegistryCore, SmartFormatter
 
 BuilderArg = Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
 
