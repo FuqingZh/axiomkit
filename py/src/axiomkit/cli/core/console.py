@@ -5,7 +5,7 @@ from rich.style import Style
 
 
 @dataclass(frozen=True, slots=True)
-class SpecCliTheme:
+class CliTheme:
     h1: str = "#7C3AED"
     h2: str = "#00FFFF"
     h3: str = "#4ADE80"
@@ -13,10 +13,10 @@ class SpecCliTheme:
 
 class CliHeadings:
     def __init__(
-        self, *, console: Console | None = None, theme: SpecCliTheme | None = None
+        self, *, console: Console | None = None, theme: CliTheme | None = None
     ):
         self.console = console or Console()
-        self.theme = theme or SpecCliTheme()
+        self.theme = theme or CliTheme()
 
     def h1(self, text: str) -> None:
         self.console.rule(
