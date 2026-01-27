@@ -10,30 +10,28 @@ import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from ..conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
-from ..hook import XlsxAddon, addon_requires_cell_write, write_cell_with_format
-from ..service import (
+from .addon import XlsxAddon, addon_requires_cell_write, write_cell_with_format
+from .conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
+from .spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
+from .util import (
+    assert_no_duplicate_columns,
+    convert_cell_value,
+    convert_nan_inf_to_str,
     create_row_chunks,
     find_contiguous_ranges,
     generate_sheet_slices,
     get_row_chunk_size,
+    get_sorted_indices_from_refs,
     normalize_sheet_name,
     plan_horizontal_merges,
     plan_vertical_visual_merge_borders,
     remove_vertical_run_text,
+    to_polars,
     track_horizontal_merge_cells,
 )
-from ..spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
-from ..util import (
-    assert_no_duplicate_columns,
-    convert_cell_value,
-    convert_nan_inf_to_str,
-    get_sorted_indices_from_refs,
-    to_polars,
-)
 
 
-class XlsxFormatter:
+class XlsxWriter:
     """
     Helper class for writing tabular data to an XLSX workbook using
     ``xlsxwriter`` with sensible defaults and formatting utilities.
@@ -47,9 +45,9 @@ class XlsxFormatter:
     or automatically when used in a ``with`` block::
 
         from pathlib import Path
-        from axiomkit import XlsxFormatter
+        from axiomkit import XlsxWriter
 
-        with XlsxFormatter("report.xlsx") as xf:
+        with XlsxWriter("report.xlsx") as xf:
             # Use xf methods to add sheets and write data frames / tables
             ...
 
@@ -110,7 +108,7 @@ class XlsxFormatter:
         self._existing_sheet_names: set[str] = set()
         self._reports: list[SpecXlsxReport] = []
 
-    def __enter__(self) -> "XlsxFormatter":
+    def __enter__(self) -> "XlsxWriter":
         return self
 
     def __exit__(

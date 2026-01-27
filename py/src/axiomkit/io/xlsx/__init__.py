@@ -1,4 +1,4 @@
-from .core import XlsxFormatter
 from .spec import SpecCellFormat
+from .writer import XlsxWriter
 
-__all__ = ["XlsxFormatter", "SpecCellFormat"]
+__all__ = ["XlsxWriter", "SpecCellFormat"]
