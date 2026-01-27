@@ -13,14 +13,16 @@ from typing import Any, NamedTuple, TypeVar
 from loguru import logger
 
 
-class WorkerSpec(NamedTuple):
+################################################################################
+# #region WorkerDistribution
+class SpecWorkerDistribution(NamedTuple):
     workers: int
     threads_per_worker: int
 
 
-def split_workers(
+def derive_worker_distribution(
     threads: int, per_threads_min: int = 2, per_threads_max: int = 16, desc: str = ""
-) -> WorkerSpec:
+) -> SpecWorkerDistribution:
     """
     Splits the total number of threads into a reasonable number of workers and threads per worker for parallel processing.
     1. Each worker has at least per_threads_min threads and at most per_threads_max threads.
@@ -38,16 +40,18 @@ def split_workers(
         per_threads_max (int, optional): Maximum threads per worker. Defaults to 16.
 
     Returns:
-        WorkerSpec: A specification of the number of workers and threads per worker.
+        SpecWorkerDistribution: A specification of the number of workers and threads per worker.
     """
     n_threads = max(per_threads_min, min(per_threads_max, threads)) or 1
     n_workers = max(1, threads // n_threads) or 1
     logger.debug(f"Workers for `{desc}`: {n_workers}, threads per worker: {n_threads}")
-    return WorkerSpec(workers=n_workers, threads_per_worker=n_threads)
+    return SpecWorkerDistribution(workers=n_workers, threads_per_worker=n_threads)
 
-
+# #endregion
+################################################################################
+# #region StepRunner
 @dataclass(frozen=True)
-class StepResult:
+class SpecStepResult:
     return_code: int
     seconds: float
     hours: float
@@ -62,7 +66,7 @@ def run_step(
     file_log: Path | None = None,
     lines_tail: int = 100,
     timeout: float | None = None,
-) -> StepResult:
+) -> SpecStepResult:
     """
     Run a shell command as a subprocess, stream its output to a log file, and return execution results.
 
@@ -77,7 +81,7 @@ def run_step(
         CalledProcessError: If the subprocess exits with a non-zero return code.
 
     Returns:
-        StepResult(return_code, seconds, hours, cmd, file_log, tail): An object containing the return code, elapsed time, command, log file path, and output tail of the executed step.
+        SpecStepResult(return_code, seconds, hours, cmd, file_log, tail): An object containing the return code, elapsed time, command, log file path, and output tail of the executed step.
     """
     t0 = time.perf_counter()
     l_cmd = [str(i) for i in cmd]
@@ -151,7 +155,7 @@ def run_step(
             raise e
         else:
             logger.success(f"Done: [{title}] in {t1:.1f}s")
-            return StepResult(
+            return SpecStepResult(
                 return_code=rc,
                 seconds=t1,
                 hours=t1 / 3600,
@@ -182,11 +186,13 @@ def run_step(
             with suppress(Exception):
                 p.kill()
 
-
+# #endregion
+################################################################################
+# #region JobRunner
 T = TypeVar("T")  # Generic type for job items
 
 
-class JobResult(NamedTuple):
+class SpecJobResult(NamedTuple):
     num_done: int
     num_failed: int
     jobs_failed: list[tuple[str, str]]
@@ -201,7 +207,7 @@ def run_jobs(
     if_raise_interrupt: bool = False,
     if_raise_failure: bool = True,
     file_failed_log: Path | None = None,
-) -> JobResult:
+) -> SpecJobResult:
     """
     Run a collection of jobs using a ThreadPoolExecutor and collect failures.
 
@@ -223,7 +229,7 @@ def run_jobs(
 
     l_jobs = list(jobs)
     if not l_jobs:
-        return JobResult(num_done=0, num_failed=0, jobs_failed=[])
+        return SpecJobResult(num_done=0, num_failed=0, jobs_failed=[])
 
     l_failed: list[tuple[str, str]] = []
     n_done = 0
@@ -275,7 +281,7 @@ def run_jobs(
             except TypeError:
                 cls_executor.shutdown(wait=False)
 
-    cls_job_result = JobResult(
+    cls_job_result = SpecJobResult(
         num_done=n_done,
         num_failed=len(l_failed),
         jobs_failed=l_failed,
@@ -296,3 +302,6 @@ def run_jobs(
             f"[{title}] {cls_job_result.num_failed}/{n_total} tasks failed. See {file_failed_log} for details."
         )
     return cls_job_result
+
+# #endregion
+################################################################################
