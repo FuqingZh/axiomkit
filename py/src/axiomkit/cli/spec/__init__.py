@@ -1,6 +1,7 @@
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
+from .base import SmartFormatter
 from .command import RegistryCommand
-from .core import RegistryCore, SmartFormatter
+from .group import EnumGroupKey
 from .param import (
     EnumMethodAnova,
     EnumMethodPAdjust,
@@ -9,7 +10,7 @@ from .param import (
     RegistryParam,
     SpecParam,
 )
-from .parser import BuilderParser, EnumGroupKey
+from .parser import BuilderParser
 
 __all__ = [
     "BuilderParser",
@@ -28,7 +29,6 @@ __all__ = [
     "EnumParamKey",
     "EnumGroupKey",
     # Registry
-    "RegistryCore",
     "RegistryCommand",
     "RegistryParam",
 ]
