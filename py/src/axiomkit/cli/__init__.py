@@ -10,6 +10,7 @@ from .parser import (
     RegistryCommand,
     RegistryParam,
     SmartFormatter,
+    SpecCommand,
     SpecParam,
 )
 
@@ -21,6 +22,7 @@ __all__ = [
     "ActionPath",
     "BuilderParser",
     "SmartFormatter",
+    "SpecCommand",
     "SpecParam",
     "EnumParamKey",
     "EnumGroupKey",

@@ -1,6 +1,6 @@
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
 from .base import SmartFormatter
-from .command import RegistryCommand
+from .command import RegistryCommand, SpecCommand
 from .group import EnumGroupKey
 from .param import (
     EnumMethodAnova,
@@ -22,6 +22,7 @@ __all__ = [
     "ActionPath",
     # Specs
     "SpecParam",
+    "SpecCommand",
     # Enums
     "EnumMethodAnova",
     "EnumMethodPAdjust",

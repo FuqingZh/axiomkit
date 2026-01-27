@@ -12,6 +12,7 @@ from .spec import (
     RegistryCommand,
     RegistryParam,
     SmartFormatter,
+    SpecCommand,
     SpecParam,
 )
 
@@ -33,6 +34,7 @@ __all__ = [
     "ActionNumericRange",
     "ActionPath",
     # Specs
+    "SpecCommand",
     "SpecParam",
     # Enums
     "EnumParamKey",
