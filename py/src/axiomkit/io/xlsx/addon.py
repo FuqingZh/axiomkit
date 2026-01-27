@@ -7,7 +7,7 @@ import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from ..util.value_convert import convert_nan_inf_to_str
+from .util import convert_nan_inf_to_str
 
 
 class XlsxAddon(Protocol):
