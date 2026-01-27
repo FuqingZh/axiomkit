@@ -1,40 +1,18 @@
 import argparse
-from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Self
+from collections.abc import Mapping, Sequence
+from typing import Protocol, Self, cast
 
-from .base import RegistryCore, SmartFormatter
+from loguru import logger
 
-BuilderArg = Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
+from .base import ArgAdder, RegistryCore, SmartFormatter
+from .enum import EnumGroupKey, EnumScope
+from .spec import SpecCommand, SpecParam
 
 
-@dataclass(frozen=True, slots=True)
-class SpecCommand:
-    """
-    Immutable specification for a CLI command registered in ``RegistryCommand``.
+class RegistryParser(Protocol):
+    parser: argparse.ArgumentParser
 
-    Each instance describes a single command, including:
-
-    - ``id``: canonical command identifier used for registration and lookup.
-    - ``help``: short help string shown in command listings.
-    - ``arg_builder``: callback that configures an ``argparse.ArgumentParser``
-      with this command's arguments and options.
-    - ``entry``: optional entry point (such as a module path or script path)
-      associated with the command.
-    - ``group``: logical group name used to organize commands in the registry.
-    - ``order``: numeric sort key controlling display order within a group.
-    - ``aliases``: additional names that may be resolved to the canonical ``id``.
-    """
-
-    id: str
-    help: str
-    arg_builder: BuilderArg
-    entry: str | Path | None = None
-    group: str = "default"
-    order: int = 0
-    aliases: tuple[str, ...] = ()
-    param_keys: tuple[str, ...] = ()
+    def get_group(self, key: EnumGroupKey | str) -> ArgAdder: ...
 
 
 class RegistryCommand:
@@ -207,3 +185,105 @@ class RegistryCommand:
             spec.arg_builder(sub)
 
         return cls_sub
+
+
+class RegistryParam:
+    def __init__(self) -> None:
+        self._core: RegistryCore[SpecParam] = RegistryCore.new()
+
+    def register(self, spec: SpecParam) -> SpecParam:
+        return self._core.register(spec, aliases=spec.aliases)
+
+    def get(self, key_or_alias: str) -> SpecParam:
+        return self._core.get(key_or_alias)
+
+    def list_specs(
+        self,
+        *,
+        scope: EnumScope | None = None,
+        group: str | None = None,
+        if_sort: bool = True,
+    ) -> list[SpecParam]:
+        if not if_sort:
+            cls_specs = self._core.list_specs(kind_sort="insertion")
+        else:
+            cls_specs = self._core.list_specs(
+                rule_sort=lambda s: (s.group, s.order, s.id)
+            )
+        if scope is not None:
+            cls_specs = [s for s in cls_specs if s.scope == scope]
+        if group is not None:
+            cls_specs = [s for s in cls_specs if s.group == group]
+        return cls_specs
+
+    def apply(
+        self,
+        *,
+        parser_reg: RegistryParser,
+        keys: Sequence[str],
+        reserved_dests: set[str] | None,
+    ) -> None:
+        if reserved_dests is None:
+            reserved_dests = {"command", "_handler"}
+
+        set_existing_dests: set[str] = set()
+
+        parser = parser_reg.parser
+        for _act in getattr(parser, "_actions", []):
+            if isinstance(_dest := getattr(_act, "dest", None), str):
+                set_existing_dests.add(_dest)
+
+        set_existing_flags: set[str] = set()
+        if isinstance(
+            (_osa := getattr(parser, "_option_string_actions", None)), Mapping
+        ):
+            _osa = cast(Mapping[str, object], _osa)
+            set_existing_flags |= set(_osa.keys())
+
+        dict_seen_dests: dict[str, str] = {}
+        dict_seen_flags: dict[str, str] = {}
+        for k in keys:
+            cls_spec_ = self.get(k)
+            if cls_spec_.if_deprecated:
+                logger.warning(
+                    f"Deprecated param: {cls_spec_.id!r}; use {cls_spec_.replace_by!r} instead."
+                )
+            if cls_spec_.arg_builder is None:
+                raise ValueError(
+                    f"`ParamSpec` missing arg `args_builder`: {cls_spec_.id!r}"
+                )
+
+            c_dest_ = cls_spec_.resolved_dest
+            tup_flags_ = cls_spec_.resolved_flags
+
+            if c_dest_ in reserved_dests:
+                raise ValueError(
+                    f"Param dest is reserved: {c_dest_!r} (spec id: {cls_spec_.id!r})"
+                )
+            if c_dest_ in set_existing_dests:
+                raise ValueError(
+                    f"Param dest already exists on parser: {c_dest_!r} (spec id: {cls_spec_.id!r})"
+                )
+            if c_dest_ in dict_seen_dests:
+                raise ValueError(
+                    f"Param dest collision: {c_dest_!r} (spec ids: {dict_seen_dests[c_dest_]!r}, {cls_spec_.id!r})"
+                )
+            dict_seen_dests[c_dest_] = cls_spec_.id
+
+            for _f in tup_flags_:
+                if _f in set_existing_flags:
+                    raise ValueError(
+                        f"Param flag already exists on parser: {_f!r} (spec id: {cls_spec_.id!r})"
+                    )
+                if _f in dict_seen_flags:
+                    raise ValueError(
+                        f"Param flag collision: {_f!r} (spec ids: {dict_seen_flags[_f]!r}, {cls_spec_.id!r})"
+                    )
+                dict_seen_flags[_f] = cls_spec_.id
+
+            cls_group = parser_reg.get_group(cls_spec_.group)
+            cls_spec_.arg_builder(cls_group, cls_spec_)
+
+            # update for this apply-run
+            set_existing_dests.add(c_dest_)
+            set_existing_flags |= set(tup_flags_)
