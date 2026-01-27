@@ -1,20 +1,20 @@
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
-from .base import SmartFormatter
-from .command import RegistryCommand, SpecCommand
-from .group import EnumGroupKey
-from .param import (
+from .base import ArgAdder, SmartFormatter
+from .enum import (
+    DICT_ARG_GROUP_META,
+    EnumGroupKey,
     EnumMethodAnova,
     EnumMethodPAdjust,
     EnumMethodTTest,
     EnumParamKey,
-    RegistryParam,
-    SpecParam,
 )
-from .parser import BuilderParser
+from .registry import RegistryCommand, RegistryParam, SpecParam
+from .spec import SpecCommand
 
 __all__ = [
-    "BuilderParser",
+    "ArgAdder",
     "SmartFormatter",
+    "DICT_ARG_GROUP_META",
     # Actions
     "ActionCommandPrefix",
     "ActionHexColor",

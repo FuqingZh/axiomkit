@@ -27,7 +27,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.CONTRACT_META,
             help="Path to metadata file (JSON)",
             group=EnumGroupKey.CONTRACT,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, action=ActionPath.file(exts=["json"])
             ),
         )
@@ -38,7 +38,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.EXE_RSCRIPT,
             help="Path to Rscript executable",
             group=EnumGroupKey.EXECUTABLES,
-            args_builder=lambda _arg, _spec: _spec.add_argument(_arg, type=str),
+            arg_builder=lambda _arg, _spec: _spec.add_argument(_arg, type=str),
         )
     )
 
@@ -47,7 +47,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.THR_STATS_FOLD_CHANGE,
             help="Override: Fold-change threshold for feature filtering, non-negative float.",
             group=EnumGroupKey.THRESHOLDS,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=float,
                 action=ActionNumericRange.build(min_value=0),
@@ -61,7 +61,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.THR_STATS_MISSING_RATE,
             help="Override: Missing rate threshold for feature filtering, [0,1].",
             group=EnumGroupKey.THRESHOLDS,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=float,
                 action=ActionNumericRange.build(min_value=0, max_value=1),
@@ -75,7 +75,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.THR_STATS_MISSING_COUNT,
             help="Override: Missing count threshold for feature filtering, non-negative integer.",
             group=EnumGroupKey.THRESHOLDS,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
                 action=ActionNumericRange.build(kind_value="int", min_value=0),
@@ -89,7 +89,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.THR_STATS_PVAL,
             help="Override: T-test p-value threshold, [0,1].",
             group=EnumGroupKey.THRESHOLDS,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 action=ActionNumericRange.p_value,
                 default=None,
@@ -101,7 +101,7 @@ def build_param_registry(registry: RegistryParam) -> None:
             id=EnumParamKey.THR_STATS_PADJ,
             help="Override: Adjusted p-value threshold, [0,1].",
             group=EnumGroupKey.THRESHOLDS,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 action=ActionNumericRange.p_value,
                 default=None,
@@ -127,7 +127,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.RULES,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, type=str, choices=EnumMethodPAdjust, default=None
             ),
         )
@@ -149,7 +149,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.RULES,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, type=str, choices=EnumMethodTTest, default=None
             ),
         )
@@ -172,7 +172,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.RULES,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, type=str, choices=EnumMethodAnova, default=None
             ),
         )
@@ -193,7 +193,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.RULES,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, type=str, choices=["none", "log2", "log10", "ln"], default=None
             ),
         )
@@ -221,7 +221,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.PERFORMANCE,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
                 action=ActionNumericRange.build(
@@ -249,7 +249,7 @@ def build_param_registry(registry: RegistryParam) -> None:
                 """
             ),
             group=EnumGroupKey.PERFORMANCE,
-            args_builder=lambda _arg, _spec: _spec.add_argument(
+            arg_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
                 action=ActionNumericRange.build(kind_value="int", min_value=-1),

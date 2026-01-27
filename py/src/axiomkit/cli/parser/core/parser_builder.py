@@ -2,9 +2,13 @@ import argparse
 from dataclasses import dataclass
 from typing import Any
 
-from .base import ArgAdder
-from .group import DICT_ARG_GROUP_META, EnumGroupKey
-from .param import EnumParamKey, RegistryParam
+from ..spec import (
+    DICT_ARG_GROUP_META,
+    ArgAdder,
+    EnumGroupKey,
+    EnumParamKey,
+    RegistryParam,
+)
 
 
 @dataclass(slots=True)

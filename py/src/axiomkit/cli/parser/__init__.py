@@ -1,12 +1,11 @@
 from functools import lru_cache
 
-from .service import build_param_registry
+from .core import build_param_registry, BuilderParser
 from .spec import (
     ActionCommandPrefix,
     ActionHexColor,
     ActionNumericRange,
     ActionPath,
-    BuilderParser,
     EnumGroupKey,
     EnumParamKey,
     RegistryCommand,
