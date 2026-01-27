@@ -5,7 +5,7 @@ description = "Default template for PDM package"
 authors = [
     {name = "Fuqing Zhang", email = "fu.qing.zhang.work@gmail.com"},
 ]
-dependencies = ["polars>=1.37.0", "xlsxwriter>=3.2.9", "loguru>=0.7.3", "numpy>=2.4.1", "scipy>=1.17.0", "pytest>=9.0.2"]
+dependencies = ["polars>=1.37.0", "xlsxwriter>=3.2.9", "loguru>=0.7.3", "numpy>=2.4.1", "scipy>=1.17.0", "pytest>=9.0.2", "pyteomics>=4.7.5"]
 requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
