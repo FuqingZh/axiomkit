@@ -1,4 +1,0 @@
-N_NROWS_EXCEL_MAX = 1_048_576
-N_NCOLS_EXCEL_MAX = 16_384
-N_LEN_EXCEL_SHEET_NAME_MAX = 31
-TUP_EXCEL_ILLEGAL = ("*", ":", "?", "/", "\\", "[", "]")
