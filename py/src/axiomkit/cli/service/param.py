@@ -1,137 +1,117 @@
-from enum import StrEnum
-
-from .actions import NumericRangeAction, PathAction
-from .registry import GroupKey, ParamKey, ParamRegistry, ParamSpec
+from ..spec import (
+    ActionNumericRange,
+    ActionPath,
+    EnumGroupKey,
+    EnumMethodAnova,
+    EnumMethodPAdjust,
+    EnumMethodTTest,
+    EnumParamKey,
+    RegistryParam,
+    SpecParam,
+)
 
 # Reusable param-key groups for commands
 
 
-class MethodAnova(StrEnum):
-    ONE_WAY_POOLED = "one_way_pooled"  # 单因素，等方差
-    ONE_WAY_WELCH = "one_way_welch"  # 单因素，异方差（默认）
-    TWO_WAY_INDEPENDENT = "two_way_independent"  # 双因素，无交互
-    TWO_WAY_INTERACTION = "two_way_interaction"  # 双因素，含交互
-    REPEATED_MEASURES = "repeated_measures"  # 重复测量
-    RANDOM_EFFECTS = "random_effects"  # 随机效应/混合
-
-
-class MethodTTest(StrEnum):
-    NONE = "none"  # 不进行t检验，仅计算FC
-    TWO_SAMPLE_POOLED = "two_sample_pooled"  # 双样本，等方差（Student's t-test）
-    TWO_SAMPLE_WELCH = "two_sample_welch"  # 双样本，异方差（Welch's t-test）
-    ONE_SAMPLE = "one_sample"  # 单样本，均值与0比较
-    PAIRED = "paired"  # 配对双样本
-
-
-class MethodPAdjust(StrEnum):
-    NONE = "none"  # 不进行多重检验校正
-    BH = "BH"  # Benjamini-Hochberg (默认)
-    BY = "BY"  # Benjamini-Yekutieli
-    HOLM = "holm"  # Holm
-    HOCHBERG = "hochberg"  # Hochberg
-    HOMMEL = "hommel"  # Hommel
-    BONFERRONI = "bonferroni"  # Bonferroni
-
-
-THR_TTEST_PARAMS: tuple[ParamKey, ...] = (
-    ParamKey.THR_STATS_PVAL,
-    ParamKey.THR_STATS_PADJ,
-    ParamKey.RULES_STATS_TTEST,
+THR_TTEST_PARAMS: tuple[EnumParamKey, ...] = (
+    EnumParamKey.THR_STATS_PVAL,
+    EnumParamKey.THR_STATS_PADJ,
+    EnumParamKey.RULES_STATS_TTEST,
 )
 
 
-def build_param_registry(registry: ParamRegistry) -> None:
+def build_param_registry(registry: RegistryParam) -> None:
     """Build a parameter registry with all defined parameters."""
     registry.register(
-        ParamSpec(
-            id=ParamKey.CONTRACT_META,
+        SpecParam(
+            id=EnumParamKey.CONTRACT_META,
             help="Path to metadata file (JSON)",
-            group=GroupKey.CONTRACT,
+            group=EnumGroupKey.CONTRACT,
             args_builder=lambda _arg, _spec: _spec.add_argument(
-                _arg, action=PathAction.file(exts=["json"])
+                _arg, action=ActionPath.file(exts=["json"])
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.EXE_RSCRIPT,
+        SpecParam(
+            id=EnumParamKey.EXE_RSCRIPT,
             help="Path to Rscript executable",
-            group=GroupKey.EXECUTABLES,
+            group=EnumGroupKey.EXECUTABLES,
             args_builder=lambda _arg, _spec: _spec.add_argument(_arg, type=str),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.THR_STATS_FOLD_CHANGE,
+        SpecParam(
+            id=EnumParamKey.THR_STATS_FOLD_CHANGE,
             help="Override: Fold-change threshold for feature filtering, non-negative float.",
-            group=GroupKey.THRESHOLDS,
+            group=EnumGroupKey.THRESHOLDS,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=float,
-                action=NumericRangeAction.build(min_value=0),
+                action=ActionNumericRange.build(min_value=0),
                 default=None,
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.THR_STATS_MISSING_RATE,
+        SpecParam(
+            id=EnumParamKey.THR_STATS_MISSING_RATE,
             help="Override: Missing rate threshold for feature filtering, [0,1].",
-            group=GroupKey.THRESHOLDS,
+            group=EnumGroupKey.THRESHOLDS,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=float,
-                action=NumericRangeAction.build(min_value=0, max_value=1),
+                action=ActionNumericRange.build(min_value=0, max_value=1),
                 default=None,
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.THR_STATS_MISSING_COUNT,
+        SpecParam(
+            id=EnumParamKey.THR_STATS_MISSING_COUNT,
             help="Override: Missing count threshold for feature filtering, non-negative integer.",
-            group=GroupKey.THRESHOLDS,
+            group=EnumGroupKey.THRESHOLDS,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
-                action=NumericRangeAction.build(kind_value="int", min_value=0),
+                action=ActionNumericRange.build(kind_value="int", min_value=0),
                 default=None,
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.THR_STATS_PVAL,
+        SpecParam(
+            id=EnumParamKey.THR_STATS_PVAL,
             help="Override: T-test p-value threshold, [0,1].",
-            group=GroupKey.THRESHOLDS,
+            group=EnumGroupKey.THRESHOLDS,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
-                action=NumericRangeAction.p_value,
+                action=ActionNumericRange.p_value,
                 default=None,
             ),
         )
     )
     registry.register(
-        ParamSpec(
-            id=ParamKey.THR_STATS_PADJ,
+        SpecParam(
+            id=EnumParamKey.THR_STATS_PADJ,
             help="Override: Adjusted p-value threshold, [0,1].",
-            group=GroupKey.THRESHOLDS,
+            group=EnumGroupKey.THRESHOLDS,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
-                action=NumericRangeAction.p_value,
+                action=ActionNumericRange.p_value,
                 default=None,
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.RULES_STATS_PADJ,
+        SpecParam(
+            id=EnumParamKey.RULES_STATS_PADJ,
             help=(
                 """
                 Override: 
@@ -146,16 +126,16 @@ def build_param_registry(registry: ParamRegistry) -> None:
                     bonferroni: Bonferroni
                 """
             ),
-            group=GroupKey.RULES,
+            group=EnumGroupKey.RULES,
             args_builder=lambda _arg, _spec: _spec.add_argument(
-                _arg, type=str, choices=MethodPAdjust, default=None
+                _arg, type=str, choices=EnumMethodPAdjust, default=None
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.RULES_STATS_TTEST,
+        SpecParam(
+            id=EnumParamKey.RULES_STATS_TTEST,
             help=(
                 """
                 Override: 
@@ -168,16 +148,16 @@ def build_param_registry(registry: ParamRegistry) -> None:
                     paired: Paired two-sample t-test
                 """
             ),
-            group=GroupKey.RULES,
+            group=EnumGroupKey.RULES,
             args_builder=lambda _arg, _spec: _spec.add_argument(
-                _arg, type=str, choices=MethodTTest, default=None
+                _arg, type=str, choices=EnumMethodTTest, default=None
             ),
         )
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.RULES_STATS_ANOVA,
+        SpecParam(
+            id=EnumParamKey.RULES_STATS_ANOVA,
             help=(
                 """
                 Override: 
@@ -191,16 +171,16 @@ def build_param_registry(registry: ParamRegistry) -> None:
                     random_effects: Random effects / Mixed ANOVA
                 """
             ),
-            group=GroupKey.RULES,
+            group=EnumGroupKey.RULES,
             args_builder=lambda _arg, _spec: _spec.add_argument(
-                _arg, type=str, choices=MethodAnova, default=None
+                _arg, type=str, choices=EnumMethodAnova, default=None
             ),
         )
     )
-    
+
     registry.register(
-        ParamSpec(
-            id=ParamKey.RULES_STATS_LOG_TRANS,
+        SpecParam(
+            id=EnumParamKey.RULES_STATS_LOG_TRANS,
             help=(
                 """
                 Override: 
@@ -212,7 +192,7 @@ def build_param_registry(registry: ParamRegistry) -> None:
                     ln: Natural logarithm transformation
                 """
             ),
-            group=GroupKey.RULES,
+            group=EnumGroupKey.RULES,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg, type=str, choices=["none", "log2", "log10", "ln"], default=None
             ),
@@ -220,8 +200,8 @@ def build_param_registry(registry: ParamRegistry) -> None:
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.PERF_ZSTD_LVL,
+        SpecParam(
+            id=EnumParamKey.PERF_ZSTD_LVL,
             help=(
                 """
                 Parquet ZSTD compression level (1-22); -1=none/uncompressed; 0=auto
@@ -240,11 +220,11 @@ def build_param_registry(registry: ParamRegistry) -> None:
                     See https://arrow.apache.org/docs/r/reference/write_parquet.html#arg-compression for details.
                 """
             ),
-            group=GroupKey.PERFORMANCE,
+            group=EnumGroupKey.PERFORMANCE,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
-                action=NumericRangeAction.build(
+                action=ActionNumericRange.build(
                     kind_value="int", min_value=-1, max_value=22
                 ),
                 default=5,
@@ -253,8 +233,8 @@ def build_param_registry(registry: ParamRegistry) -> None:
     )
 
     registry.register(
-        ParamSpec(
-            id=ParamKey.PERF_DT_THREADS,
+        SpecParam(
+            id=EnumParamKey.PERF_DT_THREADS,
             help=(
                 """
                 data.table threads; -1=auto; 0=all cores,
@@ -268,11 +248,11 @@ def build_param_registry(registry: ParamRegistry) -> None:
                 See https://search.r-project.org/CRAN/refmans/data.table/html/openmp-utils.html for details.
                 """
             ),
-            group=GroupKey.PERFORMANCE,
+            group=EnumGroupKey.PERFORMANCE,
             args_builder=lambda _arg, _spec: _spec.add_argument(
                 _arg,
                 type=int,
-                action=NumericRangeAction.build(kind_value="int", min_value=-1),
+                action=ActionNumericRange.build(kind_value="int", min_value=-1),
                 default=-1,
             ),
         )

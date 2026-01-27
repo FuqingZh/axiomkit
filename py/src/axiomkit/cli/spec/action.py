@@ -10,11 +10,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal, cast
 
+
 @dataclass(frozen=True, slots=True)
-class PathSpec:
+class SpecPath:
     """Specification for validating path-like CLI inputs.
 
-    Use this as the contract for :class:`PathAction`. It encodes what kind of
+    Use this as the contract for :class:`ActionPath`. It encodes what kind of
     filesystem entry to accept and which validation rules to enforce.
 
     Attributes:
@@ -25,7 +26,7 @@ class PathSpec:
         if_writable: Whether the path must be writable (mainly for outputs).
 
     Examples:
-        ``PathSpec(kind_entry="file", rule_file_exts=("tsv", "tsv.gz"))``
+        ``SpecPath(kind_entry="file", rule_file_exts=("tsv", "tsv.gz"))``
         enforces an existing readable TSV/TSV.GZ file.
     """
 
@@ -40,7 +41,7 @@ class PathSpec:
     if_writable: bool = False
 
 
-class PathAction(argparse.Action):
+class ActionPath(argparse.Action):
     """Validate and normalize path arguments for argparse.
 
     For ``file``/``dir`` kinds, resolves to absolute :class:`pathlib.Path` and
@@ -48,9 +49,9 @@ class PathAction(argparse.Action):
     ``exe`` it resolves either an explicit path or a command via ``PATH``.
 
     Typical usage:
-        ``parser.add_argument("--file_in", action=PathAction.file(exts=("tsv",)))``
-        ``parser.add_argument("--dir_out", action=PathAction.dir(if_must_exist=False))``
-        ``parser.add_argument("--path_rscript", action=PathAction.exe(), default="Rscript")``
+        ``parser.add_argument("--file_in", action=ActionPath.file(exts=("tsv",)))``
+        ``parser.add_argument("--dir_out", action=ActionPath.dir(if_must_exist=False))``
+        ``parser.add_argument("--path_rscript", action=ActionPath.exe(), default="Rscript")``
 
     Notes:
         - Defaults are normalized during parser construction.
@@ -63,7 +64,7 @@ class PathAction(argparse.Action):
         option_strings: list[str],
         dest: str,
         *,
-        spec: PathSpec | None = None,
+        spec: SpecPath | None = None,
         kind_entry: Literal["dir", "file", "exe"] = "file",
         rule_file_exts: Iterable[str] | None = None,
         if_must_exist: bool = True,
@@ -71,12 +72,12 @@ class PathAction(argparse.Action):
         if_writable: bool = False,
         **kwargs: Any,
     ) -> None:
-        """Construct a PathAction.
+        """Construct a ActionPath.
 
         Args:
             option_strings: Option strings received from argparse.
             dest: Namespace attribute name.
-            spec: Prebuilt ``PathSpec``; overrides other spec params when set.
+            spec: Prebuilt ``SpecPath``; overrides other spec params when set.
             kind_entry: Expected entry type when ``spec`` is not provided.
             rule_file_exts: Allowed file extensions for file inputs.
             if_must_exist: Whether the path must already exist.
@@ -91,7 +92,7 @@ class PathAction(argparse.Action):
         super().__init__(option_strings, dest, **kwargs)
 
         if spec is None:
-            spec = PathSpec(
+            spec = SpecPath(
                 kind_entry=kind_entry,
                 rule_file_exts=tuple(
                     str(ext).lower().lstrip(".")
@@ -272,10 +273,10 @@ class PathAction(argparse.Action):
         cls_path = self._normalize_one(value=values, c_name=c_name)
         setattr(namespace, self.dest, cls_path)
 
-    # -------- convenience factories (avoid importing PathSpec explicitly) --------
+    # -------- convenience factories (avoid importing SpecPath explicitly) --------
     @classmethod
-    def build(cls, *, spec: PathSpec, **kwargs: Any):
-        """Factory returning a ``partial`` with a preset ``PathSpec``.
+    def build(cls, *, spec: SpecPath, **kwargs: Any):
+        """Factory returning a ``partial`` with a preset ``SpecPath``.
 
         Args:
             spec: Path specification to enforce.
@@ -310,7 +311,7 @@ class PathAction(argparse.Action):
         """
         return partial(
             cls,
-            spec=PathSpec(
+            spec=SpecPath(
                 kind_entry="file",
                 rule_file_exts=tuple(
                     str(e).lower().lstrip(".") for e in exts if str(e).strip()
@@ -344,7 +345,7 @@ class PathAction(argparse.Action):
         """
         return partial(
             cls,
-            spec=PathSpec(
+            spec=SpecPath(
                 kind_entry="dir",
                 rule_file_exts=(),
                 if_must_exist=if_must_exist,
@@ -366,7 +367,7 @@ class PathAction(argparse.Action):
         """
         return partial(
             cls,
-            spec=PathSpec(kind_entry="exe"),
+            spec=SpecPath(kind_entry="exe"),
             **kwargs,
         )
 
@@ -374,7 +375,7 @@ class PathAction(argparse.Action):
 _RE_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
-class CommandPrefixAction(argparse.Action):
+class ActionCommandPrefix(argparse.Action):
     """Validate and tokenize shell-style command prefixes.
 
     Intended for prefixes like ``"micromamba run -n ENV"`` or
@@ -383,7 +384,7 @@ class CommandPrefixAction(argparse.Action):
     ``conda|mamba|micromamba run``.
 
     Example:
-        ``parser.add_argument("--rule_exec_prefix", action=CommandPrefixAction)``
+        ``parser.add_argument("--rule_exec_prefix", action=ActionCommandPrefix)``
         allows values such as ``"VAR=1 micromamba run -n env"``.
 
     Caveats:
@@ -398,7 +399,7 @@ class CommandPrefixAction(argparse.Action):
         dest: str,
         **kwargs: Any,
     ) -> None:
-        """Construct a CommandPrefixAction.
+        """Construct a ActionCommandPrefix.
 
         Args:
             option_strings: Option strings received from argparse.
@@ -551,11 +552,11 @@ class CommandPrefixAction(argparse.Action):
 _RE_HEX6 = re.compile(r"#[0-9A-Fa-f]{6}$")
 
 
-class HexColorAction(argparse.Action):
+class ActionHexColor(argparse.Action):
     """Parse and validate hex colors in ``#RRGGBB`` format.
 
     Example:
-        ``parser.add_argument("--panel_border_color", action=HexColorAction)``
+        ``parser.add_argument("--panel_border_color", action=ActionHexColor)``
 
     Notes:
         - Upcases the returned hex string.
@@ -568,7 +569,7 @@ class HexColorAction(argparse.Action):
         dest: str,
         **kwargs: Any,
     ) -> None:
-        """Construct a HexColorAction.
+        """Construct a ActionHexColor.
 
         Args:
             option_strings: Option strings received from argparse.
@@ -641,7 +642,7 @@ class HexColorAction(argparse.Action):
 
 
 @dataclass(frozen=True, slots=True)
-class NumericRangeSpec:
+class SpecNumericRange:
     """Specification describing allowed numeric inputs.
 
     Attributes:
@@ -654,7 +655,7 @@ class NumericRangeSpec:
         if_finite: Whether floats must be finite.
 
     Examples:
-        ``NumericRangeSpec(kind_value="float", min_value=0, max_value=1, if_inclusive_min=False)``
+        ``SpecNumericRange(kind_value="float", min_value=0, max_value=1, if_inclusive_min=False)``
         describes (0, 1] for floats.
     """
 
@@ -672,15 +673,15 @@ class NumericRangeSpec:
     if_finite: bool = True
 
 
-class NumericRangeAction(argparse.Action):
+class ActionNumericRange(argparse.Action):
     """Argparse action enforcing numeric value constraints.
 
-    Parses an option as int/float, validates it against ``NumericRangeSpec``,
+    Parses an option as int/float, validates it against ``SpecNumericRange``,
     and normalizes defaults during parser construction.
 
     Typical usage:
-        ``parser.add_argument("--learning-rate", action=NumericRangeAction, spec=NumericRangeSpec(min_value=0, max_value=1))``
-        ``parser.add_argument("--epochs", action=NumericRangeAction.build(kind_value="int", min_value=1))``
+        ``parser.add_argument("--learning-rate", action=ActionNumericRange, spec=SpecNumericRange(min_value=0, max_value=1))``
+        ``parser.add_argument("--epochs", action=ActionNumericRange.build(kind_value="int", min_value=1))``
 
     Notes:
         - ``allowed_values`` are accepted even if outside min/max.
@@ -693,10 +694,10 @@ class NumericRangeAction(argparse.Action):
         option_strings: list[str],
         dest: str,
         *,
-        spec: NumericRangeSpec,
+        spec: SpecNumericRange,
         **kwargs: Any,
     ) -> None:
-        """Construct a NumericRangeAction.
+        """Construct a ActionNumericRange.
 
         Args:
             option_strings: Option strings received from argparse.
@@ -730,7 +731,7 @@ class NumericRangeAction(argparse.Action):
                 value=self.default, c_name=f"{dest} (default)"
             )
 
-    # -------- convenience factories (avoid importing NumericRangeSpec explicitly) --------
+    # -------- convenience factories (avoid importing SpecNumericRange explicitly) --------
     @classmethod
     def build(
         cls,
@@ -744,7 +745,7 @@ class NumericRangeAction(argparse.Action):
         if_finite: bool = True,
         **kwargs: Any,
     ):
-        """Convenience factory for ``NumericRangeAction``.
+        """Convenience factory for ``ActionNumericRange``.
 
         Args:
             kind_value: Numeric kind to parse.
@@ -761,7 +762,7 @@ class NumericRangeAction(argparse.Action):
         """
         return partial(
             cls,
-            spec=NumericRangeSpec(
+            spec=SpecNumericRange(
                 kind_value=kind_value,
                 min_value=min_value,
                 max_value=max_value,
