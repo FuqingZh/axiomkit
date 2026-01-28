@@ -466,10 +466,10 @@ class XlsxWriter:
         if_keep_missing_values: bool = False,
         if_autofit_columns: bool = True,
         rule_autofit_columns: Literal["header", "body", "all"] = "header",
-        lim_inferred_rows_autofit_max: int | None = 20_000,
-        lim_width_autofit_cell_min: int = 8,
-        lim_width_autofit_cell_max: int = 60,
-        padding_autofit_width: int = 2,
+        height_data_autofit_inferred_max: int | None = 20_000,
+        width_cell_autofit_min: int = 8,
+        width_cell_autofit_max: int = 60,
+        width_cell_autofit_padding: int = 2,
         addons: Sequence[XlsxAddon] = (),
     ) -> Self:
         report = SpecXlsxReport(
@@ -724,8 +724,8 @@ class XlsxWriter:
 
                         # Update width estimates (bounded by num_autofit_rows_max).
                         if if_autofit_columns and (
-                            lim_inferred_rows_autofit_max is None
-                            or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
+                            height_data_autofit_inferred_max is None
+                            or n_rows_seen_for_autofit < height_data_autofit_inferred_max
                         ):
                             for _col_idx, _cell_val in enumerate(l_row_vals):
                                 dict_col_widths["body"][_col_idx] = max(
@@ -755,9 +755,9 @@ class XlsxWriter:
                     for _row_idx_chunk, _row_val in enumerate(_df_chunk.iter_rows()):
                         for _col_idx, _col_val in enumerate(_row_val):
                             if if_autofit_columns and (
-                                lim_inferred_rows_autofit_max is None
+                                height_data_autofit_inferred_max is None
                                 or n_rows_seen_for_autofit
-                                < lim_inferred_rows_autofit_max
+                                < height_data_autofit_inferred_max
                             ):
                                 dict_col_widths["body"][_col_idx] = max(
                                     dict_col_widths["body"][_col_idx],
@@ -779,16 +779,16 @@ class XlsxWriter:
                             )
 
                         if if_autofit_columns and (
-                            lim_inferred_rows_autofit_max is None
-                            or n_rows_seen_for_autofit < lim_inferred_rows_autofit_max
+                            height_data_autofit_inferred_max is None
+                            or n_rows_seen_for_autofit < height_data_autofit_inferred_max
                         ):
                             n_rows_seen_for_autofit += 1
 
             # Apply autofit widths at the end to avoid overriding formats mid-write.
             if if_autofit_columns and df_slice_.width > 0:
-                n_min = max(1, int(lim_width_autofit_cell_min))
-                n_max = min(255, max(n_min, int(lim_width_autofit_cell_max)))
-                n_pad = max(0, int(padding_autofit_width))
+                n_min = max(1, int(width_cell_autofit_min))
+                n_max = min(255, max(n_min, int(width_cell_autofit_max)))
+                n_pad = max(0, int(width_cell_autofit_padding))
                 for _col_idx in range(df_slice_.width):
                     n_col_width_recorded_ = (
                         dict_col_widths[rule_autofit_columns][_col_idx]
