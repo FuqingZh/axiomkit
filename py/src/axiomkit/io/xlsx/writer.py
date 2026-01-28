@@ -260,7 +260,7 @@ class XlsxWriter:
     ) -> list[xlsxwriter.format.Format]:
         if width_data <= 0:
             return []
-
+        cfg_fmt_text_base = self._get_or_create_format(self.fmt_text.with_(border=0))
         cfg_fmt_text = self._get_or_create_format(self.fmt_text)
         cfg_fmt_int = self._get_or_create_format(self.fmt_int)
         cfg_fmt_dec = self._get_or_create_format(self.fmt_dec)
@@ -275,9 +275,9 @@ class XlsxWriter:
         ws.set_column(
             first_col=0,
             last_col=width_data - 1,
-            cell_format=None if b_use_conditional else cfg_fmt_text,
+            cell_format=cfg_fmt_text_base,
         )
-        
+
         set_cols_idx_int = set(cols_idx_integer)
         set_cols_idx_dec = set(cols_idx_decimal) if cols_idx_decimal else False
         set_cols_idx_num = set(cols_idx_numeric)
@@ -725,7 +725,8 @@ class XlsxWriter:
                         # Update width estimates (bounded by num_autofit_rows_max).
                         if if_autofit_columns and (
                             height_data_autofit_inferred_max is None
-                            or n_rows_seen_for_autofit < height_data_autofit_inferred_max
+                            or n_rows_seen_for_autofit
+                            < height_data_autofit_inferred_max
                         ):
                             for _col_idx, _cell_val in enumerate(l_row_vals):
                                 dict_col_widths["body"][_col_idx] = max(
@@ -780,7 +781,8 @@ class XlsxWriter:
 
                         if if_autofit_columns and (
                             height_data_autofit_inferred_max is None
-                            or n_rows_seen_for_autofit < height_data_autofit_inferred_max
+                            or n_rows_seen_for_autofit
+                            < height_data_autofit_inferred_max
                         ):
                             n_rows_seen_for_autofit += 1
 
