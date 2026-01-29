@@ -57,14 +57,18 @@ class XlsxWriter:
     Excel. It can be used either directly or as a context manager.
 
     The workbook is created on initialization and closed via :meth:`close`
-    or automatically when used in a ``with`` block::
+    or automatically when used in a ``with`` block. Constant-memory mode
+    is enabled by default and NaN/Inf are handled explicitly.
 
         from pathlib import Path
-        from axiomkit import XlsxWriter
+        from axiomkit.io import XlsxWriter
 
         with XlsxWriter("report.xlsx") as xf:
             # Use xf methods to add sheets and write data frames / tables
             ...
+        or
+        
+        xf = XlsxWriter("report.xlsx")
 
     Parameters
     ----------
@@ -133,25 +137,22 @@ class XlsxWriter:
         self._reports: list[SpecXlsxReport] = []
 
     def __enter__(self) -> "XlsxWriter":
+        """Enter context manager scope."""
         return self
 
     def __exit__(
         self, exc_type: type | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
+        """Exit context manager scope and close the workbook."""
         self.close()
 
     def close(self) -> None:
+        """Finalize and close the underlying workbook."""
         self.wb.close()
 
     def report(self) -> tuple[SpecXlsxReport, ...]:
+        """Return reports collected during write operations."""
         return tuple(self._reports)
-
-    def _create_format_cached(self, spec: SpecCellFormat) -> Any:
-        fmt = self._format_cache.get(spec)
-        if fmt is None:
-            fmt = self.wb.add_format(spec.to_xlsxwriter())
-            self._format_cache[spec] = fmt
-        return fmt
 
     @staticmethod
     def _estimate_width_len(
@@ -161,14 +162,17 @@ class XlsxWriter:
         if_is_integer_col: bool,
         if_keep_missing_values: bool,
     ) -> int:
-        """Estimate display string length for column width calculation.
+        """
+        Estimate display string length for autofit width calculations.
 
-        Notes
-        -----
-        - Excel column width is not strictly character count; this is a pragmatic
-          heuristic good enough for most reports.
-        - For numeric columns we approximate based on the workbook formats used
-          by this writer (int: "0", dec: "0.0000").
+        Args:
+            value: Cell value to evaluate.
+            if_is_numeric_col: Whether the column is numeric.
+            if_is_integer_col: Whether the column is integer-typed.
+            if_keep_missing_values: If True, treat missing values as "NA".
+
+        Returns:
+            Estimated display width in characters.
         """
         if value is None:
             return len("NA") if if_keep_missing_values else 0
@@ -205,7 +209,24 @@ class XlsxWriter:
         except Exception:
             return len(str(n_val))
 
+    def _create_format_cached(self, spec: SpecCellFormat) -> Any:
+        """
+        Return a cached xlsxwriter Format for the given spec.
+
+        Creates and caches the format on first use.
+        """
+        fmt = self._format_cache.get(spec)
+        if fmt is None:
+            fmt = self.wb.add_format(spec.to_xlsxwriter())
+            self._format_cache[spec] = fmt
+        return fmt
+
     def _create_unique_sheet_name(self, name: str) -> str:
+        """
+        Return a sheet name unique within this workbook.
+
+        If the name already exists, append a deterministic ``__N`` suffix.
+        """
         if name not in self._existing_sheet_names:
             self._existing_sheet_names.add(name)
             return name
@@ -223,6 +244,11 @@ class XlsxWriter:
     def _create_header_fmt(
         self, border: SpecCellBorder | None
     ) -> xlsxwriter.format.Format:
+        """
+        Return a header format with optional per-cell borders.
+
+        The format is cached by border tuple to avoid duplicate formats.
+        """
         # default full border
         if border is None:
             tup_border_format_key = (1, 1, 1, 1)
@@ -258,6 +284,25 @@ class XlsxWriter:
         cols_fmt_overrides: dict[int, xlsxwriter.format.Format],
         if_data_only: bool,
     ) -> SpecColumnFormatPlan:
+        """
+        Plan per-column formats and conditional rules for a data range.
+
+        In data-only mode, conditional formats are used for the data rows.
+        Otherwise, column-level formats are planned for full-column application.
+
+        Args:
+            width_data: Number of data columns.
+            height_data: Number of data rows.
+            row_idx_data_start: Starting row index for data.
+            cols_idx_numeric: Numeric column indices (0-based).
+            cols_idx_integer: Integer column indices (0-based).
+            cols_idx_decimal: Decimal column indices (0-based) or False to disable.
+            cols_fmt_overrides: Per-column format overrides.
+            if_data_only: Whether to restrict formatting to the data range.
+
+        Returns:
+            Planned column formats and conditional rules.
+        """
         if width_data <= 0:
             return SpecColumnFormatPlan(
                 fmts_by_col=[],
@@ -381,6 +426,11 @@ class XlsxWriter:
         *,
         widths: list[float] | None,
     ) -> None:
+        """
+        Apply planned column formats and conditional rules to a worksheet.
+
+        If ``widths`` is provided, column widths are set alongside formats.
+        """
         n_cols = len(plan.fmts_by_col)
         if n_cols <= 0:
             return
@@ -430,6 +480,17 @@ class XlsxWriter:
         header_grid: list[list[str]],
         if_merge: bool,
     ):
+        """
+        Write the header grid and apply visual merges when requested.
+
+        Args:
+            ws: Target worksheet.
+            header_grid: 2D grid of header strings (rows x columns).
+            if_merge: Whether to visually merge repeated labels.
+
+        Raises:
+            ValueError: If the header grid is empty.
+        """
         if not header_grid:
             raise ValueError(
                 "header_grid cannot be empty (df_header must have >= 1 row)."
@@ -514,7 +575,42 @@ class XlsxWriter:
         width_cell_autofit_padding: int = 2,
         addons: Sequence[XlsxAddon] = (),
     ) -> Self:
-        report = SpecXlsxReport(
+        """
+        Write a dataframe to one or more Excel worksheets.
+
+        The input is converted to a Polars DataFrame, optionally combined with
+        a custom header grid, and written with default text/number formats.
+        If the data exceeds Excel limits, the output is split across multiple
+        sheets with deterministic suffixes.
+
+        Args:
+            df: Any tabular data accepted by Polars.
+            sheet_name: Desired worksheet name (will be sanitized and de-duplicated).
+            df_header: Optional header grid (same width as df). If omitted,
+                df column names are used.
+            cols_integer: Column refs to force integer formatting.
+            cols_decimal: Column refs to force decimal formatting. If False,
+                decimal formatting is disabled for non-integer numeric columns.
+            col_freeze: Number of leftmost columns to freeze.
+            row_freeze: Number of top rows to freeze. Defaults to header height.
+            if_merge_header: If True, visually merge repeated header labels.
+            if_keep_missing_values: If True, write missing values as "NA";
+                otherwise leave cells blank.
+            if_autofit_columns: If True, estimate and set column widths.
+            rule_autofit_columns: Width estimation source ("header", "body", "all").
+            height_data_autofit_inferred_max: Max data rows to sample for autofit.
+            width_cell_autofit_min: Minimum column width for autofit.
+            width_cell_autofit_max: Maximum column width for autofit.
+            width_cell_autofit_padding: Extra width padding for autofit.
+            addons: Optional addons that provide per-column or per-cell formats.
+
+        Raises:
+            ValueError: If header width mismatches df width, or header is empty.
+
+        Returns:
+            Self: The writer instance (for chaining).
+        """
+        inst_report = SpecXlsxReport(
             sheets=[],
             warnings=[],
         )
