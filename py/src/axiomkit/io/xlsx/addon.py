@@ -21,17 +21,17 @@ class XlsxAddon(Protocol):
     Capability declaration
     ----------------------
     Addons SHOULD explicitly declare whether they need per-cell formatting by
-    implementing `requires_cell_write()` (preferred) or a boolean attribute
-    `requires_cell_write`.
+    implementing `check_cell_write_required()` (preferred) or a boolean attribute
+    `check_cell_write_required`.
 
     If neither is provided, the writer may fall back to a compatibility probe
     (deprecated) to decide the path.
     """
 
-    def requires_cell_write(self) -> bool:  # optional, preferred
+    def check_cell_write_required(self) -> bool:  # optional, preferred
         return False
 
-    def get_column_format_overrides(
+    def create_column_format_overrides(
         self,
         *,
         df: pl.DataFrame,
@@ -43,7 +43,7 @@ class XlsxAddon(Protocol):
         """
         return {}
 
-    def get_cell_format_override(
+    def create_cell_format_override(
         self,
         *,
         row_idx: int,
@@ -59,7 +59,7 @@ class XlsxAddon(Protocol):
         return None
 
 
-def addon_requires_cell_write(ad: XlsxAddon) -> bool:
+def check_addon_cell_write_requirement(ad: XlsxAddon) -> bool:
     """
     Decide whether an addon forces the slow per-cell body write path.
 
@@ -90,7 +90,7 @@ def addon_requires_cell_write(ad: XlsxAddon) -> bool:
     # compatibility probe (deprecated)
     try:
         return (
-            ad.get_cell_format_override(row_idx=0, col_idx=0, value="__probe__")
+            ad.create_cell_format_override(row_idx=0, col_idx=0, value="__probe__")
             is not None
         )
     except Exception:
@@ -112,7 +112,7 @@ def write_cell_with_format(
             ws.write_blank(row=row_idx, col=col_idx, blank=None)
             return
         c_cell_val = "NA"
-        cfg_fmt_cell = _get_cell_format_override(
+        cfg_fmt_cell = _derive_cell_format(
             addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
         )
         ws.write_string(
@@ -125,7 +125,7 @@ def write_cell_with_format(
 
     if not if_is_numeric_col:
         c_cell_val = str(value)
-        cfg_fmt_cell = _get_cell_format_override(
+        cfg_fmt_cell = _derive_cell_format(
             addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
         )
         ws.write_string(
@@ -143,7 +143,7 @@ def write_cell_with_format(
             return
 
         c_cell_val = convert_nan_inf_to_str(n_cell_val)
-        cfg_fmt_cell = _get_cell_format_override(
+        cfg_fmt_cell = _derive_cell_format(
             addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
         )
         ws.write_string(
@@ -154,7 +154,7 @@ def write_cell_with_format(
         )
         return
 
-    cfg_fmt_cell = _get_cell_format_override(
+    cfg_fmt_cell = _derive_cell_format(
         addons, row_idx=row_idx, col_idx=col_idx, value=n_cell_val
     )
     ws.write_number(
@@ -165,13 +165,13 @@ def write_cell_with_format(
     )
 
 
-def _get_cell_format_override(
+def _derive_cell_format(
     addons: Sequence[XlsxAddon], *, row_idx: int, col_idx: int, value: Any
 ) -> xlsxwriter.format.Format | None:
     fmt_cell = None
     for ad in addons:
         fmt_cell = (
-            ad.get_cell_format_override(
+            ad.create_cell_format_override(
                 row_idx=row_idx,
                 col_idx=col_idx,
                 value=value,
