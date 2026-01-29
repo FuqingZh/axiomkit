@@ -10,7 +10,7 @@ Personal, portable engineering toolkit (Python/R/Rust).
 - 解析/编解码：parse_（文本/头信息→结构）、decode_（编码→原始）、encode_（原始→编码）
 - 验证：validate_（抛异常）、check_（返回 bool）
 - 变换/规范化：convert_（类型/格式等价转换；尽量可逆）、normalize_（数值尺度/分布标准化）、sanitize_（文本/字段名/非法字符清洗与标准化）
-- 选择：select_（字段/列投影/重排）、filter_（谓词过滤）
+- 选择：select_（字段/列投影/重排）、filter_（谓词过滤；不用于选列）
 - 抽取（可选）：extract_（从嵌套/复合结构抽取子结构；不用于表格投影）
 - 规划/应用：plan_（生成方案）、apply_（应用方案到目标）
 - IO：scan_（惰性/轻量读取）、read_（读取并解析为对象）、write_（序列化并写出对象）、sink_（可选；流式/管道式写出）
@@ -26,7 +26,7 @@ Personal, portable engineering toolkit (Python/R/Rust).
 - sink_ vs write_：sink_ 仅用于真正流式/管道式写出（不要求全量物化）；否则用 write_。
 - validate_：强契约校验（失败抛异常）；允许轻量 IO（如 exists），重 IO 放到 read_/write_。
 - scan_：惰性/轻量读取，返回 lazy/iterator/metadata；不得默认物化主体数据（需物化用 read_）。
-- select_ vs filter_：select_ 只做投影/重排；filter_ 按谓词丢行/元素。
+- select_ vs filter_：select_ 只做投影/重排（列/字段）；filter_ 仅按谓词丢行/元素，不用于选列。
 - create_ vs generate_：单个对象→create_；序列/批量→generate_。
 
 ## Method verbs (lifecycle & protocol)
