@@ -1,6 +1,6 @@
 import math
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import Any
 
 import polars as pl
@@ -54,11 +54,11 @@ def convert_cell_value(
 # #region DataFrameUtils
 
 
-def to_polars(df: Any) -> pl.DataFrame:
+def convert_to_polars(df: Any) -> pl.DataFrame:
     return df if isinstance(df, pl.DataFrame) else pl.DataFrame(df)
 
 
-def _resolve_col_index(df: pl.DataFrame, ref: ColRef) -> int:
+def _normalize_col_index(df: pl.DataFrame, ref: ColRef) -> int:
     if isinstance(ref, int):
         return ref
     try:
@@ -67,16 +67,16 @@ def _resolve_col_index(df: pl.DataFrame, ref: ColRef) -> int:
         raise KeyError(f"Column not found: {ref!r}") from e
 
 
-def get_sorted_indices_from_refs(
+def select_sorted_indices_from_refs(
     df: pl.DataFrame, refs: Sequence[ColRef] | None
 ) -> tuple[int, ...]:
     if not refs:
         return ()
-    idx = {_resolve_col_index(df, _r) for _r in refs}
+    idx = {_normalize_col_index(df, _r) for _r in refs}
     return tuple(sorted(idx))
 
 
-def assert_no_duplicate_columns(df: pl.DataFrame) -> None:
+def validate_unique_columns(df: pl.DataFrame) -> None:
     l_cols = df.columns
 
     # fast path: no duplicates
@@ -96,12 +96,31 @@ def assert_no_duplicate_columns(df: pl.DataFrame) -> None:
     raise ValueError(f"Duplicate column names detected: {c_msg}")
 
 
+def select_integer_cols(
+    df: pl.DataFrame, cols_idx_num: tuple[int, ...]
+) -> tuple[int, ...]:
+    l_cols_idx_int: list[int] = []
+    for _idx in cols_idx_num:
+        cfg_col_dtype = df.schema[df.columns[_idx]]
+        if cfg_col_dtype.is_integer():
+            l_cols_idx_int.append(_idx)
+    return tuple(l_cols_idx_int)
+
+
+def select_numeric_cols(df: pl.DataFrame) -> tuple[int, ...]:
+    l_cols_idx_num: list[int] = []
+    for _idx, _val in enumerate(df.columns):
+        if df.schema[_val].is_numeric():
+            l_cols_idx_num.append(_idx)
+    return tuple(l_cols_idx_num)
+
+
 # #endregion
 ################################################################################
 # #region RowChunking
 
 
-def get_row_chunk_size(*, width_df: int) -> int:
+def calculate_row_chunk_size(*, width_df: int) -> int:
     """
     Return an appropriate row chunk size for processing based on dataframe width.
 
@@ -126,9 +145,9 @@ def get_row_chunk_size(*, width_df: int) -> int:
     return 10_000
 
 
-def create_row_chunks(
+def generate_row_chunks(
     df: pl.DataFrame, size_rows_chunk: int, cols_exprs: list[pl.Expr]
-):
+) -> Generator[tuple[int, pl.DataFrame], Any, None]:
     n_rows_total = df.height
     n_row_cursor = 0
     while n_row_cursor < n_rows_total:
@@ -145,7 +164,7 @@ def create_row_chunks(
 # #region SheetNormalization
 
 
-def normalize_sheet_name(name: str, *, replace_to: str = "_") -> str:
+def sanitize_sheet_name(name: str, *, replace_to: str = "_") -> str:
     for ch in TUP_EXCEL_ILLEGAL:
         name = name.replace(ch, replace_to)
     name = name.strip() or "Sheet"
@@ -193,7 +212,7 @@ def generate_sheet_slices(
             c_part_sheet_name = (
                 sheet_name
                 if n_parts_total == 1
-                else _make_sheet_name(sheet_name, n_idx_part)
+                else _create_sheet_identifier(sheet_name, n_idx_part)
             )
             l_sheet_parts.append(
                 SpecSheetSlice(
@@ -213,7 +232,7 @@ def generate_sheet_slices(
     return l_sheet_parts
 
 
-def _make_sheet_name(base_name: str, part_idx_1based: int) -> str:
+def _create_sheet_identifier(base_name: str, part_idx_1based: int) -> str:
     c_sheet_name_suffix = f"_{part_idx_1based}"
     n_len_base_name_max = N_LEN_EXCEL_SHEET_NAME_MAX - len(c_sheet_name_suffix)
     c_sheet_name_base = base_name[: max(1, n_len_base_name_max)]
@@ -225,7 +244,7 @@ def _make_sheet_name(base_name: str, part_idx_1based: int) -> str:
 # #region HeaderMergeUtils
 
 
-def find_contiguous_ranges(sorted_indices: Sequence[int]) -> list[tuple[int, int]]:
+def derive_contiguous_ranges(sorted_indices: Sequence[int]) -> list[tuple[int, int]]:
     """
     Convert a sorted sequence of indices into a list of contiguous index ranges.
 
@@ -238,9 +257,9 @@ def find_contiguous_ranges(sorted_indices: Sequence[int]) -> list[tuple[int, int
             inclusive contiguous range of indices.
 
     Examples:
-        >>> _find_contiguous_ranges([0, 1, 2, 4, 5, 7])
+        >>> derive_contiguous_ranges([0, 1, 2, 4, 5, 7])
         [(0, 2), (4, 5), (7, 7)]
-        >>> _find_contiguous_ranges([])
+        >>> derive_contiguous_ranges([])
         []
     """
     if not sorted_indices:
@@ -293,91 +312,9 @@ def plan_horizontal_merges(
     return dict_horizontal_merges_map
 
 
-def plan_vertical_visual_merge_borders(
+def _generate_vertical_runs(
     header_grid: Sequence[Sequence[str]],
-) -> dict[tuple[int, int], SpecCellBorder]:
-    """
-    Generate border specifications for visualizing vertically merged header cells.
-
-    The function scans each column of the provided header grid and finds
-    consecutive rows that contain the same non-empty value. Each such run
-    is treated as a vertical merge block, and border information is generated
-    for all cells in the block.
-
-    Args:
-        header_grid: A 2D sequence of strings representing the header cells,
-            indexed as ``header_grid[row_index][column_index]``. All rows are
-            expected to have the same number of columns.
-
-    Returns:
-        dict[tuple[int, int], SpecCellBorder]: A mapping from ``(row_index,
-        column_index)`` cell coordinates to ``SpecCellBorder`` instances for cells
-        that belong to a vertical merge block. For each such cell, the border
-        spec indicates which borders (top, bottom, left, right) should be drawn
-        to render the merged region.
-    """
-    dict_plan_vertical_merge_border: dict[tuple[int, int], SpecCellBorder] = {}
-    for col_idx, row_start, row_end, _ in _iter_vertical_runs(header_grid):
-        for _row_idx_within_merge in range(row_start, row_end + 1):
-            dict_plan_vertical_merge_border[(_row_idx_within_merge, col_idx)] = (
-                SpecCellBorder(
-                    top=1 if _row_idx_within_merge == row_start else 0,
-                    bottom=1 if _row_idx_within_merge == row_end else 0,
-                    left=1,
-                    right=1,
-                )
-            )
-        # blank out text for non-top cells (handled by writer)
-    return dict_plan_vertical_merge_border
-
-
-def remove_vertical_run_text(header_grid: list[list[str]]) -> list[list[str]]:
-    """
-    Clear text from vertically merged header cells, keeping only the top cell's text.
-
-    The function iterates over vertical runs of identical, non-empty header values
-    (as identified by :func:`_iter_vertical_runs`) and blanks out the text in all
-    cells below the first row of each run. This is typically used to prepare a
-    header grid for writing to an Excel worksheet where vertical merges are
-    represented visually, leaving only the top cell in each merged block
-    containing the header text.
-
-    The input grid is modified in place and also returned for convenience.
-
-    Args:
-        header_grid (list[list[str]]): A two-dimensional list of header cell
-            strings indexed as ``header_grid[row_index][column_index]``.
-
-    Returns:
-        list[list[str]]: The same header grid instance with non-top cells in each
-        vertical run cleared (set to an empty string).
-    """
-    if not header_grid:
-        return header_grid
-    for col_idx, row_start, row_end, _ in _iter_vertical_runs(header_grid):
-        for _row_idx_within_merge in range(row_start + 1, row_end + 1):
-            header_grid[_row_idx_within_merge][col_idx] = ""
-    return header_grid
-
-
-def track_horizontal_merge_cells(
-    row_horizontal_merge_mapping: dict[int, list[SpecSheetHorizontalMerge]],
-) -> dict[tuple[int, int], bool]:
-    """
-    Mark cells covered by horizontal merges (except leftmost cell),
-    so we can skip writing them before merge_range.
-    """
-    dict_merged_cells_tracker: dict[tuple[int, int], bool] = {}
-    for _row_idx, _horizontal_merges in row_horizontal_merge_mapping.items():
-        for _merge in _horizontal_merges:
-            for _col_idx in range(_merge.col_idx_start + 1, _merge.col_idx_end + 1):
-                dict_merged_cells_tracker[(_row_idx, _col_idx)] = True
-    return dict_merged_cells_tracker
-
-
-def _iter_vertical_runs(
-    header_grid: Sequence[Sequence[str]],
-):
+) -> Generator[tuple[int, int, int, str], Any, None]:
     """
     Yield vertical runs (length > 1) of identical, non-empty cells.
 
@@ -416,6 +353,88 @@ def _iter_vertical_runs(
                 )
 
             n_row_idx_start_ = n_row_idx_next_
+
+
+def plan_vertical_visual_merge_borders(
+    header_grid: Sequence[Sequence[str]],
+) -> dict[tuple[int, int], SpecCellBorder]:
+    """
+    Generate border specifications for visualizing vertically merged header cells.
+
+    The function scans each column of the provided header grid and finds
+    consecutive rows that contain the same non-empty value. Each such run
+    is treated as a vertical merge block, and border information is generated
+    for all cells in the block.
+
+    Args:
+        header_grid: A 2D sequence of strings representing the header cells,
+            indexed as ``header_grid[row_index][column_index]``. All rows are
+            expected to have the same number of columns.
+
+    Returns:
+        dict[tuple[int, int], SpecCellBorder]: A mapping from ``(row_index,
+        column_index)`` cell coordinates to ``SpecCellBorder`` instances for cells
+        that belong to a vertical merge block. For each such cell, the border
+        spec indicates which borders (top, bottom, left, right) should be drawn
+        to render the merged region.
+    """
+    dict_plan_vertical_merge_border: dict[tuple[int, int], SpecCellBorder] = {}
+    for col_idx, row_start, row_end, _ in _generate_vertical_runs(header_grid):
+        for _row_idx_within_merge in range(row_start, row_end + 1):
+            dict_plan_vertical_merge_border[(_row_idx_within_merge, col_idx)] = (
+                SpecCellBorder(
+                    top=1 if _row_idx_within_merge == row_start else 0,
+                    bottom=1 if _row_idx_within_merge == row_end else 0,
+                    left=1,
+                    right=1,
+                )
+            )
+        # blank out text for non-top cells (handled by writer)
+    return dict_plan_vertical_merge_border
+
+
+def apply_vertical_run_text_blankout(header_grid: list[list[str]]) -> list[list[str]]:
+    """
+    Clear text from vertically merged header cells, keeping only the top cell's text.
+
+    The function iterates over vertical runs of identical, non-empty header values
+    (as identified by :func:`_iter_vertical_runs`) and blanks out the text in all
+    cells below the first row of each run. This is typically used to prepare a
+    header grid for writing to an Excel worksheet where vertical merges are
+    represented visually, leaving only the top cell in each merged block
+    containing the header text.
+
+    The input grid is modified in place and also returned for convenience.
+
+    Args:
+        header_grid (list[list[str]]): A two-dimensional list of header cell
+            strings indexed as ``header_grid[row_index][column_index]``.
+
+    Returns:
+        list[list[str]]: The same header grid instance with non-top cells in each
+        vertical run cleared (set to an empty string).
+    """
+    if not header_grid:
+        return header_grid
+    for col_idx, row_start, row_end, _ in _generate_vertical_runs(header_grid):
+        for _row_idx_within_merge in range(row_start + 1, row_end + 1):
+            header_grid[_row_idx_within_merge][col_idx] = ""
+    return header_grid
+
+
+def create_horizontal_merge_tracker(
+    row_horizontal_merge_mapping: dict[int, list[SpecSheetHorizontalMerge]],
+) -> dict[tuple[int, int], bool]:
+    """
+    Mark cells covered by horizontal merges (except leftmost cell),
+    so we can skip writing them before merge_range.
+    """
+    dict_merged_cells_tracker: dict[tuple[int, int], bool] = {}
+    for _row_idx, _horizontal_merges in row_horizontal_merge_mapping.items():
+        for _merge in _horizontal_merges:
+            for _col_idx in range(_merge.col_idx_start + 1, _merge.col_idx_end + 1):
+                dict_merged_cells_tracker[(_row_idx, _col_idx)] = True
+    return dict_merged_cells_tracker
 
 
 # #endregion
