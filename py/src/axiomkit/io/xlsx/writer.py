@@ -427,7 +427,7 @@ class XlsxWriter:
         widths: list[float] | None,
     ) -> None:
         """
-        Apply planned column formats and conditional rules to a worksheet.
+        Apply planned column formats to a worksheet.
 
         If ``widths`` is provided, column widths are set alongside formats.
         """
@@ -460,6 +460,11 @@ class XlsxWriter:
                         cell_format=plan.fmts_by_col[_col_idx],
                     )
 
+    @staticmethod
+    def _apply_conditional_formats(
+        ws: xlsxwriter.worksheet.Worksheet, plan: SpecColumnFormatPlan
+    ) -> None:
+        """Apply conditional format rules from a column format plan."""
         for _rule in plan.rules_conditional_fmt:
             ws.conditional_format(
                 first_row=_rule.row_start,
@@ -813,6 +818,9 @@ class XlsxWriter:
 
             # freeze panes
             cfg_worksheet_.freeze_panes(row_freeze, col_freeze)
+
+            if plan_col_formats.is_use_conditional:
+                self._apply_conditional_formats(cfg_worksheet_, plan_col_formats)
 
             # Body: build cast expressions
             # v1 rule: numeric -> Float64; non-numeric -> String
