@@ -1,9 +1,9 @@
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Any, ClassVar, Literal, Self
 
 import polars as pl
 import xlsxwriter
@@ -11,7 +11,12 @@ import xlsxwriter.format
 import xlsxwriter.worksheet
 
 from .addon import XlsxAddon, check_addon_cell_write_requirement, write_cell_with_format
-from .conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
+from .conf import (
+    DEFAULT_XLSX_FORMATS,
+    LIT_FMT_KEYS,
+    N_LEN_EXCEL_SHEET_NAME_MAX,
+    ColumnIdentifier,
+)
 from .spec import (
     SpecCellBorder,
     SpecCellFormat,
@@ -42,7 +47,6 @@ from .util import (
 
 
 class XlsxWriter:
-    DEFAULT_XLSX_FORMATS = DEFAULT_XLSX_FORMATS
     """
     Helper class for writing tabular data to an XLSX workbook using
     ``xlsxwriter`` with sensible defaults and formatting utilities.
@@ -487,8 +491,8 @@ class XlsxWriter:
         sheet_name: str,
         *,
         df_header: Any | None = None,
-        cols_integer: Sequence[ColRef] | None = None,
-        cols_decimal: Sequence[ColRef] | None | Literal[False] = None,
+        cols_integer: Sequence[ColumnIdentifier] | None = None,
+        cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         col_freeze: int = 0,
         row_freeze: int | None = None,
         if_merge_header: bool = False,
