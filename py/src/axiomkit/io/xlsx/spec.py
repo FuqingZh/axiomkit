@@ -3,7 +3,11 @@
 from dataclasses import dataclass, replace
 from typing import Any
 
+import xlsxwriter.format
 
+
+################################################################################
+# #region CellFormatSpecification
 @dataclass(frozen=True, slots=True)
 class SpecCellFormat:
     # 字段名严格对齐 XlsxWriter format properties keys
@@ -55,6 +59,38 @@ class SpecCellBorder:
     right: int
 
 
+# #endregion
+################################################################################
+# #region ColumnFormatSpecification
+
+
+@dataclass(slots=True)
+class SpecColumnFormatPlan:
+    fmts_by_col: list[xlsxwriter.format.Format]
+    cols_formatted: list["SpecColumnFormatRange"]
+    rules_conditional_fmt: list["SpecConditionalFormatRule"]
+    is_use_conditional: bool
+
+
+@dataclass(slots=True)
+class SpecColumnFormatRange:
+    col_start: int
+    col_end: int
+    fmt: xlsxwriter.format.Format
+
+
+@dataclass(slots=True)
+class SpecConditionalFormatRule:
+    row_start: int
+    col_start: int
+    row_end: int
+    col_end: int
+    fmt: xlsxwriter.format.Format
+
+
+# #endregion
+################################################################################
+# #region SheetFormatSpecification
 @dataclass(frozen=True, slots=True)
 class SpecSheetSlice:
     sheet_name: str
@@ -72,6 +108,9 @@ class SpecSheetHorizontalMerge:
     text: str
 
 
+# #endregion
+################################################################################
+# #region ReportSpecification
 @dataclass(slots=True)
 class SpecXlsxReport:
     sheets: list[SpecSheetSlice]
@@ -79,3 +118,7 @@ class SpecXlsxReport:
 
     def warn(self, msg: str) -> None:
         self.warnings.append(str(msg))
+
+
+# #endregion
+################################################################################
