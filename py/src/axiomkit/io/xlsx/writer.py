@@ -678,7 +678,7 @@ class XlsxWriter:
             )
 
             if not b_is_common_scalar_type:
-                report.warn(
+                inst_report.warn(
                     f"Column {_colname!r} dtype {cfg_col_dtype_} will be written as string."
                 )
 
@@ -689,7 +689,7 @@ class XlsxWriter:
             width_df=n_width_df,
             height_header=n_rows_header,
             sheet_name=sanitize_sheet_name(sheet_name),
-            report=report,
+            report=inst_report,
         )
 
         # decide freeze_row
@@ -951,7 +951,7 @@ class XlsxWriter:
                     cfg_worksheet_, plan_col_formats, widths=None
                 )
 
-            report.sheets.append(
+            inst_report.sheets.append(
                 SpecSheetSlice(
                     sheet_name=c_sheet_name_unique_,
                     row_start_inclusive=_sheet_slice.row_start_inclusive,
@@ -961,5 +961,5 @@ class XlsxWriter:
                 )
             )
 
-        self._reports.append(report)
+        self._reports.append(inst_report)
         return self
