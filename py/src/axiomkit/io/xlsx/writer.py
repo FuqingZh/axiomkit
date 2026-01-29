@@ -72,14 +72,21 @@ class XlsxWriter:
         Path to the output ``.xlsx`` file. Can be a string or
         :class:`pathlib.Path`. The underlying workbook is created
         immediately for this path.
-    if_constant_memory:
-        If ``True`` (default), enables xlsxwriter's ``constant_memory``
-        mode to reduce memory usage when writing large workbooks.
-    default_font:
-        Base font family name used for text and header formats.
-    default_font_size:
-        Base font size (in points) used for text and header formats.
+    fmt_text:
+        Base text format for data cells.
+    fmt_integer:
+        Integer numeric format. Defaults to ``DEFAULT_XLSX_FORMATS["integer"]``.
+    fmt_decimal:
+        Decimal numeric format. Defaults to ``DEFAULT_XLSX_FORMATS["decimal"]``.
+    fmt_scientific:
+        Scientific numeric format. Defaults to ``DEFAULT_XLSX_FORMATS["scientific"]``.
+    fmt_header:
+        Header cell format. Defaults to ``DEFAULT_XLSX_FORMATS["header"]``.
     """
+
+    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, SpecCellFormat]] = (
+        DEFAULT_XLSX_FORMATS
+    )
 
     def __init__(
         self,
@@ -102,20 +109,22 @@ class XlsxWriter:
         )
         self._format_cache: dict[SpecCellFormat, Any] = {}
 
-        self.fmt_text = DEFAULT_XLSX_FORMATS["text"] if fmt_text is None else fmt_text
+        self.fmt_text = (
+            self.DEFAULT_XLSX_FORMATS["text"] if fmt_text is None else fmt_text
+        )
         self.fmt_int = (
-            DEFAULT_XLSX_FORMATS["integer"] if fmt_integer is None else fmt_integer
+            self.DEFAULT_XLSX_FORMATS["integer"] if fmt_integer is None else fmt_integer
         )
         self.fmt_dec = (
-            DEFAULT_XLSX_FORMATS["decimal"] if fmt_decimal is None else fmt_decimal
+            self.DEFAULT_XLSX_FORMATS["decimal"] if fmt_decimal is None else fmt_decimal
         )
         self.fmt_sci = (
-            DEFAULT_XLSX_FORMATS["scientific"]
+            self.DEFAULT_XLSX_FORMATS["scientific"]
             if fmt_scientific is None
             else fmt_scientific
         )
         self.fmt_header = (
-            DEFAULT_XLSX_FORMATS["header"] if fmt_header is None else fmt_header
+            self.DEFAULT_XLSX_FORMATS["header"] if fmt_header is None else fmt_header
         )
         self._header_fmt_cache: dict[
             tuple[int, int, int, int], xlsxwriter.format.Format
