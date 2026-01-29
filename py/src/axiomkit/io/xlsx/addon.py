@@ -1,13 +1,13 @@
-import math
 from collections.abc import Sequence
 from typing import Any, Protocol
 
 import polars as pl
 import xlsxwriter
-import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from .util import convert_nan_inf_to_str
+from .spec import SpecCellFormat
+from .spec import SpecXlsxValuePolicy
+from .util import convert_cell_value
 
 
 class XlsxAddon(Protocol):
@@ -24,8 +24,10 @@ class XlsxAddon(Protocol):
     implementing `check_cell_write_required()` (preferred) or a boolean attribute
     `check_cell_write_required`.
 
-    If neither is provided, the writer may fall back to a compatibility probe
-    (deprecated) to decide the path.
+    Coordinate semantics
+    --------------------
+    For per-cell overrides, `row_idx` and `col_idx` refer to 0-based coordinates
+    within the *data region* (excluding header rows), not the worksheet grid.
     """
 
     def check_cell_write_required(self) -> bool:  # optional, preferred
@@ -35,11 +37,15 @@ class XlsxAddon(Protocol):
         self,
         *,
         df: pl.DataFrame,
-        fmt_sci: xlsxwriter.format.Format,
-    ) -> dict[int, xlsxwriter.format.Format]:
+        fmt_map: dict[str, SpecCellFormat],
+    ) -> dict[int, SpecCellFormat]:
         """
-        Return {col_idx_0based: Format} column-level overrides.
+        Return {col_idx_0based: SpecCellFormat} column-level overrides.
         Default: {}
+
+        Merge contract:
+        - If multiple addons provide overrides for the same column, later addons
+          are merged on top of earlier ones (non-None fields win).
         """
         return {}
 
@@ -49,10 +55,16 @@ class XlsxAddon(Protocol):
         row_idx: int,
         col_idx: int,
         value: Any,
-    ) -> xlsxwriter.format.Format | None:
+    ) -> SpecCellFormat | None:
         """
-        Return a per-cell format. If any addon returns non-None,
+        Return a per-cell SpecCellFormat patch. If any addon returns non-None,
         writer will fall back to slow per-cell write path.
+
+        Coordinates are 0-based and refer to the data region (excluding headers).
+
+        Merge contract:
+        - If multiple addons return a patch for the same cell, later addons are
+          merged on top of earlier ones (non-None fields win).
 
         Default: None (recommended for speed).
         """
@@ -63,16 +75,12 @@ def check_addon_cell_write_requirement(ad: XlsxAddon) -> bool:
     """
     Decide whether an addon forces the slow per-cell body write path.
 
-    Preferred (explicit) contract:
-      - method: `requires_cell_write() -> bool`
-      - attribute: `requires_cell_write: bool`
-
-    Backward-compatible fallback (deprecated):
-      - probe `get_cell_format_override(row_idx=0, col_idx=0, value="__probe__")`
-        and treat any non-None return (or exception) as requiring per-cell writes.
+    Contract:
+      - method: `check_cell_write_required() -> bool`
+      - attribute: `check_cell_write_required: bool`
     """
     # explicit: method
-    meth = getattr(ad, "requires_cell_write", None)
+    meth = getattr(ad, "check_cell_write_required", None)
     if callable(meth):
         try:
             return bool(meth())
@@ -81,101 +89,86 @@ def check_addon_cell_write_requirement(ad: XlsxAddon) -> bool:
             return True
 
     # explicit: attribute
-    if hasattr(ad, "requires_cell_write"):
+    if hasattr(ad, "check_cell_write_required"):
         try:
-            return bool(getattr(ad, "requires_cell_write"))
+            return bool(getattr(ad, "check_cell_write_required"))
         except Exception:
             return True
-
-    # compatibility probe (deprecated)
-    try:
-        return (
-            ad.create_cell_format_override(row_idx=0, col_idx=0, value="__probe__")
-            is not None
-        )
-    except Exception:
-        return True
+    return False
 
 
 def write_cell_with_format(
     ws: xlsxwriter.worksheet.Worksheet,
     addons: Sequence[XlsxAddon],
+    format_factory: Any,
     *,
-    row_idx: int,
-    col_idx: int,
+    row_idx_sheet: int,
+    col_idx_sheet: int,
+    row_idx_data: int,
+    col_idx_data: int,
     value: Any,
     if_is_numeric_col: bool,
+    if_is_integer_col: bool,
     if_keep_missing_values: bool,
+    value_policy: SpecXlsxValuePolicy,
+    fmt_base: SpecCellFormat,
 ):
-    if value is None:
-        if not if_keep_missing_values:
-            ws.write_blank(row=row_idx, col=col_idx, blank=None)
-            return
-        c_cell_val = "NA"
-        cfg_fmt_cell = _derive_cell_format(
-            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
-        )
-        ws.write_string(
-            row=row_idx,
-            col=col_idx,
-            string=c_cell_val,
-            cell_format=cfg_fmt_cell,
-        )
-        return
-
-    if not if_is_numeric_col:
-        c_cell_val = str(value)
-        cfg_fmt_cell = _derive_cell_format(
-            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
-        )
-        ws.write_string(
-            row=row_idx,
-            col=col_idx,
-            string=c_cell_val,
-            cell_format=cfg_fmt_cell,
-        )
-
-        return
-
-    if not math.isfinite(n_cell_val := float(value)):
-        if not if_keep_missing_values:
-            ws.write_blank(row=row_idx, col=col_idx, blank=None)
-            return
-
-        c_cell_val = convert_nan_inf_to_str(n_cell_val)
-        cfg_fmt_cell = _derive_cell_format(
-            addons, row_idx=row_idx, col_idx=col_idx, value=c_cell_val
-        )
-        ws.write_string(
-            row=row_idx,
-            col=col_idx,
-            string=c_cell_val,
-            cell_format=cfg_fmt_cell,
-        )
-        return
-
-    cfg_fmt_cell = _derive_cell_format(
-        addons, row_idx=row_idx, col_idx=col_idx, value=n_cell_val
+    c_cell_val = convert_cell_value(
+        value=value,
+        if_is_numeric_col=if_is_numeric_col,
+        if_is_integer_col=if_is_integer_col,
+        if_keep_missing_values=if_keep_missing_values,
+        value_policy=value_policy,
     )
+    fmt_spec = _derive_cell_format(
+        addons,
+        row_idx=row_idx_data,
+        col_idx=col_idx_data,
+        value=c_cell_val,
+        fmt_base=fmt_base,
+    )
+    cfg_fmt_cell = format_factory(fmt_spec)
+
+    if c_cell_val is None:
+        ws.write_blank(
+            row=row_idx_sheet,
+            col=col_idx_sheet,
+            blank=None,
+            cell_format=cfg_fmt_cell,
+        )
+        return
+    if isinstance(c_cell_val, str):
+        ws.write_string(
+            row=row_idx_sheet,
+            col=col_idx_sheet,
+            string=c_cell_val,
+            cell_format=cfg_fmt_cell,
+        )
+        return
+
     ws.write_number(
-        row=row_idx,
-        col=col_idx,
-        number=n_cell_val,
+        row=row_idx_sheet,
+        col=col_idx_sheet,
+        number=c_cell_val,
         cell_format=cfg_fmt_cell,
     )
 
 
 def _derive_cell_format(
-    addons: Sequence[XlsxAddon], *, row_idx: int, col_idx: int, value: Any
-) -> xlsxwriter.format.Format | None:
-    fmt_cell = None
+    addons: Sequence[XlsxAddon],
+    *,
+    row_idx: int,
+    col_idx: int,
+    value: Any,
+    fmt_base: SpecCellFormat,
+) -> SpecCellFormat:
+    fmt_cell = fmt_base
     for ad in addons:
-        fmt_cell = (
-            ad.create_cell_format_override(
-                row_idx=row_idx,
-                col_idx=col_idx,
-                value=value,
-            )
-            or fmt_cell
+        cfg_override = ad.create_cell_format_override(
+            row_idx=row_idx,
+            col_idx=col_idx,
+            value=value,
         )
+        if cfg_override is not None:
+            fmt_cell = fmt_cell.merge(cfg_override)
     return fmt_cell

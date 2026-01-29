@@ -1,9 +1,7 @@
 # "Facts/Results/Plans" generated from processing DataFrame to Excel XLSX files.
 
-from dataclasses import dataclass, replace
-from typing import Any
-
-import xlsxwriter.format
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal
 
 
 ################################################################################
@@ -66,26 +64,49 @@ class SpecCellBorder:
 
 @dataclass(slots=True)
 class SpecColumnFormatPlan:
-    fmts_by_col: list[xlsxwriter.format.Format]
-    cols_formatted: list["SpecColumnFormatRange"]
-    rules_conditional_fmt: list["SpecConditionalFormatRule"]
-    is_use_conditional: bool
+    fmts_by_col: list["SpecCellFormat"]
+    fmts_base_by_col: list["SpecCellFormat"]
 
 
-@dataclass(slots=True)
-class SpecColumnFormatRange:
-    col_start: int
-    col_end: int
-    fmt: xlsxwriter.format.Format
+# #endregion
+################################################################################
+# #region WriteOptions
 
 
-@dataclass(slots=True)
-class SpecConditionalFormatRule:
-    row_start: int
-    col_start: int
-    row_end: int
-    col_end: int
-    fmt: xlsxwriter.format.Format
+@dataclass(frozen=True, slots=True)
+class SpecXlsxValuePolicy:
+    missing_value_str: str = "NA"
+    nan_str: str = "NaN"
+    posinf_str: str = "Inf"
+    neginf_str: str = "-Inf"
+    integer_coerce: Literal["coerce", "strict"] = "strict"
+
+
+@dataclass(frozen=True, slots=True)
+class SpecXlsxRowChunkPolicy:
+    width_large: int = 8_000
+    width_medium: int = 2_000
+    size_large: int = 1_000
+    size_medium: int = 2_000
+    size_default: int = 10_000
+    fixed_size: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SpecXlsxWriteOptions:
+    value_policy: SpecXlsxValuePolicy = field(default_factory=SpecXlsxValuePolicy)
+    keep_missing_values: bool = False
+    infer_numeric_cols: bool = True
+    infer_integer_cols: bool = True
+    row_chunk_policy: SpecXlsxRowChunkPolicy = field(
+        default_factory=SpecXlsxRowChunkPolicy
+    )
+    base_format_patch: "SpecCellFormat" = field(
+        default_factory=lambda: SpecCellFormat(
+            border=0, top=0, bottom=0, left=0, right=0
+        )
+    )
+    warn_addon_override_conflicts: bool = True
 
 
 # #endregion

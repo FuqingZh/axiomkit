@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal, TypeAlias
 
-from .spec import SpecCellFormat
+from .spec import SpecCellFormat, SpecXlsxWriteOptions
 
 N_NROWS_EXCEL_MAX = 1_048_576
 N_NCOLS_EXCEL_MAX = 16_384
@@ -25,5 +25,7 @@ DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
         "scientific": _cls_base_fmt_spec.with_(num_format="0.00E+0"),
     }
 )
+
+DEFAULT_XLSX_WRITE_OPTIONS = SpecXlsxWriteOptions()
 
 ColumnIdentifier: TypeAlias = str | int

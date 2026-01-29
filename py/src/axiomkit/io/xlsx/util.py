@@ -17,31 +17,60 @@ from .spec import (
     SpecSheetHorizontalMerge,
     SpecSheetSlice,
     SpecXlsxReport,
+    SpecXlsxRowChunkPolicy,
+    SpecXlsxValuePolicy,
 )
 
 ################################################################################
 # #region CellValueConversion
 
 
-def convert_nan_inf_to_str(x: float) -> str:
+def convert_nan_inf_to_str(*, x: float, value_policy: SpecXlsxValuePolicy) -> str:
     if math.isnan(x):
-        return "NaN"
-    elif math.isinf(x):
-        return "Inf" if x > 0 else "-Inf"
-    else:
-        raise ValueError("Input is neither NaN nor Inf.")
+        return value_policy.nan_str
+    if math.isinf(x):
+        return value_policy.posinf_str if x > 0 else value_policy.neginf_str
+    raise ValueError("Input is neither NaN nor Inf.")
 
 
 def convert_cell_value(
-    value: Any, if_is_numeric_col: bool, if_keep_missing_values: bool
-) -> object:
+    *,
+    value: Any,
+    if_is_numeric_col: bool,
+    if_is_integer_col: bool,
+    if_keep_missing_values: bool,
+    value_policy: SpecXlsxValuePolicy,
+) -> Any:
     if value is None:
-        return "NA" if if_keep_missing_values else None
+        return value_policy.missing_value_str if if_keep_missing_values else None
     if not if_is_numeric_col:
         return str(value)
-    if not math.isfinite(n_cell_float_value := float(value)):
+    if if_is_integer_col:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, float):
+            if value_policy.integer_coerce == "coerce":
+                return int(value)
+            if value.is_integer():
+                return int(value)
+            return str(value)
+        if value_policy.integer_coerce == "coerce":
+            try:
+                return int(value)
+            except Exception:
+                return str(value)
+        s_val = str(value)
+        if s_val.lstrip("+-").isdigit():
+            return int(s_val)
+        return s_val
+
+    try:
+        n_cell_float_value = float(value)
+    except Exception:
+        return str(value)
+    if not math.isfinite(n_cell_float_value):
         return (
-            convert_nan_inf_to_str(n_cell_float_value)
+            convert_nan_inf_to_str(x=n_cell_float_value, value_policy=value_policy)
             if if_keep_missing_values
             else None
         )
@@ -120,7 +149,9 @@ def select_numeric_cols(df: pl.DataFrame) -> tuple[int, ...]:
 # #region RowChunking
 
 
-def calculate_row_chunk_size(*, width_df: int) -> int:
+def calculate_row_chunk_size(
+    *, width_df: int, policy: SpecXlsxRowChunkPolicy
+) -> int:
     """
     Return an appropriate row chunk size for processing based on dataframe width.
 
@@ -132,17 +163,16 @@ def calculate_row_chunk_size(*, width_df: int) -> int:
         width_df (int): The number of columns in the dataframe to be processed.
 
     Returns:
-        int: Recommended number of rows per processing chunk:
-             - 1_000 rows if ``width_df >= 8_000``
-             - 2_000 rows if ``width_df >= 2_000`` and ``width_df < 8_000``
-             - 10_000 rows otherwise.
+        int: Recommended number of rows per processing chunk, using thresholds
+        defined in ``policy`` (or ``policy.fixed_size`` if provided).
     """
-    # v1: fixed + simple steps.
-    if width_df >= 8_000:
-        return 1_000
-    if width_df >= 2_000:
-        return 2_000
-    return 10_000
+    if policy.fixed_size is not None:
+        return policy.fixed_size
+    if width_df >= policy.width_large:
+        return policy.size_large
+    if width_df >= policy.width_medium:
+        return policy.size_medium
+    return policy.size_default
 
 
 def generate_row_chunks(
