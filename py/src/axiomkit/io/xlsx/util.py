@@ -10,7 +10,7 @@ from .conf import (
     N_NCOLS_EXCEL_MAX,
     N_NROWS_EXCEL_MAX,
     TUP_EXCEL_ILLEGAL,
-    ColRef,
+    ColumnIdentifier,
 )
 from .spec import (
     SpecCellBorder,
@@ -58,7 +58,7 @@ def convert_to_polars(df: Any) -> pl.DataFrame:
     return df if isinstance(df, pl.DataFrame) else pl.DataFrame(df)
 
 
-def _normalize_col_index(df: pl.DataFrame, ref: ColRef) -> int:
+def _normalize_col_index(df: pl.DataFrame, ref: ColumnIdentifier) -> int:
     if isinstance(ref, int):
         return ref
     try:
@@ -68,7 +68,7 @@ def _normalize_col_index(df: pl.DataFrame, ref: ColRef) -> int:
 
 
 def select_sorted_indices_from_refs(
-    df: pl.DataFrame, refs: Sequence[ColRef] | None
+    df: pl.DataFrame, refs: Sequence[ColumnIdentifier] | None
 ) -> tuple[int, ...]:
     if not refs:
         return ()

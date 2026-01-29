@@ -11,12 +11,12 @@ TUP_EXCEL_ILLEGAL = ("*", ":", "?", "/", "\\", "[", "]")
 
 # Strategy/Preference/Adjustable Parameters for XLSX I/O operations.
 
-_LIT_FMT_KEYS = Literal["text", "integer", "decimal", "scientific", "header"]
+LIT_FMT_KEYS = Literal["text", "integer", "decimal", "scientific", "header"]
 _cls_base_fmt_spec = SpecCellFormat(
     font_name="Times New Roman", font_size=11, border=1, align="left", valign="vcenter"
 )
 
-DEFAULT_XLSX_FORMATS: Mapping[_LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
+DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
     {
         "text": _cls_base_fmt_spec,
         "header": _cls_base_fmt_spec.with_(bold=True, align="center"),
@@ -26,4 +26,4 @@ DEFAULT_XLSX_FORMATS: Mapping[_LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
     }
 )
 
-ColRef: TypeAlias = str | int
+ColumnIdentifier: TypeAlias = str | int
