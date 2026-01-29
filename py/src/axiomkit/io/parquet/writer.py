@@ -14,17 +14,23 @@ N_SIZE_BYTES_CUT = N_SIZE_BYTES_SEG_MAX - N_SIZE_BYTES_SUFFIX
 N_SIZE_BYTES_HASH_DEFAULT = 8  # 64-bit -> 16 hex; reduce collision risk
 
 
-def _hash_hex(s: str, *, size_digest: int):
-    """Computes a hexadecimal hash of the input string with given digest size (bytes)."""
+def _derive_hex_hash(s: str, *, size_digest: int) -> str:
+    """Return a hex hash of the input string using the given digest size (bytes)."""
     return hashlib.blake2b(s.encode("utf-8"), digest_size=int(size_digest)).hexdigest()
 
 
-def _truncate_bytes(
+def _sanitize_and_truncate(
     s: str,
     *,
     size_bytes_seg_max: int = N_SIZE_BYTES_SEG_MAX,
     size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
 ) -> str:
+    """
+    Sanitize a partition segment and truncate it with a hash suffix if needed.
+
+    This keeps the final UTF-8 segment length under ``size_bytes_seg_max`` while
+    preserving uniqueness via a hash suffix when truncation occurs.
+    """
     s = unicodedata.normalize("NFKC", s)  # normalize unicode
     if len(s_ := s.encode("utf-8")) <= size_bytes_seg_max:
         return s
@@ -40,7 +46,7 @@ def _truncate_bytes(
     while s_cut and (s_cut[-1] & 0b1100_0000) == 0b1000_0000:
         s_cut = s_cut[:-1]
     s_cut = s_cut.decode("utf-8", errors="ignore")
-    return f"{s_cut}~{_hash_hex(s, size_digest=size_bytes_hash)}"
+    return f"{s_cut}~{_derive_hex_hash(s, size_digest=size_bytes_hash)}"
 
 
 def _sanitize_partition_cols(
@@ -49,6 +55,12 @@ def _sanitize_partition_cols(
     size_bytes_seg_max: int = N_SIZE_BYTES_SEG_MAX,
     size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
 ) -> pl.Expr:
+    """
+    Sanitize partition column values into filesystem-safe path segments.
+
+    The output is a Polars expression that normalizes unicode, removes or
+    replaces illegal characters, and truncates long segments with a hash suffix.
+    """
     expr_ = (
         expr.cast(pl.Utf8, strict=False)
         .str.strip_chars()
@@ -79,7 +91,7 @@ def _sanitize_partition_cols(
         pl.when(b_is_long)
         .then(
             expr_.map_elements(
-                lambda x: _truncate_bytes(
+                lambda x: _sanitize_and_truncate(
                     x,
                     size_bytes_seg_max=size_bytes_seg_max,
                     size_bytes_hash=size_bytes_hash,
@@ -94,6 +106,12 @@ def _sanitize_partition_cols(
 
 
 def _validate_overwrite_permissions(dir_out: Path, dir_allowed: Path | None) -> None:
+    """
+    Validate that overwriting ``dir_out`` is safe and allowed.
+
+    Refuses to overwrite root, home, or symlink directories. If ``dir_allowed``
+    is provided, ``dir_out`` must be within it.
+    """
     cfg_dir_out_abs = dir_out.expanduser().resolve()
     if cfg_dir_out_abs == Path("/"):
         raise PermissionError("Refusing to overwrite root directory '/'.")
@@ -113,23 +131,23 @@ def _validate_overwrite_permissions(dir_out: Path, dir_allowed: Path | None) -> 
             )
 
 
-def _compressed_bytes_per_row(
+def _estimate_compressed_bytes_per_row(
     lf: pl.LazyFrame,
     sample_rows: int = 200_000,
     compression: str = "zstd",
     compression_level: int = 5,
 ) -> float:
     """
-    Estimate the average compressed bytes per row for a Polars LazyFrame by sampling and writing to an in-memory Parquet file.
+    Estimate average compressed bytes per row by sampling and writing to memory.
 
     Args:
-        lf (pl.LazyFrame): The input Polars LazyFrame to sample from.
-        sample_rows (int, optional): Number of rows to sample for estimation. Defaults to 200_000.
-        compression (str, optional): Compression algorithm to use (e.g., "zstd"). Defaults to "zstd".
-        compression_level (int, optional): Compression level for the algorithm. Defaults to 5.
+        lf: Input Polars LazyFrame to sample from.
+        sample_rows: Number of rows to sample for estimation.
+        compression: Compression algorithm (e.g., "zstd").
+        compression_level: Compression level for the algorithm.
 
     Returns:
-        float: Estimated compressed bytes per row (minimum 1.0).
+        Estimated compressed bytes per row (minimum 1.0).
     """
     # 采样并实际压缩到内存，得到“磁盘上压缩后”的字节/行
     lf_sample = lf.limit(sample_rows)
@@ -146,7 +164,7 @@ def _compressed_bytes_per_row(
     return max(1.0, buf.tell() / max(1, n_rows))  # 至少 1B/row，避免除0/极端值
 
 
-def write_parquet_dataset(
+def sink_parquet_dataset(
     df: pl.LazyFrame | pl.DataFrame,
     dir_out: Path,
     *,
@@ -159,70 +177,28 @@ def write_parquet_dataset(
     dir_allowed: Path | None = None,
 ) -> None:
     """
-    Writes a Polars DataFrame to a directory in Parquet format, with optional partitioning.
+    Write a Parquet dataset with optional Hive-style partitioning.
 
     Args:
-        df (pl.LazyFrame | pl.DataFrame): The input DataFrame to be written.
-        dir_out (Path): The output directory where the Parquet files will be saved.
-        cols_partitioning (str | Sequence[str] | None, optional):
-            The column name or a sequence of column names to partition the data by.
-            If a sequence is provided, multi-column partitioning is applied.
-            If None, no partitioning is applied.
-            Defaults to None.
-        lvl_compression (int, optional):
-            The compression level for Zstandard (1-22).
-            Defaults to 5.
-        size_mib_per_file_max (int, optional):
-            The maximum size of each Parquet file in MiB.
-            Defaults to 128 MiB.
-        size_mib_per_row_group_max (int, optional):
-            The maximum size of each row group in MiB.
-            Defaults to 32 MiB.
-        size_bytes_hash (int, optional):
-            The size in bytes of the hash suffix used when truncating long partition column values.
-            Defaults to 8 bytes.
-        if_overwrite (bool, optional):
-            Whether to overwrite the output directory if it already exists.
-            Defaults to False.
-        dir_allowed (Path | None, optional):
-            If provided, restricts overwriting to within this allowed directory.
-            Defaults to None.
+        df: Input DataFrame or LazyFrame.
+        dir_out: Output directory for the dataset.
+        cols_partitioning: Column name(s) to partition by. If None, no partitioning.
+        lvl_compression: Zstandard compression level (1-22).
+        size_mib_per_file_max: Maximum file size in MiB (rounded up to 8 MiB).
+        size_mib_per_row_group_max: Maximum row group size in MiB (rounded up to 8 MiB).
+        size_bytes_hash: Hash suffix size in bytes for truncating long partition values.
+        if_overwrite: If True, overwrite existing output directory.
+        dir_allowed: Optional base directory that bounds overwrite permissions.
 
     Raises:
-        ValueError: If the specified partition column is not found in the DataFrame.
-        RuntimeError: If the cardinality of the partition column exceeds 10,000.
+        ValueError: If partition columns are missing or compression level is invalid.
+        FileExistsError: If output directory is non-empty and overwrite is False.
+        PermissionError: If overwrite is unsafe or outside ``dir_allowed``.
 
-    ## Notes:
-        - If the DataFrame is empty, a single Parquet file named `__EMPTY__.parquet`
-          will be created.
-        - The function ensures that partition column values are sanitized to avoid
-          path separator issues and other potential problems.
-        - The function estimates the average compressed bytes per row to determine
-          appropriate row group and file sizes.
-
-    Examples:
-        ```python
-        from pathlib import Path
-        import polars as pl
-        # Create a sample DataFrame
-        df = pl.LazyFrame({
-            "id": [1, 2, 3, 4],
-            "value": ["A", "B", "A", "B"],
-            "data": [10.5, 20.3, 30.1, 40.2]
-        })
-        # Write the DataFrame to Parquet files partitioned by 'value'
-        write_parquet_dataset(
-            df=df,
-            dir_out=Path("output/parquet_data"),
-            cols_partitioning="value",
-        )
-        # Write the DataFrame to Parquet files partitioned by multiple columns
-        write_parquet_dataset(
-            df=df,
-            dir_out=Path("output/parquet_data_multi"),
-            cols_partitioning=["value", "id"],
-        )
-        ```
+    Notes:
+        - Empty inputs create a single ``__EMPTY__.parquet`` file.
+        - Partition column values are sanitized to avoid filesystem issues.
+        - Row group and file sizes are derived from a compressed byte estimate.
     """
     if not (1 <= (lvl_compression := int(lvl_compression)) <= 22):
         raise ValueError("Compression level must be between 1 and 22.")
@@ -288,7 +264,7 @@ def write_parquet_dataset(
             ]
         )
 
-    n_size_bytes_per_row = _compressed_bytes_per_row(
+    n_size_bytes_per_row = _estimate_compressed_bytes_per_row(
         lf=df,
         compression_level=lvl_compression,
     )
