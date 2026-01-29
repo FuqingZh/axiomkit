@@ -10,28 +10,39 @@ import xlsxwriter
 import xlsxwriter.format
 import xlsxwriter.worksheet
 
-from .addon import XlsxAddon, addon_requires_cell_write, write_cell_with_format
+from .addon import XlsxAddon, check_addon_cell_write_requirement, write_cell_with_format
 from .conf import DEFAULT_XLSX_FORMATS, N_LEN_EXCEL_SHEET_NAME_MAX, ColRef
-from .spec import SpecCellBorder, SpecCellFormat, SpecSheetSlice, SpecXlsxReport
+from .spec import (
+    SpecCellBorder,
+    SpecCellFormat,
+    SpecColumnFormatPlan,
+    SpecColumnFormatRange,
+    SpecConditionalFormatRule,
+    SpecSheetSlice,
+    SpecXlsxReport,
+)
 from .util import (
-    assert_no_duplicate_columns,
+    apply_vertical_run_text_blankout,
+    calculate_row_chunk_size,
     convert_cell_value,
     convert_nan_inf_to_str,
-    create_row_chunks,
-    find_contiguous_ranges,
+    convert_to_polars,
+    create_horizontal_merge_tracker,
+    derive_contiguous_ranges,
+    generate_row_chunks,
     generate_sheet_slices,
-    get_row_chunk_size,
-    get_sorted_indices_from_refs,
-    normalize_sheet_name,
     plan_horizontal_merges,
     plan_vertical_visual_merge_borders,
-    remove_vertical_run_text,
-    to_polars,
-    track_horizontal_merge_cells,
+    sanitize_sheet_name,
+    select_integer_cols,
+    select_numeric_cols,
+    select_sorted_indices_from_refs,
+    validate_unique_columns,
 )
 
 
 class XlsxWriter:
+    DEFAULT_XLSX_FORMATS = DEFAULT_XLSX_FORMATS
     """
     Helper class for writing tabular data to an XLSX workbook using
     ``xlsxwriter`` with sensible defaults and formatting utilities.
@@ -116,41 +127,18 @@ class XlsxWriter:
     ) -> None:
         self.close()
 
-    @staticmethod
-    def get_default_xlsx_formats():
-        return DEFAULT_XLSX_FORMATS
-
     def close(self) -> None:
         self.wb.close()
 
     def report(self) -> tuple[SpecXlsxReport, ...]:
         return tuple(self._reports)
 
-    def _get_or_create_format(self, spec: SpecCellFormat) -> Any:
+    def _create_format_cached(self, spec: SpecCellFormat) -> Any:
         fmt = self._format_cache.get(spec)
         if fmt is None:
             fmt = self.wb.add_format(spec.to_xlsxwriter())
             self._format_cache[spec] = fmt
         return fmt
-
-    @staticmethod
-    def _infer_numeric_cols(df: pl.DataFrame) -> tuple[int, ...]:
-        l_cols_idx_num: list[int] = []
-        for _idx, _val in enumerate(df.columns):
-            if df.schema[_val].is_numeric():
-                l_cols_idx_num.append(_idx)
-        return tuple(l_cols_idx_num)
-
-    @staticmethod
-    def _infer_integer_cols(
-        df: pl.DataFrame, cols_idx_num: tuple[int, ...]
-    ) -> tuple[int, ...]:
-        l_cols_idx_int: list[int] = []
-        for _idx in cols_idx_num:
-            cfg_col_dtype = df.schema[df.columns[_idx]]
-            if cfg_col_dtype.is_integer():
-                l_cols_idx_int.append(_idx)
-        return tuple(l_cols_idx_int)
 
     @staticmethod
     def _estimate_width_len(
@@ -204,7 +192,7 @@ class XlsxWriter:
         except Exception:
             return len(str(n_val))
 
-    def _ensure_unique_sheet_name(self, name: str) -> str:
+    def _create_unique_sheet_name(self, name: str) -> str:
         if name not in self._existing_sheet_names:
             self._existing_sheet_names.add(name)
             return name
@@ -219,7 +207,7 @@ class XlsxWriter:
         self._existing_sheet_names.add(c_candidate_name)
         return c_candidate_name
 
-    def _get_header_fmt(
+    def _create_header_fmt(
         self, border: SpecCellBorder | None
     ) -> xlsxwriter.format.Format:
         # default full border
@@ -227,7 +215,7 @@ class XlsxWriter:
             tup_border_format_key = (1, 1, 1, 1)
             if self._header_fmt_cache.get(tup_border_format_key) is None:
                 self._header_fmt_cache[tup_border_format_key] = (
-                    self._get_or_create_format(
+                    self._create_format_cached(
                         self.fmt_header.with_(top=1, bottom=1, left=1, right=1)
                     )
                 )
@@ -235,7 +223,7 @@ class XlsxWriter:
 
         tup_border_format_key = (border.top, border.bottom, border.left, border.right)
         if self._header_fmt_cache.get(tup_border_format_key) is None:
-            self._header_fmt_cache[tup_border_format_key] = self._get_or_create_format(
+            self._header_fmt_cache[tup_border_format_key] = self._create_format_cached(
                 self.fmt_header.with_(
                     top=border.top,
                     bottom=border.bottom,
@@ -245,9 +233,8 @@ class XlsxWriter:
             )
         return self._header_fmt_cache[tup_border_format_key]
 
-    def _set_column_formats(
+    def _plan_column_formats(
         self,
-        ws: xlsxwriter.worksheet.Worksheet,
         *,
         width_data: int,
         height_data: int,
@@ -257,26 +244,32 @@ class XlsxWriter:
         cols_idx_decimal: tuple[int, ...] | Literal[False],
         cols_fmt_overrides: dict[int, xlsxwriter.format.Format],
         if_data_only: bool,
-    ) -> list[xlsxwriter.format.Format]:
+    ) -> SpecColumnFormatPlan:
         if width_data <= 0:
-            return []
-        cfg_fmt_text_base = self._get_or_create_format(self.fmt_text.with_(border=0))
-        cfg_fmt_text = self._get_or_create_format(self.fmt_text)
-        cfg_fmt_int = self._get_or_create_format(self.fmt_int)
-        cfg_fmt_dec = self._get_or_create_format(self.fmt_dec)
+            return SpecColumnFormatPlan(
+                fmts_by_col=[],
+                cols_formatted=[],
+                rules_conditional_fmt=[],
+                is_use_conditional=False,
+            )
+        cfg_fmt_text = self._create_format_cached(self.fmt_text)
+        cfg_fmt_int = self._create_format_cached(self.fmt_int)
+        cfg_fmt_dec = self._create_format_cached(self.fmt_dec)
 
         # Track final per-column format for downstream operations (e.g. autofit).
         l_fmt_by_col: list[xlsxwriter.format.Format] = [cfg_fmt_text] * width_data
 
         b_use_conditional = if_data_only and height_data > 0
 
-        # Column defaults: in "data only" mode we avoid full-column formats.
+        # Column defaults: in "data only" mode we avoid full-column borders.
+        # (apply defaults later, after autofit, to avoid overwrite).
         n_row_idx_data_end = row_idx_data_start + height_data - 1
-        ws.set_column(
-            first_col=0,
-            last_col=width_data - 1,
-            cell_format=cfg_fmt_text_base,
-        )
+        l_column_ranges: list[SpecColumnFormatRange] = []
+        l_conditional_rules: list[SpecConditionalFormatRule] = []
+        if not b_use_conditional:
+            l_column_ranges.append(
+                SpecColumnFormatRange(0, width_data - 1, cfg_fmt_text)
+            )
 
         set_cols_idx_int = set(cols_idx_integer)
         set_cols_idx_dec = set(cols_idx_decimal) if cols_idx_decimal else False
@@ -297,89 +290,125 @@ class XlsxWriter:
             # Precedence: overrides > integer > decimal > text default.
             for _col_idx, _fmt in cols_fmt_overrides.items():
                 if 0 <= _col_idx < width_data:
-                    ws.conditional_format(
-                        first_row=row_idx_data_start,
-                        first_col=_col_idx,
-                        last_row=n_row_idx_data_end,
-                        last_col=_col_idx,
-                        options={
-                            "type": "formula",
-                            "criteria": "=TRUE",
-                            "format": _fmt,
-                        },
+                    l_conditional_rules.append(
+                        SpecConditionalFormatRule(
+                            row_idx_data_start,
+                            _col_idx,
+                            n_row_idx_data_end,
+                            _col_idx,
+                            _fmt,
+                        )
                     )
                     l_fmt_by_col[_col_idx] = _fmt
 
-            for _start, _end in find_contiguous_ranges(l_cols_idx_int_sorted):
-                ws.conditional_format(
-                    first_row=row_idx_data_start,
-                    first_col=_start,
-                    last_row=n_row_idx_data_end,
-                    last_col=_end,
-                    options={
-                        "type": "formula",
-                        "criteria": "=TRUE",
-                        "format": cfg_fmt_int,
-                    },
+            for _start, _end in derive_contiguous_ranges(l_cols_idx_int_sorted):
+                l_conditional_rules.append(
+                    SpecConditionalFormatRule(
+                        row_idx_data_start,
+                        _start,
+                        n_row_idx_data_end,
+                        _end,
+                        cfg_fmt_int,
+                    )
                 )
                 for _i in range(_start, _end + 1):
                     l_fmt_by_col[_i] = cfg_fmt_int
 
-            for _start, _end in find_contiguous_ranges(l_cols_idx_dec_sorted):
-                ws.conditional_format(
-                    first_row=row_idx_data_start,
-                    first_col=_start,
-                    last_row=n_row_idx_data_end,
-                    last_col=_end,
-                    options={
-                        "type": "formula",
-                        "criteria": "=TRUE",
-                        "format": cfg_fmt_dec,
-                    },
+            for _start, _end in derive_contiguous_ranges(l_cols_idx_dec_sorted):
+                l_conditional_rules.append(
+                    SpecConditionalFormatRule(
+                        row_idx_data_start,
+                        _start,
+                        n_row_idx_data_end,
+                        _end,
+                        cfg_fmt_dec,
+                    )
                 )
                 for _i in range(_start, _end + 1):
                     l_fmt_by_col[_i] = cfg_fmt_dec
 
             # Default text last, so it has the lowest conditional priority.
-            ws.conditional_format(
-                first_row=row_idx_data_start,
-                first_col=0,
-                last_row=n_row_idx_data_end,
-                last_col=width_data - 1,
-                options={
-                    "type": "formula",
-                    "criteria": "=TRUE",
-                    "format": cfg_fmt_text,
-                },
+            l_conditional_rules.append(
+                SpecConditionalFormatRule(
+                    row_idx_data_start,
+                    0,
+                    n_row_idx_data_end,
+                    width_data - 1,
+                    cfg_fmt_text,
+                )
             )
 
         else:
-            for _start, _end in find_contiguous_ranges(l_cols_idx_dec_sorted):
-                ws.set_column(
-                    first_col=_start,
-                    last_col=_end,
-                    cell_format=cfg_fmt_dec,
-                )
+            for _start, _end in derive_contiguous_ranges(l_cols_idx_dec_sorted):
+                l_column_ranges.append(SpecColumnFormatRange(_start, _end, cfg_fmt_dec))
                 for _i in range(_start, _end + 1):
                     l_fmt_by_col[_i] = cfg_fmt_dec
-            for _start, _end in find_contiguous_ranges(l_cols_idx_int_sorted):
-                ws.set_column(
-                    first_col=_start,
-                    last_col=_end,
-                    cell_format=cfg_fmt_int,
-                )
+            for _start, _end in derive_contiguous_ranges(l_cols_idx_int_sorted):
+                l_column_ranges.append(SpecColumnFormatRange(_start, _end, cfg_fmt_int))
                 for _i in range(_start, _end + 1):
                     l_fmt_by_col[_i] = cfg_fmt_int
             for _col_idx, _fmt in cols_fmt_overrides.items():
                 if 0 <= _col_idx < width_data:
-                    ws.set_column(
-                        first_col=_col_idx,
-                        last_col=_col_idx,
-                        cell_format=_fmt,
+                    l_column_ranges.append(
+                        SpecColumnFormatRange(_col_idx, _col_idx, _fmt)
                     )
                     l_fmt_by_col[_col_idx] = _fmt
 
-        return l_fmt_by_col
+        return SpecColumnFormatPlan(
+            fmts_by_col=l_fmt_by_col,
+            cols_formatted=l_column_ranges,
+            rules_conditional_fmt=l_conditional_rules,
+            is_use_conditional=b_use_conditional,
+        )
+
+    @staticmethod
+    def _apply_column_formats(
+        ws: xlsxwriter.worksheet.Worksheet,
+        plan: SpecColumnFormatPlan,
+        *,
+        widths: list[float] | None,
+    ) -> None:
+        n_cols = len(plan.fmts_by_col)
+        if n_cols <= 0:
+            return
+
+        if widths is None:
+            if not plan.is_use_conditional:
+                for _rng in plan.cols_formatted:
+                    ws.set_column(
+                        first_col=_rng.col_start,
+                        last_col=_rng.col_end,
+                        cell_format=_rng.fmt,
+                    )
+        else:
+            if plan.is_use_conditional:
+                for _col_idx, _width in enumerate(widths):
+                    ws.set_column(
+                        first_col=_col_idx,
+                        last_col=_col_idx,
+                        width=_width,
+                    )
+            else:
+                for _col_idx, _width in enumerate(widths):
+                    ws.set_column(
+                        first_col=_col_idx,
+                        last_col=_col_idx,
+                        width=_width,
+                        cell_format=plan.fmts_by_col[_col_idx],
+                    )
+
+        for _rule in plan.rules_conditional_fmt:
+            ws.conditional_format(
+                first_row=_rule.row_start,
+                first_col=_rule.col_start,
+                last_row=_rule.row_end,
+                last_col=_rule.col_end,
+                options={
+                    "type": "formula",
+                    "criteria": "=TRUE",
+                    "format": _rule.fmt,
+                },
+            )
 
     def _write_header(
         self,
@@ -400,12 +429,12 @@ class XlsxWriter:
         b_visual_merge_vertical = bool(if_merge and n_rows > 1)
         if b_visual_merge_vertical and n_rows > 1:
             dict_border_plan = plan_vertical_visual_merge_borders(l_header_grid)
-            l_header_grid = remove_vertical_run_text(l_header_grid)
+            l_header_grid = apply_vertical_run_text_blankout(l_header_grid)
 
         dict_horizontal_merges_by_row = (
             plan_horizontal_merges(l_header_grid) if if_merge else {}
         )
-        dict_horizontal_merge_tracker = track_horizontal_merge_cells(
+        dict_horizontal_merge_tracker = create_horizontal_merge_tracker(
             dict_horizontal_merges_by_row
         )
 
@@ -415,7 +444,7 @@ class XlsxWriter:
                 if dict_horizontal_merge_tracker.get((_row_idx, _col_idx), False):
                     continue
 
-                cfg_cell_format_ = self._get_header_fmt(
+                cfg_cell_format_ = self._create_header_fmt(
                     dict_border_plan.get((_row_idx, _col_idx))
                 )
 
@@ -440,7 +469,7 @@ class XlsxWriter:
             for _merge_block in dict_horizontal_merges_by_row.get(_row_idx, []):
                 # For merged block, pick a border spec that at least draws outer box.
                 # (Excel treats merged region as one cell; internal per-col borders irrelevant.)
-                cfg_block_format_ = self._get_header_fmt(
+                cfg_block_format_ = self._create_header_fmt(
                     SpecCellBorder(top=1, bottom=1, left=1, right=1)
                 )
                 ws.merge_range(
@@ -477,17 +506,17 @@ class XlsxWriter:
             warnings=[],
         )
 
-        df_custom = to_polars(df)
+        df_custom = convert_to_polars(df)
         l_colnames_df = df_custom.columns
         n_width_df = df_custom.width
         n_height_df = df_custom.height
-        assert_no_duplicate_columns(df_custom)
+        validate_unique_columns(df_custom)
 
         # build header grid
         l_header_grid = [list(df_custom.columns)]
         if df_header is not None:
-            df_header_custom = to_polars(df_header)
-            assert_no_duplicate_columns(df_header_custom)
+            df_header_custom = convert_to_polars(df_header)
+            validate_unique_columns(df_header_custom)
             if df_header_custom.height == 0:
                 raise ValueError(
                     "df_header must have >= 1 row (0-row header is not allowed)."
@@ -503,16 +532,16 @@ class XlsxWriter:
             ]
 
         # infer numeric and integer columns
-        tup_cols_idx_numeric = self._infer_numeric_cols(df_custom)
-        tup_cols_idx_integer_inferred = self._infer_integer_cols(
+        tup_cols_idx_numeric = select_numeric_cols(df_custom)
+        tup_cols_idx_integer_inferred = select_integer_cols(
             df_custom, tup_cols_idx_numeric
         )
 
-        tup_cols_idx_integer_specified = get_sorted_indices_from_refs(
+        tup_cols_idx_integer_specified = select_sorted_indices_from_refs(
             df_custom, cols_integer
         )
         tup_cols_idx_decimal_specified = (
-            get_sorted_indices_from_refs(df_custom, cols_decimal)
+            select_sorted_indices_from_refs(df_custom, cols_decimal)
             if cols_decimal
             else False
         )
@@ -550,7 +579,7 @@ class XlsxWriter:
             height_df=n_height_df,
             width_df=n_width_df,
             height_header=n_rows_header,
-            sheet_name=normalize_sheet_name(sheet_name),
+            sheet_name=sanitize_sheet_name(sheet_name),
             report=report,
         )
 
@@ -560,19 +589,21 @@ class XlsxWriter:
         # addon column overrides (fast path)
         dict_cols_fmt_overrides: dict[int, xlsxwriter.format.Format] = {}
         for _ad in addons:
-            dict_cols_fmt_overrides |= _ad.get_column_format_overrides(
-                df=df_custom, fmt_sci=self._get_or_create_format(self.fmt_sci)
+            dict_cols_fmt_overrides |= _ad.create_column_format_overrides(
+                df=df_custom, fmt_sci=self._create_format_cached(self.fmt_sci)
             )
 
         # determine whether we must fall back to slow per-cell body write
         # If any addon potentially returns a non-None cell format, we assume slow path.
         # (v1: we do a single probe with a cheap call contract; you can also pass addons=() for fast path.)
-        b_any_cell_override = any(addon_requires_cell_write(_ad) for _ad in addons)
+        b_any_cell_override = any(
+            check_addon_cell_write_requirement(_ad) for _ad in addons
+        )
         # Data-range-only formatting via conditional formats is only safe on the fast path.
         b_data_only_formats = not b_any_cell_override
 
         for _sheet_slice in l_sheet_parts:
-            c_sheet_name_unique_ = self._ensure_unique_sheet_name(
+            c_sheet_name_unique_ = self._create_unique_sheet_name(
                 _sheet_slice.sheet_name
             )
             cfg_worksheet_ = self.wb.add_worksheet(c_sheet_name_unique_)
@@ -622,11 +653,8 @@ class XlsxWriter:
                 < _sheet_slice.col_end_exclusive
             }
 
-            # Column formats.
-            # Note: we also keep the final per-column formats for optional
-            # post-write operations (e.g. autofit width).
-            l_fmt_by_col_ = self._set_column_formats(
-                cfg_worksheet_,
+            # Column formats plan (applied after body/autofit).
+            plan_col_formats = self._plan_column_formats(
                 width_data=df_slice_.width,
                 row_idx_data_start=n_rows_header,
                 height_data=df_slice_.height,
@@ -692,7 +720,7 @@ class XlsxWriter:
                         pl.col(_val).cast(pl.String).alias(_val)
                     )
 
-            n_rows_chunk_ = get_row_chunk_size(width_df=df_slice_.width)
+            n_rows_chunk_ = calculate_row_chunk_size(width_df=df_slice_.width)
             n_cols_ = df_slice_.width
             n_row_start_data_ = n_rows_header
             l_is_numeric_col = [_idx in set_cols_idx_numeric for _idx in range(n_cols_)]
@@ -706,7 +734,7 @@ class XlsxWriter:
 
             # Fast path: write_row with python values (no per-cell formats)
             if not b_any_cell_override:
-                for _row_idx, _df_chunk in create_row_chunks(
+                for _row_idx, _df_chunk in generate_row_chunks(
                     df=df_slice_,
                     size_rows_chunk=n_rows_chunk_,
                     cols_exprs=l_col_cast_expressions,
@@ -747,7 +775,7 @@ class XlsxWriter:
                         )
             else:
                 # Slow path: per-cell write to allow cell formats.
-                for _row_cursor, _df_chunk in create_row_chunks(
+                for _row_cursor, _df_chunk in generate_row_chunks(
                     df=df_slice_,
                     size_rows_chunk=n_rows_chunk_,
                     cols_exprs=l_col_cast_expressions,
@@ -786,11 +814,12 @@ class XlsxWriter:
                         ):
                             n_rows_seen_for_autofit += 1
 
-            # Apply autofit widths at the end to avoid overriding formats mid-write.
+            # Apply formats (and widths if autofit enabled) at the end.
             if if_autofit_columns and df_slice_.width > 0:
                 n_min = max(1, int(width_cell_autofit_min))
                 n_max = min(255, max(n_min, int(width_cell_autofit_max)))
                 n_pad = max(0, int(width_cell_autofit_padding))
+                l_col_widths_final: list[float] = []
                 for _col_idx in range(df_slice_.width):
                     n_col_width_recorded_ = (
                         dict_col_widths[rule_autofit_columns][_col_idx]
@@ -804,20 +833,14 @@ class XlsxWriter:
                         n_max,
                         max(n_min, n_col_width_recorded_ + n_pad),
                     )
-                    if b_data_only_formats:
-                        # Width only: keep formats limited to the data range.
-                        cfg_worksheet_.set_column(
-                            first_col=_col_idx,
-                            last_col=_col_idx,
-                            width=n_col_width_final_,
-                        )
-                    else:
-                        cfg_worksheet_.set_column(
-                            first_col=_col_idx,
-                            last_col=_col_idx,
-                            width=n_col_width_final_,
-                            cell_format=l_fmt_by_col_[_col_idx],
-                        )
+                    l_col_widths_final.append(n_col_width_final_)
+                self._apply_column_formats(
+                    cfg_worksheet_, plan_col_formats, widths=l_col_widths_final
+                )
+            else:
+                self._apply_column_formats(
+                    cfg_worksheet_, plan_col_formats, widths=None
+                )
 
             report.sheets.append(
                 SpecSheetSlice(
