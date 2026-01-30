@@ -229,6 +229,9 @@ def generate_sheet_slices(
         n_row_end = min(height_df, n_row_start + n_rows_data_max)
         l_row_slices.append((n_row_start, n_row_end))
         n_row_start = n_row_end
+    if not l_row_slices:
+        # Ensure we still create a sheet to write headers for 0-row dataframes.
+        l_row_slices.append((0, 0))
 
     n_parts_total = len(l_col_slices) * len(l_row_slices)
 
