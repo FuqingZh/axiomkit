@@ -58,7 +58,7 @@ class RegistryCommand:
             return self._core.list_specs(kind_sort="insertion")
         return self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
 
-    def canonicalize_namespace(
+    def normalize_command_namespace(
         self, ns: argparse.Namespace, *, attr: str = "command"
     ) -> str:
         """
@@ -92,7 +92,7 @@ class RegistryCommand:
             ``"ls"`` has been registered as an alias for the canonical id
             ``"list"``. Then:
 
-            >>> registry.canonicalize_namespace(ns)
+            >>> registry.normalize_command_namespace(ns)
             'list'
             >>> ns.stages
             'list'
@@ -106,7 +106,7 @@ class RegistryCommand:
         setattr(ns, attr, c_id)
         return c_id
 
-    def build_subparsers(
+    def build(
         self,
         parser: argparse.ArgumentParser,
         *,
@@ -153,7 +153,7 @@ class RegistryCommand:
         Examples:
             >>> parser = argparse.ArgumentParser(prog="tool")
             >>> registry = RegistryCommand()
-            >>> _ = registry.build_subparsers(parser)
+            >>> _ = registry.build(parser)
         """
         cls_sub = parser.add_subparsers(title=title, dest=dest, required=if_required)
 
@@ -167,7 +167,7 @@ class RegistryCommand:
         cls_fmt = kind_formatter or parser.formatter_class
         for spec in self.list_registered_commands(if_sort=if_sort_specs):
             c_help = spec.help
-            print(spec.id, spec.group, repr(c_help))
+            
             if if_include_group_in_help and spec.group:
                 c_help = f"\\[{spec.group}] {c_help}"
 
