@@ -53,7 +53,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
 
     # 1) basic keep_tree
     report = copy_tree(src, dst)
-    assert report.calculate_error_count == 0
+    assert report.error_count == 0
     _assert_exists(dst / "root.txt")
     _assert_exists(dst / "a" / "file1.txt")
     _assert_exists(dst / "b" / "sub" / "file2.txt")
@@ -67,7 +67,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         patterns_include_files=["*.txt"],
         rule_pattern=EnumCopyPatternMode.GLOB,
     )
-    assert report2.calculate_error_count == 0
+    assert report2.error_count == 0
     _assert_exists(dst2 / "root.txt")
     _assert_exists(dst2 / "file1.txt")
     _assert_exists(dst2 / "file2.txt")
@@ -82,7 +82,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         rule_depth_limit=EnumCopyDepthLimitMode.EXACT,
         if_keep_tree=True,
     )
-    assert report3.calculate_error_count == 0
+    assert report3.error_count == 0
     _assert_exists(dst3 / "root.txt")
     assert not (dst3 / "a" / "file1.txt").exists()
 
@@ -94,7 +94,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         patterns_exclude_dirs=["skipme"],
         rule_pattern=EnumCopyPatternMode.GLOB,
     )
-    assert report4.calculate_error_count == 0
+    assert report4.error_count == 0
     assert not (dst4 / "skipme" / "file3.txt").exists()
 
     # 5) symlink behavior
@@ -104,7 +104,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         dst5,
         rule_symlink=EnumCopySymlinkStrategy.COPY_SYMLINKS,
     )
-    assert report5.calculate_error_count == 0
+    assert report5.error_count == 0
     _assert_symlink(dst5 / "link_root.txt")
     _assert_symlink(dst5 / "link_dir")
 
@@ -115,7 +115,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         dst6,
         rule_symlink=EnumCopySymlinkStrategy.DEREFERENCE,
     )
-    assert report6.calculate_error_count >= 1
+    assert report6.error_count >= 1
 
     # 7) conflict error on file
     dst7 = tmp_path / "dst7"
@@ -127,7 +127,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         rule_conflict_file=EnumCopyFileConflictStrategy.ERROR,
         rule_conflict_dir=EnumCopyDirectoryConflictStrategy.SKIP,
     )
-    assert report7.calculate_error_count >= 1
+    assert report7.error_count >= 1
 
     # 8) overlap detection
     with pytest.raises(ValueError):

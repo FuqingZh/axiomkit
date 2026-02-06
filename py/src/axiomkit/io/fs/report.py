@@ -45,11 +45,11 @@ class ReportCopy:
     warnings: tuple[str, ...] = ()
 
     @property
-    def calculate_error_count(self) -> int:
+    def error_count(self) -> int:
         return len(self.errors)
 
     @property
-    def calculate_warning_count(self) -> int:
+    def warning_count(self) -> int:
         return len(self.warnings)
 
     def to_dict(self) -> dict[str, int]:
@@ -59,8 +59,8 @@ class ReportCopy:
             "cnt_scanned": self.cnt_scanned,
             "cnt_copied": self.cnt_copied,
             "cnt_skipped": self.cnt_skipped,
-            "cnt_errors": self.calculate_error_count,
-            "cnt_warnings": self.calculate_warning_count,
+            "cnt_errors": self.error_count,
+            "cnt_warnings": self.warning_count,
         }
 
     def format(self, *, prefix: str = "[COPY]") -> str:
@@ -84,8 +84,8 @@ class ReportCopy:
             f"scanned_count={self.cnt_scanned}, "
             f"copied_count={self.cnt_copied}, "
             f"skipped_count={self.cnt_skipped}, "
-            f"errors_count={self.calculate_error_count}, "
-            f"warnings_count={self.calculate_warning_count})"
+            f"errors_count={self.error_count}, "
+            f"warnings_count={self.warning_count})"
         )
 
 
