@@ -1,7 +1,4 @@
 
-tests/
-test/
-
 # Python
 __pycache__/
 *.pyc
