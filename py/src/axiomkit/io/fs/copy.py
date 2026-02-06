@@ -58,22 +58,80 @@ def copy_tree(
     Args:
         dir_source: Source directory.
         dir_destination: Destination directory.
-        patterns_include_files: Include patterns for file basenames.
-        patterns_exclude_files: Exclude patterns for file basenames.
-        patterns_include_dirs: Include patterns for directory basenames.
-        patterns_exclude_dirs: Exclude patterns for directory basenames.
-        rule_pattern: Pattern interpretation mode.
-        rule_conflict_file: Conflict strategy for files.
-        rule_conflict_dir: Conflict strategy for directories.
-        rule_symlink: Symlink handling strategy.
-        depth_limit: Depth limit used with ``rule_depth_limit`` (None means no limit).
-        rule_depth_limit: Depth selection mode (``exact`` requires ``depth_limit``).
+
+        patterns_include_files: File basename include patterns.
+        patterns_exclude_files: File basename exclude patterns.
+        patterns_include_dirs: Directory basename include patterns.
+        patterns_exclude_dirs: Directory basename exclude patterns.
+        
+        rule_pattern: 
+            Pattern interpretation mode. See :class:`EnumCopyPatternMode`.
+            - ``glob``: (Default) Unix shell-style wildcards.
+            - ``regex``: Regular expressions.
+            - ``literal``: Exact string matches.
+        rule_conflict_file:
+            File conflict strategy. See :class:`EnumCopyFileConflictStrategy`.
+            - ``skip``: (Default) Skip existing files.
+            - ``overwrite``: Overwrite existing files.
+            - ``error``: Raise an error on conflict.
+        rule_conflict_dir:
+            Directory conflict strategy. See :class:`EnumCopyDirectoryConflictStrategy`.
+            - ``skip``: (Default) Skip existing directories.
+            - ``merge``: Merge contents into existing directories.
+            - ``error``: Raise an error on conflict.
+        rule_symlink:
+            Symlink handling strategy. See :class:`EnumCopySymlinkStrategy`.
+            - ``copy_symlinks``: (Default) Copy symlinks as symlinks.
+            - ``dereference``: Follow symlinks and copy target files/directories.
+            - ``skip_symlinks``: Skip symlinked files and directories.
+
+        depth_limit:
+            Depth limit used with ``rule_depth_limit`` (None means no limit).
+        rule_depth_limit:
+            Depth selection mode. See :class:`EnumCopyDepthLimitMode`.
+            - ``at_most``: (Default) Copy items at depth <= depth_limit.
+            - ``exact``: Copy items at depth == depth_limit.
+            It requires ``depth_limit`` to be set.
+
         num_workers_max: Maximum worker threads.
-        if_keep_tree: Preserve directory structure if True.
-        if_dry_run: If True, no filesystem changes are made.
+        if_keep_tree:
+            - ``True``: (Default) Keep source directory structure in destination.
+            - ``False``: Flatten structure; copy all matched files into destination root.
+        if_dry_run:
+            - ``False``: (Default) Perform actual copy.
+            - ``True``: Simulate copy without making changes.
+    
+    Raises:
+        ValueError:
+            If ``depth_limit`` is invalid, ``rule_depth_limit`` is ``exact`` without
+            ``depth_limit``, source/destination overlap, or any enum-like rule value
+            is invalid.
+        NotADirectoryError:
+            If ``dir_source`` is not a directory.
 
     Returns:
         ReportCopy: Summary of the copy operation.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> report = copy_tree(
+        ...     Path("data/raw"),
+        ...     Path("data/processed"),
+        ...     patterns_include_files=["*.csv"],
+        ...     rule_pattern="glob",
+        ...     rule_conflict_file="skip",
+        ... )
+        >>> report.error_count == 0
+        True
+        >>> report_flat = copy_tree(
+        ...     Path("data/raw"),
+        ...     Path("data/flat"),
+        ...     if_keep_tree=False,
+        ...     patterns_include_files=["*.txt"],
+        ... )
+        >>> report_flat.error_count == 0
+        True
+
     """
     ########################################
     # #region ParameterValidation
