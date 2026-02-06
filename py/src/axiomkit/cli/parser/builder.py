@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Any
 
 from .action import ActionNumericRange, ActionPath
-from .registry import RegistryParam
+from .registry import ParamRegistry
 from .spec import (
     DICT_ARG_GROUP_META,
     ArgAdder,
@@ -26,7 +26,7 @@ THR_TTEST_PARAMS: tuple[EnumParamKey, ...] = (
 )
 
 
-def build_param_registry(registry: RegistryParam) -> None:
+def build_param_registry(registry: ParamRegistry) -> None:
     """Build a parameter registry with all defined parameters."""
     registry.register(
         SpecParam(
@@ -266,7 +266,7 @@ def build_param_registry(registry: RegistryParam) -> None:
 
 
 @dataclass(slots=True)
-class GroupView:
+class ArgumentGroupHandler:
     """
     A thin wrapper over an argparse argument group.
 
@@ -276,15 +276,15 @@ class GroupView:
 
     key: EnumGroupKey
     _adder: ArgAdder
-    _parser_reg: "BuilderParser"
-    _params: "RegistryParam | None" = None
+    _parser_reg: "ParserBuilder"
+    _params: "ParamRegistry | None" = None
 
     # Keep ArgAdder compatibility
     def add_argument(self, *name_or_flags: str, **kwargs: Any) -> Any:
         return self._adder.add_argument(*name_or_flags, **kwargs)
 
     # Your desired sugar
-    def extract_params(self, *param_keys: EnumParamKey) -> "GroupView":
+    def extract_params(self, *param_keys: EnumParamKey) -> "ArgumentGroupHandler":
         """
         Add registered params into THIS group.
 
@@ -317,33 +317,33 @@ class GroupView:
 
 
 @lru_cache(maxsize=1)
-def default_param_registry() -> RegistryParam:
+def default_param_registry() -> ParamRegistry:
     """Get the default parameter registry."""
-    cls_registry = RegistryParam()
+    cls_registry = ParamRegistry()
     build_param_registry(cls_registry)
     return cls_registry
 
 
-class BuilderParser:
+class ParserBuilder:
     def __init__(
         self,
         parser: argparse.ArgumentParser,
         *,
-        params: "RegistryParam | None" = None,
+        params: "ParamRegistry | None" = None,
     ) -> None:
         self.parser = parser
         self.params = params or default_param_registry()
-        self._groups: dict[EnumGroupKey, GroupView] = {}
+        self._groups: dict[EnumGroupKey, ArgumentGroupHandler] = {}
 
     def get_group(
         self,
         key: EnumGroupKey | str,
-    ) -> GroupView:
+    ) -> ArgumentGroupHandler:
         if (c_key := EnumGroupKey(key)) not in self._groups:
             title, desc = DICT_ARG_GROUP_META[c_key]
             g = self.parser.add_argument_group(title, description=desc)
 
-            self._groups[c_key] = GroupView(
+            self._groups[c_key] = ArgumentGroupHandler(
                 key=c_key,
                 _adder=g,
                 _parser_reg=self,

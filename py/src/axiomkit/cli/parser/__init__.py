@@ -1,12 +1,12 @@
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
 from .base import SmartFormatter
-from .builder import BuilderParser
-from .registry import RegistryCommand, RegistryParam
+from .builder import ParserBuilder
+from .registry import CommandRegistry, ParamRegistry
 from .spec import EnumGroupKey, EnumParamKey, SpecCommand, SpecParam
 
 __all__ = [
     # Base
-    "BuilderParser",
+    "ParserBuilder",
     "SmartFormatter",
     # Actions
     "ActionCommandPrefix",
@@ -20,6 +20,6 @@ __all__ = [
     "EnumParamKey",
     "EnumGroupKey",
     # Registry
-    "RegistryParam",
-    "RegistryCommand",
+    "ParamRegistry",
+    "CommandRegistry",
 ]

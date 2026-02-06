@@ -125,7 +125,7 @@ class AliasIndex:
 
 
 @dataclass(slots=True)
-class RegistryCore(Generic[T]):
+class CanonicalRegistry(Generic[T]):
     """
     Generic in-memory registry for items addressable by a canonical id and
     optional aliases.
@@ -139,7 +139,7 @@ class RegistryCore(Generic[T]):
     Type parameters:
         T: The type of objects stored in the registry.
 
-    Instances are typically created via :meth:`RegistryCore.new`, which
+    Instances are typically created via :meth:`CanonicalRegistry.new`, which
     initializes an empty registry and alias index.
 
     Attributes:
@@ -153,7 +153,7 @@ class RegistryCore(Generic[T]):
     _aliases: AliasIndex
 
     @classmethod
-    def new(cls) -> "RegistryCore[T]":
+    def new(cls) -> "CanonicalRegistry[T]":
         return cls(_items={}, _aliases=AliasIndex.new())
 
     def register(

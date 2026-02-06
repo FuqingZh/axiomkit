@@ -4,17 +4,17 @@ from typing import Protocol, Self, cast
 
 from loguru import logger
 
-from .base import ArgAdder, RegistryCore, SmartFormatter
+from .base import ArgAdder, CanonicalRegistry, SmartFormatter
 from .spec import EnumGroupKey, EnumScope, SpecCommand, SpecParam
 
 
-class RegistryParser(Protocol):
+class ParserRegistry(Protocol):
     parser: argparse.ArgumentParser
 
     def get_group(self, key: EnumGroupKey | str) -> ArgAdder: ...
 
 
-class RegistryCommand:
+class CommandRegistry:
     """
     Maintain a registry of CLI command specifications and their aliases.
 
@@ -31,7 +31,7 @@ class RegistryCommand:
     """
 
     def __init__(self) -> None:
-        self._core: RegistryCore[SpecCommand] = RegistryCore.new()
+        self._core: CanonicalRegistry[SpecCommand] = CanonicalRegistry.new()
 
     def register(self, spec: SpecCommand) -> Self:
         self._core.register(spec, aliases=spec.aliases)
@@ -167,7 +167,7 @@ class RegistryCommand:
         cls_fmt = kind_formatter or parser.formatter_class
         for spec in self.list_registered_commands(if_sort=if_sort_specs):
             c_help = spec.help
-            
+
             if if_include_group_in_help and spec.group:
                 c_help = f"\\[{spec.group}] {c_help}"
 
@@ -186,9 +186,9 @@ class RegistryCommand:
         return cls_sub
 
 
-class RegistryParam:
+class ParamRegistry:
     def __init__(self) -> None:
-        self._core: RegistryCore[SpecParam] = RegistryCore.new()
+        self._core: CanonicalRegistry[SpecParam] = CanonicalRegistry.new()
 
     def register(self, spec: SpecParam) -> SpecParam:
         return self._core.register(spec, aliases=spec.aliases)
@@ -218,7 +218,7 @@ class RegistryParam:
     def apply(
         self,
         *,
-        parser_reg: RegistryParser,
+        parser_reg: ParserRegistry,
         keys: Sequence[str],
         reserved_dests: set[str] | None,
     ) -> None:
