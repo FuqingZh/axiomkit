@@ -500,8 +500,9 @@ class XlsxWriter:
             df_header: Optional header grid (same width as df). If omitted,
                 df column names are used.
             cols_integer: Column refs to force integer formatting.
-            cols_decimal: Column refs to force decimal formatting. If False,
-                decimal formatting is disabled for non-integer numeric columns.
+            cols_decimal: Column refs to force decimal formatting. If None
+                (the default) or False, decimal formatting is disabled for
+                non-integer numeric columns.
             col_freeze: Number of leftmost columns to freeze.
             row_freeze: Number of top rows to freeze. Defaults to header height.
             if_merge_header: If True, visually merge repeated header labels.
