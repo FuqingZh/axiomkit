@@ -436,7 +436,6 @@ def copy_tree(
             except Exception as e:
                 builder_cp_report.add_error(dst_path, e)
 
-    
     # #endregion
     ########################################
 
