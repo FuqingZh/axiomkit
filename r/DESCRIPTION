@@ -7,6 +7,13 @@ Description: Personal, portable engineering toolkit.
 License: MIT
 Encoding: UTF-8
 LazyData: true
+Imports:
+    cli,
+    data.table,
+    matrixStats,
+    S7
 Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
