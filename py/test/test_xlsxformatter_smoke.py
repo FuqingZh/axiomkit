@@ -9,7 +9,7 @@ import polars as pl
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from axiomkit.io.xlsx_formatter import XlsxFormatter  # noqa: E402
+from axiomkit.io import XlsxWriter  # noqa: E402
 
 
 def test_write_sheet_smoke_creates_xlsx_and_records_report(tmp_path: Path) -> None:
@@ -17,7 +17,7 @@ def test_write_sheet_smoke_creates_xlsx_and_records_report(tmp_path: Path) -> No
 
     df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
 
-    with XlsxFormatter(out_file) as xf:
+    with XlsxWriter(out_file) as xf:
         xf.write_sheet(df, "Sheet1")
         reports = xf.report()
 
