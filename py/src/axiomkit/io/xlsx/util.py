@@ -201,7 +201,7 @@ def sanitize_sheet_name(name: str, *, replace_to: str = "_") -> str:
     return name[:N_LEN_EXCEL_SHEET_NAME_MAX]
 
 
-def generate_sheet_slices(
+def plan_sheet_slices(
     *,
     height_df: int,
     width_df: int,
@@ -455,7 +455,7 @@ def apply_vertical_run_text_blankout(header_grid: list[list[str]]) -> list[list[
     return header_grid
 
 
-def create_horizontal_merge_tracker(
+def derive_horizontal_merge_tracker(
     row_horizontal_merge_mapping: dict[int, list[SpecSheetHorizontalMerge]],
 ) -> dict[tuple[int, int], bool]:
     """

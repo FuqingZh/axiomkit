@@ -33,10 +33,10 @@ from .util import (
     convert_cell_value,
     convert_nan_inf_to_str,
     convert_to_polars,
-    create_horizontal_merge_tracker,
+    derive_horizontal_merge_tracker,
     generate_row_chunks,
-    generate_sheet_slices,
     plan_horizontal_merges,
+    plan_sheet_slices,
     plan_vertical_visual_merge_borders,
     sanitize_sheet_name,
     select_integer_cols,
@@ -419,7 +419,7 @@ class XlsxWriter:
         dict_horizontal_merges_by_row = (
             plan_horizontal_merges(l_header_grid) if if_merge else {}
         )
-        dict_horizontal_merge_tracker = create_horizontal_merge_tracker(
+        dict_horizontal_merge_tracker = derive_horizontal_merge_tracker(
             dict_horizontal_merges_by_row
         )
 
@@ -611,7 +611,7 @@ class XlsxWriter:
 
         # header rows count influences split (Excel max rows)
         n_rows_header = len(l_header_grid)
-        l_sheet_parts = generate_sheet_slices(
+        l_sheet_parts = plan_sheet_slices(
             height_df=n_height_df,
             width_df=n_width_df,
             height_header=n_rows_header,
