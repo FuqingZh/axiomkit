@@ -1,0 +1,44 @@
+name: r-ci
+
+on:
+    push:
+        paths:
+            - "r/**"
+            - ".github/workflows/r-ci.yml"
+    pull_request:
+        paths:
+            - "r/**"
+            - ".github/workflows/r-ci.yml"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: r
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: r-lib/actions/setup-r@v2
+              with:
+                  r-version: "release"
+                  use-public-rspm: true
+
+            - uses: r-lib/actions/setup-r-dependencies@v2
+              with:
+                  working-directory: r
+                  extra-packages: |
+                      any::lintr
+                      any::rcmdcheck
+
+            - name: Run lintr
+              run: lintr::lint_package()
+              shell: Rscript {0}
+
+            - name: Run R CMD check
+              run: rcmdcheck::rcmdcheck(args = c("--no-manual", "--as-cran"), error_on = "warning")
+              shell: Rscript {0}
