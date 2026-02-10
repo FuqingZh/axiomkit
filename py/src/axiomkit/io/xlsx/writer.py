@@ -137,9 +137,7 @@ class XlsxWriter:
             self.DEFAULT_XLSX_FORMATS["header"] if fmt_header is None else fmt_header
         )
         self.write_options = (
-            self.DEFAULT_XLSX_WRITE_OPTIONS
-            if write_options is None
-            else write_options
+            self.DEFAULT_XLSX_WRITE_OPTIONS if write_options is None else write_options
         )
         self._header_fmt_cache: dict[
             tuple[int, int, int, int], xlsxwriter.format.Format
@@ -188,9 +186,7 @@ class XlsxWriter:
             Estimated display width in characters.
         """
         if value is None:
-            return (
-                len(value_policy.missing_value_str) if if_keep_missing_values else 0
-            )
+            return len(value_policy.missing_value_str) if if_keep_missing_values else 0
 
         s = str(value)
         n_ascii = sum(1 for _chr in s if ord(_chr) < 128)
