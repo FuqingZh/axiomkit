@@ -1,19 +1,18 @@
 # Internal helper to construct the `ak` facade environment.
-.create_ak_namespace <- function(pkg = "axiomkit") {
+.create_ak_namespace <- function(ns = topenv()) {
     e_ak <- new.env(parent = emptyenv())
     e_stats <- new.env(parent = emptyenv())
 
     c_stats_exports <- c(
         "QuantMatrix",
-        "create_quant_matrix",
-        "normalize_axis_median_center"
+        "center_median"
     )
     for (c_name in c_stats_exports) {
         makeActiveBinding(
             c_name,
             local({
                 c_export_name <- c_name
-                function() getExportedValue(pkg, c_export_name)
+                function() get(c_export_name, envir = ns, inherits = FALSE)
             }),
             e_stats
         )
@@ -35,4 +34,4 @@
 #' @format NULL
 #' @usage ak
 #' @export
-ak <- NULL
+ak <- .create_ak_namespace()

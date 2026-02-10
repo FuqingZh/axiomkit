@@ -121,14 +121,20 @@ test_that("ak stats facade exposes quant APIs", {
     expect_true(exists("ak", inherits = TRUE))
     expect_true(is.environment(ak))
     expect_true(is.environment(ak$stats))
-    expect_true(is.function(ak$stats$create_quant_matrix))
-    expect_true(is.function(ak$stats$normalize_axis_median_center))
+    expect_false(
+        exists("create_quant_matrix", envir = ak$stats, inherits = FALSE)
+    )
+    expect_false(
+        exists("normalize_median_center", envir = ak$stats, inherits = FALSE)
+    )
+    expect_true(is.function(ak$stats$QuantMatrix))
+    expect_true(is.function(ak$stats$center_median))
 
-    q <- ak$stats$create_quant_matrix(matrix(c(1, 2, 3, 4), nrow = 2))
-    q2 <- ak$stats$normalize_axis_median_center(
+    q <- ak$stats$QuantMatrix(matrix(c(1, 2, 3, 4), nrow = 2))
+    q2 <- ak$stats$center_median(
         q,
         rule_axis = "col",
-        rule_align = "global_median"
+        rule_baseline = "global_median"
     )
     expect_true(is.matrix(q2@mat))
 })
