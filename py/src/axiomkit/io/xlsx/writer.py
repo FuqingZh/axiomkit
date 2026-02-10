@@ -22,10 +22,10 @@ from .spec import (
     SpecCellBorder,
     SpecCellFormat,
     SpecColumnFormatPlan,
-    SpecXlsxValuePolicy,
-    SpecXlsxWriteOptions,
     SpecSheetSlice,
     SpecXlsxReport,
+    SpecXlsxValuePolicy,
+    SpecXlsxWriteOptions,
 )
 from .util import (
     apply_vertical_run_text_blankout,
