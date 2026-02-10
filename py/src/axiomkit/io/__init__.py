@@ -1,6 +1,7 @@
 from importlib.util import find_spec
 from typing import TYPE_CHECKING
 
+from .fs import copy_tree
 from .parquet import sink_parquet_dataset
 from .xlsx import SpecCellFormat, XlsxWriter
 
@@ -13,6 +14,7 @@ else:
         from .fasta import SpecFastaHeader, read_fasta  # pragma: no cover
 
 __all__ = [
+    "copy_tree",
     "sink_parquet_dataset",
     "SpecCellFormat",
     "XlsxWriter",
