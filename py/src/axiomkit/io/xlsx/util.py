@@ -149,9 +149,7 @@ def select_numeric_cols(df: pl.DataFrame) -> tuple[int, ...]:
 # #region RowChunking
 
 
-def calculate_row_chunk_size(
-    *, width_df: int, policy: SpecXlsxRowChunkPolicy
-) -> int:
+def calculate_row_chunk_size(*, width_df: int, policy: SpecXlsxRowChunkPolicy) -> int:
     """
     Return an appropriate row chunk size for processing based on dataframe width.
 
