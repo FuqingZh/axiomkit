@@ -10,10 +10,10 @@
 #' @importFrom cli cli_abort
 #' @export
 plot_bar_faceted <- function(
-  df,
-  col_x = "X",
-  col_y = "Y",
-  col_y_name = "YName"
+    df,
+    col_x = "X",
+    col_y = "Y",
+    col_y_name = "YName"
 ) {
     dt <- as.data.table(df)
     c_cols_dt <- colnames(dt)
@@ -25,5 +25,4 @@ plot_bar_faceted <- function(
     if (!all(c(col_x, col_y) %in% c_cols_inner)) {
         cli_abort("All of ``col_x`` or ``col_y`` must be found in ``df``.")
     }
-    
 }
