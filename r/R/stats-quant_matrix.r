@@ -1,70 +1,26 @@
-.validate_axis_label <- function(label, len_expected, arg_name) {
-    if (is.null(label)) {
-        return(NULL)
-    }
-
-    n_len <- tryCatch(
-        length(label),
-        error = function(e) NA_integer_
-    )
-    if (!is.finite(n_len)) {
-        cli_abort(
-            sprintf("Arg `%s` must have a measurable length.", arg_name)
-        )
-    }
-    if (n_len != len_expected) {
-        cli_abort(sprintf(
-            "Arg `%s` length (%d) must equal %d.",
-            arg_name,
-            n_len,
-            len_expected
-        ))
-    }
-
-    label
-}
-
 #' Quantification Matrix Class
 #'
-#' `QuantMatrix` stores the numeric matrix and optional per-axis labels.
+#' `QuantMatrix` stores a numeric double matrix.
+#' Axis labels should be carried by `dimnames(mat)`.
 #'
 #' @param mat A numeric-like matrix (or matrix-coercible object).
-#' @param col_label Optional vector/list of column labels
-#'   with length `ncol(mat)`.
-#' @param row_label Optional vector/list of row labels with length `nrow(mat)`.
 #' @importFrom S7 class_any method method<- new_class new_generic new_object
-#' @importFrom cli cli_abort
 #' @importFrom matrixStats colMedians rowMedians
 #' @export
 QuantMatrix <- new_class(
     "QuantMatrix",
     properties = list(
-        mat = class_any,
-        col_label = class_any,
-        row_label = class_any
+        mat = class_any
     ),
-    constructor = function(mat, col_label = NULL, row_label = NULL) {
+    constructor = function(mat) {
         if (!is.matrix(mat)) {
             mat <- as.matrix(mat)
         }
         storage.mode(mat) <- "double"
 
-        col_label <- .validate_axis_label(
-            label = col_label,
-            len_expected = ncol(mat),
-            arg_name = "col_label"
-        )
-        row_label <- .validate_axis_label(
-            label = row_label,
-            len_expected = nrow(mat),
-            arg_name = "row_label"
-        )
-
         new_object(
             QuantMatrix,
-            mat = mat,
-            col_label = col_label,
-            row_label = row_label
+            mat = mat
         )
     },
     validator = function(self) {
@@ -78,89 +34,65 @@ QuantMatrix <- new_class(
             return("@mat must be a double matrix.")
         }
 
-        n_col <- ncol(self@mat)
-        if (!is.null(self@col_label) && length(self@col_label) != n_col) {
-            return("@col_label length must equal ncol(mat), or be NULL.")
-        }
-
-        n_row <- nrow(self@mat)
-        if (!is.null(self@row_label) && length(self@row_label) != n_row) {
-            return("@row_label length must equal nrow(mat), or be NULL.")
-        }
-
         NULL
     }
 )
 
-#' Create a Quantification Matrix Object
-#'
-#' @param mat A numeric-like matrix (or matrix-coercible object).
-#' @param col_label Optional vector/list of column labels
-#'   with length `ncol(mat)`.
-#' @param row_label Optional vector/list of row labels with length `nrow(mat)`.
-#'
-#' @return A `QuantMatrix` object.
-#' @export
-create_quant_matrix <- function(mat, col_label = NULL, row_label = NULL) {
-    QuantMatrix(
-        mat = mat,
-        col_label = col_label,
-        row_label = row_label
-    )
-}
-
 #' Median-Center a Quantification Matrix
 #'
-#' Center by axis medians, with optional global-median alignment.
+#' Center by axis medians, with optional baseline re-alignment.
 #'
 #' @param x A `QuantMatrix` object.
 #' @param rule_axis Axis for centering: `"col"` or `"row"`.
 #'   - `"col"`: center each column by its median.
 #'   - `"row"`: center each row by its median.
-#' @param rule_align Whether to add back the global median of axis medians.
+#' @param rule_baseline Baseline to add after centering.
 #'   - `"global_median"`: add back the global median of axis medians.
-#'   - `"none"`: do not add back anything.
+#'   - `"zero"`: add back `0` (pure centering).
+#'
+#' @details
+#' For each element `X[i, j]`, the transform is:
+#' `X'[i, j] = X[i, j] - m_axis + b`
+#' where `m_axis` is the row/column median selected by `rule_axis`,
+#' and `b` is determined by `rule_baseline`.
 #'
 #' @return A new `QuantMatrix` object after median centering.
 #' @export
-normalize_axis_median_center <- new_generic(
-    "normalize_axis_median_center",
+center_median <- new_generic(
+    "center_median",
     dispatch_args = "x",
     fun = function(
         x,
         rule_axis = c("col", "row"),
-        rule_align = c("global_median", "none")
+        rule_baseline = c("global_median", "zero")
     ) {
         S7::S7_dispatch()
     }
 )
 
-method(normalize_axis_median_center, QuantMatrix) <- function(
+method(center_median, QuantMatrix) <- function(
     x,
     rule_axis = c("col", "row"),
-    rule_align = c("global_median", "none")
+    rule_baseline = c("global_median", "zero")
 ) {
     c_axis <- match.arg(rule_axis)
-    c_align <- match.arg(rule_align)
+    c_baseline <- match.arg(rule_baseline)
 
     n_axis_medians <- switch(c_axis,
         "col" = colMedians(x@mat, na.rm = TRUE),
         "row" = rowMedians(x@mat, na.rm = TRUE)
     )
-    n_global_median <- switch(c_align,
+    n_baseline <- switch(c_baseline,
         "global_median" = median(n_axis_medians, na.rm = TRUE),
-        "none" = 0
+        "zero" = 0
     )
-    mat_norm <- sweep(
+
+    mat_centered <- sweep(
         x@mat,
         if (c_axis == "col") 2 else 1,
         n_axis_medians,
         "-"
-    ) + n_global_median
+    ) + n_baseline
 
-    QuantMatrix(
-        mat = mat_norm,
-        col_label = x@col_label,
-        row_label = x@row_label
-    )
+    QuantMatrix(mat = mat_centered)
 }

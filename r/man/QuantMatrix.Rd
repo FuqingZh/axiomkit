@@ -4,16 +4,12 @@
 \alias{QuantMatrix}
 \title{Quantification Matrix Class}
 \usage{
-QuantMatrix(mat, col_label = NULL, row_label = NULL)
+QuantMatrix(mat)
 }
 \arguments{
 \item{mat}{A numeric-like matrix (or matrix-coercible object).}
-
-\item{col_label}{Optional vector/list of column labels
-with length \code{ncol(mat)}.}
-
-\item{row_label}{Optional vector/list of row labels with length \code{nrow(mat)}.}
 }
 \description{
-\code{QuantMatrix} stores the numeric matrix and optional per-axis labels.
+\code{QuantMatrix} stores a numeric double matrix.
+Axis labels should be carried by \code{dimnames(mat)}.
 }

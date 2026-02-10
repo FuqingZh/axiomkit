@@ -1,112 +1,118 @@
-test_that("create_quant_matrix stores matrix and labels", {
+test_that("QuantMatrix stores double matrix and preserves dimnames", {
     mat <- matrix(
         c(1, 2, 3, 4, 5, 6),
         nrow = 2,
-        byrow = TRUE
+        byrow = TRUE,
+        dimnames = list(c("R1", "R2"), c("A", "B", "C"))
     )
-    col_label <- c("A", "B", "C")
-    row_label <- c("R1", "R2")
 
-    q <- create_quant_matrix(
-        mat = mat,
-        col_label = col_label,
-        row_label = row_label
-    )
+    q <- QuantMatrix(mat = mat)
 
     expect_true(inherits(q, "S7_object"))
     expect_true(any(grepl("QuantMatrix$", class(q))))
     expect_true(is.matrix(q@mat))
+    expect_true(is.double(q@mat))
     expect_identical(dim(q@mat), c(2L, 3L))
-    expect_identical(q@col_label, col_label)
-    expect_identical(q@row_label, row_label)
+    expect_identical(dimnames(q@mat), dimnames(mat))
 })
 
-test_that("create_quant_matrix validates label lengths", {
-    mat <- matrix(c(1, 2, 3, 4), nrow = 2)
+test_that("QuantMatrix coerces matrix-like inputs to double matrix", {
+    q <- QuantMatrix(mat = data.frame(a = 1:2, b = 3:4))
 
-    expect_error(
-        create_quant_matrix(mat = mat, col_label = c("A")),
-        "col_label"
-    )
-    expect_error(
-        create_quant_matrix(mat = mat, row_label = c("R1")),
-        "row_label"
-    )
+    expect_true(is.matrix(q@mat))
+    expect_true(is.double(q@mat))
+    expect_identical(dim(q@mat), c(2L, 2L))
 })
 
-test_that("normalize_axis_median_center works for column axis", {
+test_that("center_median works for column axis", {
     mat <- matrix(
         c(1, 2, 3, 4, 5, 6),
         nrow = 2,
-        byrow = TRUE
+        byrow = TRUE,
+        dimnames = list(c("R1", "R2"), c("A", "B", "C"))
     )
-    q <- create_quant_matrix(
-        mat = mat,
-        col_label = c("A", "B", "C"),
-        row_label = c("R1", "R2")
-    )
+    q <- QuantMatrix(mat = mat)
 
-    q_align <- normalize_axis_median_center(
+    q_align <- center_median(
         q,
         rule_axis = "col",
-        rule_align = "global_median"
+        rule_baseline = "global_median"
     )
     expect_equal(
         q_align@mat,
-        matrix(c(2, 2, 2, 5, 5, 5), nrow = 2, byrow = TRUE)
+        matrix(
+            c(2, 2, 2, 5, 5, 5),
+            nrow = 2,
+            byrow = TRUE,
+            dimnames = dimnames(mat)
+        )
     )
-    expect_identical(q_align@col_label, q@col_label)
-    expect_identical(q_align@row_label, q@row_label)
 
-    q_none <- normalize_axis_median_center(
+    q_zero <- center_median(
         q,
         rule_axis = "col",
-        rule_align = "none"
+        rule_baseline = "zero"
     )
     expect_equal(
-        q_none@mat,
-        matrix(c(-1.5, -1.5, -1.5, 1.5, 1.5, 1.5), nrow = 2, byrow = TRUE)
+        q_zero@mat,
+        matrix(
+            c(-1.5, -1.5, -1.5, 1.5, 1.5, 1.5),
+            nrow = 2,
+            byrow = TRUE,
+            dimnames = dimnames(mat)
+        )
     )
 })
 
-test_that("normalize_axis_median_center works for row axis", {
+test_that("center_median works for row axis", {
     mat <- matrix(
         c(1, 2, 3, 4, 5, 6),
         nrow = 2,
-        byrow = TRUE
+        byrow = TRUE,
+        dimnames = list(c("R1", "R2"), c("A", "B", "C"))
     )
-    q <- create_quant_matrix(mat = mat)
+    q <- QuantMatrix(mat = mat)
 
-    q_none <- normalize_axis_median_center(
+    q_zero <- center_median(
         q,
         rule_axis = "row",
-        rule_align = "none"
+        rule_baseline = "zero"
     )
     expect_equal(
-        q_none@mat,
-        matrix(c(-1, 0, 1, -1, 0, 1), nrow = 2, byrow = TRUE)
+        q_zero@mat,
+        matrix(
+            c(-1, 0, 1, -1, 0, 1),
+            nrow = 2,
+            byrow = TRUE,
+            dimnames = dimnames(mat)
+        )
     )
 
-    q_align <- normalize_axis_median_center(
+    q_align <- center_median(
         q,
         rule_axis = "row",
-        rule_align = "global_median"
+        rule_baseline = "global_median"
     )
     expect_equal(
         q_align@mat,
-        matrix(c(2.5, 3.5, 4.5, 2.5, 3.5, 4.5), nrow = 2, byrow = TRUE)
+        matrix(
+            c(2.5, 3.5, 4.5, 2.5, 3.5, 4.5),
+            nrow = 2,
+            byrow = TRUE,
+            dimnames = dimnames(mat)
+        )
     )
 })
 
-test_that("normalize_axis_median_center validates rules", {
-    q <- create_quant_matrix(mat = matrix(c(1, 2, 3, 4), nrow = 2))
+test_that("center_median validates rules", {
+    q <- QuantMatrix(mat = matrix(c(1, 2, 3, 4), nrow = 2))
 
     expect_error(
-        normalize_axis_median_center(q, rule_axis = "bad"),
+        center_median(q, rule_axis = "bad"),
         "arg"
     )
     expect_error(
-        normalize_axis_median_center(q, rule_align = "bad"),
+        center_median(q, rule_baseline = "bad"),
         "arg"
     )
 })
