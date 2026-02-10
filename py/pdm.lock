@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:9a6db69fab5c725c917761a819ca83616eb9290aac2928a091eb9ecdff1725e0"
+content_hash = "sha256:982d499e2bc6212384c083478e995fc661371b18524da7f154e6915fb28b5079"
 
 [[metadata.targets]]
 requires_python = ">=3.13"
@@ -124,7 +124,7 @@ name = "numpy"
 version = "2.4.2"
 requires_python = ">=3.11"
 summary = "Fundamental package for array computing in Python"
-groups = ["default", "dev"]
+groups = ["dev"]
 files = [
     {file = "numpy-2.4.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:25f2059807faea4b077a2b6837391b5d830864b3543627f381821c646f31a63c"},
     {file = "numpy-2.4.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:bd3a7a9f5847d2fb8c2c6d1c862fa109c31a9abeca1a3c2bd5a64572955b2979"},
@@ -198,7 +198,7 @@ name = "polars"
 version = "1.38.1"
 requires_python = ">=3.10"
 summary = "Blazingly fast DataFrame library"
-groups = ["default"]
+groups = ["dev"]
 dependencies = [
     "polars-runtime-32==1.38.1",
 ]
@@ -212,7 +212,7 @@ name = "polars-runtime-32"
 version = "1.38.1"
 requires_python = ">=3.10"
 summary = "Blazingly fast DataFrame library"
-groups = ["default"]
+groups = ["dev"]
 files = [
     {file = "polars_runtime_32-1.38.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:18154e96044724a0ac38ce155cf63aa03c02dd70500efbbf1a61b08cadd269ef"},
     {file = "polars_runtime_32-1.38.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c49acac34cc4049ed188f1eb67d6ff3971a39b4af7f7b734b367119970f313ac"},
@@ -255,7 +255,7 @@ files = [
 name = "pyteomics"
 version = "4.7.5"
 summary = "A framework for proteomics data analysis."
-groups = ["default"]
+groups = ["dev"]
 files = [
     {file = "pyteomics-4.7.5-py2.py3-none-any.whl", hash = "sha256:9b8008ad8d8bbbc6856c4e804bc88e018df44809cd9a86900862b311e760862d"},
     {file = "pyteomics-4.7.5-py3-none-any.whl", hash = "sha256:5155e1d2581845926e49b0abd0be8cfd6ea45ffd3511958b805347037c5934c8"},
@@ -343,7 +343,7 @@ name = "scipy"
 version = "1.17.0"
 requires_python = ">=3.11"
 summary = "Fundamental algorithms for scientific computing in Python"
-groups = ["default"]
+groups = ["dev"]
 dependencies = [
     "numpy<2.7,>=1.26.4",
 ]
@@ -419,7 +419,7 @@ name = "xlsxwriter"
 version = "3.2.9"
 requires_python = ">=3.8"
 summary = "A Python module for creating Excel XLSX files."
-groups = ["default"]
+groups = ["dev"]
 files = [
     {file = "xlsxwriter-3.2.9-py3-none-any.whl", hash = "sha256:9a5db42bc5dff014806c58a20b9eae7322a134abb6fce3c92c181bfb275ec5b3"},
     {file = "xlsxwriter-3.2.9.tar.gz", hash = "sha256:254b1c37a368c444eac6e2f867405cc9e461b0ed97a3233b2ac1e574efb4140c"},
