@@ -9,7 +9,8 @@ create_quant_matrix(mat, col_label = NULL, row_label = NULL)
 \arguments{
 \item{mat}{A numeric-like matrix (or matrix-coercible object).}
 
-\item{col_label}{Optional vector/list of column labels with length \code{ncol(mat)}.}
+\item{col_label}{Optional vector/list of column labels
+with length \code{ncol(mat)}.}
 
 \item{row_label}{Optional vector/list of row labels with length \code{nrow(mat)}.}
 }
