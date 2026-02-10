@@ -5,15 +5,18 @@ on:
   pull_request:
 
 jobs:
-  test:
+  py:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: py
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python -m pip install -U pip
-      - run: pip install -e "py[dev]"
-      - run: pytest -q
-      - run: ruff check py/src py/tests
-      - run: mypy py/src
+      - run: python -m pip install -U pip pdm
+      - run: pdm sync -G dev
+      - run: pdm run pytest -q tests
+      - run: pdm run ruff check src tests
+      - run: pdm run pyright src
