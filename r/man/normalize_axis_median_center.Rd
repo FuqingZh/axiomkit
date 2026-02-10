@@ -4,7 +4,11 @@
 \alias{normalize_axis_median_center}
 \title{Median-Center a Quantification Matrix}
 \usage{
-normalize_axis_median_center(x, ...)
+normalize_axis_median_center(
+  x,
+  rule_axis = c("col", "row"),
+  rule_align = c("global_median", "none")
+)
 }
 \arguments{
 \item{x}{A \code{QuantMatrix} object.}

@@ -28,6 +28,10 @@
 #'
 #' `QuantMatrix` stores the numeric matrix and optional per-axis labels.
 #'
+#' @param mat A numeric-like matrix (or matrix-coercible object).
+#' @param col_label Optional vector/list of column labels
+#'   with length `ncol(mat)`.
+#' @param row_label Optional vector/list of row labels with length `nrow(mat)`.
 #' @importFrom S7 class_any method method<- new_class new_generic new_object
 #' @importFrom cli cli_abort
 #' @importFrom matrixStats colMedians rowMedians
@@ -119,7 +123,17 @@ create_quant_matrix <- function(mat, col_label = NULL, row_label = NULL) {
 #'
 #' @return A new `QuantMatrix` object after median centering.
 #' @export
-normalize_axis_median_center <- new_generic("normalize_axis_median_center", "x")
+normalize_axis_median_center <- new_generic(
+    "normalize_axis_median_center",
+    dispatch_args = "x",
+    fun = function(
+        x,
+        rule_axis = c("col", "row"),
+        rule_align = c("global_median", "none")
+    ) {
+        S7::S7_dispatch()
+    }
+)
 
 method(normalize_axis_median_center, QuantMatrix) <- function(
     x,
