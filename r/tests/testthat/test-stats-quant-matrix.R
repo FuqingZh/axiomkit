@@ -24,6 +24,13 @@ test_that("QuantMatrix coerces matrix-like inputs to double matrix", {
     expect_identical(dim(q@mat), c(2L, 2L))
 })
 
+test_that("QuantMatrix rejects non-numeric-like matrix input", {
+    expect_error(
+        QuantMatrix(mat = matrix(c("1", "bad", "3", "4"), nrow = 2)),
+        "cannot be converted to double"
+    )
+})
+
 test_that("center_median works for column axis", {
     mat <- matrix(
         c(1, 2, 3, 4, 5, 6),

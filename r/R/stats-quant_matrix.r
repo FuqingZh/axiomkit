@@ -1,22 +1,61 @@
+# Coerce matrix-like input to a double matrix without lossy conversion
+# from non-missing values.
+.coerce_double_matrix <- function(mat) {
+    if (!is.matrix(mat)) {
+        mat <- as.matrix(mat)
+    }
+
+    c_values <- as.vector(mat)
+    n_values <- suppressWarnings(as.double(c_values))
+    b_bad_values <- !is.na(c_values) & is.na(n_values)
+    if (any(b_bad_values)) {
+        stop(
+            sprintf(
+                paste0(
+                    "Arg `mat` must be numeric-like; ",
+                    "%d value(s) cannot be converted to double."
+                ),
+                sum(b_bad_values)
+            ),
+            call. = FALSE
+        )
+    }
+
+    matrix(
+        n_values,
+        nrow = nrow(mat),
+        ncol = ncol(mat),
+        dimnames = dimnames(mat)
+    )
+}
+
 #' Quantification Matrix Class
 #'
 #' `QuantMatrix` stores a numeric double matrix.
 #' Axis labels should be carried by `dimnames(mat)`.
 #'
-#' @param mat A numeric-like matrix (or matrix-coercible object).
-#' @importFrom S7 class_any method method<- new_class new_generic new_object
+#' @param mat A matrix-like object coercible to a double matrix.
+#'   Non-missing input values must be convertible to `double`.
+#' @importFrom S7 class_double method method<- new_class
+#'   new_generic new_object new_property
 #' @importFrom matrixStats colMedians rowMedians
 #' @export
 QuantMatrix <- new_class(
     "QuantMatrix",
     properties = list(
-        mat = class_any
+        mat = new_property(
+            class = class_double,
+            validator = function(value) {
+                if (!is.matrix(value)) {
+                    return("@mat must be a matrix.")
+                }
+
+                NULL
+            }
+        )
     ),
     constructor = function(mat) {
-        if (!is.matrix(mat)) {
-            mat <- as.matrix(mat)
-        }
-        storage.mode(mat) <- "double"
+        mat <- .coerce_double_matrix(mat)
 
         new_object(
             QuantMatrix,
@@ -26,9 +65,6 @@ QuantMatrix <- new_class(
     validator = function(self) {
         if (!is.matrix(self@mat)) {
             return("@mat must be a matrix.")
-        }
-        if (!is.numeric(self@mat)) {
-            return("@mat must be numeric.")
         }
         if (!is.double(self@mat)) {
             return("@mat must be a double matrix.")

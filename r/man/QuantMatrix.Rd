@@ -7,7 +7,8 @@
 QuantMatrix(mat)
 }
 \arguments{
-\item{mat}{A numeric-like matrix (or matrix-coercible object).}
+\item{mat}{A matrix-like object coercible to a double matrix.
+Non-missing input values must be convertible to \code{double}.}
 }
 \description{
 \code{QuantMatrix} stores a numeric double matrix.
