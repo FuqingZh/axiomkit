@@ -1,13 +1,4 @@
-#' Unified AK Namespace Facade
-#'
-#' `ak` is a lightweight facade that groups package exports by domain.
-#' Use `ak$stats$...` for statistics-related APIs.
-#'
-#' @format NULL
-#' @usage ak
-#' @export
-ak <- NULL
-
+# Internal helper to construct the `ak` facade environment.
 .create_ak_namespace <- function(pkg = "axiomkit") {
     e_ak <- new.env(parent = emptyenv())
     e_stats <- new.env(parent = emptyenv())
@@ -35,3 +26,13 @@ ak <- NULL
 
     e_ak
 }
+
+#' Unified AK Namespace Facade
+#'
+#' `ak` is a lightweight facade that groups package exports by domain.
+#' Use `ak$stats$...` for statistics-related APIs.
+#'
+#' @format NULL
+#' @usage ak
+#' @export
+ak <- NULL

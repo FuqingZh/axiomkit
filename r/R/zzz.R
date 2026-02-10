@@ -7,6 +7,7 @@
     ) {
         unlockBinding("ak", e_ns)
     }
+
     obj_make_ak_namespace <- get(
         ".create_ak_namespace",
         mode = "function",
