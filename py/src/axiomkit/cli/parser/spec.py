@@ -1,3 +1,14 @@
+"""Specification models for parser construction.
+
+This module defines immutable descriptors used by parser registries:
+
+- ``SpecParam``: reusable argument spec.
+- ``SpecCommand``: subcommand spec.
+
+These specs are pure data + callbacks. They do not mutate parser state by
+themselves; mutation happens when registries/materializers apply them.
+"""
+
 import argparse
 import keyword
 import re
@@ -23,7 +34,11 @@ class EnumScope(StrEnum):
 
 
 class EnumGroupKey(StrEnum):
-    """Logical parser group keys used for help and organization."""
+    """Logical parser group keys used for help and organization.
+
+    The key controls where a parameter appears in help output and how specs
+    are grouped when materialized.
+    """
 
     CONTRACT = "contract"
     EXECUTABLES = "executables"
@@ -100,7 +115,6 @@ class SpecParam:
         group: Logical argument group.
         scope: Visibility scope.
         order: Sorting key inside group.
-        aliases: Alternative ids that resolve to ``id``.
         if_deprecated: Whether this parameter is deprecated.
         replace_by: Suggested replacement id when deprecated.
         arg_builder:
@@ -112,6 +126,12 @@ class SpecParam:
         'verbose'
         >>> spec.resolved_flags
         ('--verbose',)
+        >>> import argparse
+        >>> parser = argparse.ArgumentParser(prog="demo")
+        >>> _ = spec.add_argument(parser, action="store_true")
+        >>> ns = parser.parse_args(["--verbose"])
+        >>> ns.verbose
+        True
     """
 
     id: str
@@ -121,7 +141,6 @@ class SpecParam:
     group: EnumGroupKey = EnumGroupKey.GENERAL
     scope: EnumScope = EnumScope.INTERNAL
     order: int = 0
-    aliases: tuple[str, ...] = ()
     if_deprecated: bool = False
     replace_by: str | None = None
 
@@ -171,13 +190,16 @@ class SpecCommand:
         entry: Optional command entry label/path for downstream dispatch.
         group: Logical command group.
         order: Sorting key inside group.
-        aliases: Alternative command names.
-        param_keys: Parameter ids/aliases auto-applied during build.
+        param_keys:
+            Parameter ids auto-applied during build.
+            Supports ``str`` and ``StrEnum``.
 
     Examples:
         >>> spec = SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
         >>> spec.id
         'run'
+        >>> spec.group
+        'default'
     """
 
     id: str
@@ -186,5 +208,4 @@ class SpecCommand:
     entry: str | Path | None = None
     group: str = "default"
     order: int = 0
-    aliases: tuple[str, ...] = ()
-    param_keys: tuple[str, ...] = ()
+    param_keys: tuple[str | StrEnum, ...] = ()

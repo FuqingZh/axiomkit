@@ -53,8 +53,7 @@ def _collect_existing_dests(parser: argparse.ArgumentParser) -> set[str]:
     """Collect existing destination names from parser actions."""
     set_dests: set[str] = set()
     for action in _iter_parser_actions(parser):
-        if isinstance(action.dest, str):
-            set_dests.add(action.dest)
+        set_dests.add(action.dest)
     return set_dests
 
 

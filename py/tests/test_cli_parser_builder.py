@@ -91,13 +91,13 @@ def test_param_dest_must_not_shadow_command_metadata_fields() -> None:
     )
 
     with pytest.raises(ValueError, match="reserved"):
-        app.build_parser()
+        app.build()
 
 
 def test_param_flag_collision_is_rejected() -> None:
     app = ParserBuilder(prog="demo")
     app.select_group(EnumGroupKey.GENERAL).add_argument("--threads_dt", type=int)
-    app.register_param(
+    app.register_params(
         SpecParam(
             id="data_table.worker_threads",
             dest="worker_threads",
@@ -121,7 +121,7 @@ def test_extract_params_rejects_cross_group_param_keys() -> None:
 
 def test_deprecated_param_emits_warning() -> None:
     app = ParserBuilder(prog="demo")
-    app.register_param(
+    app.register_params(
         SpecParam(
             id="general.legacy_threads",
             group=EnumGroupKey.GENERAL,
