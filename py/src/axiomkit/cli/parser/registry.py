@@ -65,10 +65,9 @@ class ParserRegistry(Protocol):
 
 
 class CommandRegistry:
-    """Registry for command specifications and aliases.
+    """Registry for command specifications.
 
-    This class stores ``SpecCommand`` objects by canonical id and resolves
-    aliases through the shared ``CanonicalRegistry`` infrastructure.
+    This class stores ``SpecCommand`` objects by canonical id.
 
     Examples:
         >>> reg = CommandRegistry()
@@ -93,24 +92,24 @@ class CommandRegistry:
             Self: ``self`` for fluent chaining.
 
         Raises:
-            ValueError: If id or alias conflicts with existing registrations.
+            ValueError: If id conflicts with existing registrations.
         """
-        self._core.register(spec, aliases=spec.aliases)
+        self._core.register(spec)
         return self
 
-    def select_command(self, key_or_alias: str) -> SpecCommand:
-        """Select a command by canonical id or alias.
+    def select_command(self, key: str) -> SpecCommand:
+        """Select a command by canonical id.
 
         Args:
-            key_or_alias: Command id or alias.
+            key: Canonical command id.
 
         Returns:
             SpecCommand: Resolved command specification.
 
         Raises:
-            ValueError: If the key/alias is unknown.
+            ValueError: If the key is unknown.
         """
-        return self._core.get(key_or_alias)
+        return self._core.get(key)
 
     def list_commands(self, if_sort: bool = True) -> list[SpecCommand]:
         """List registered command specs.
@@ -126,33 +125,6 @@ class CommandRegistry:
         if not if_sort:
             return self._core.list_specs(kind_sort="insertion")
         return self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
-
-    def resolve_command_namespace(
-        self,
-        ns: argparse.Namespace,
-        *,
-        attr: str = "command",
-    ) -> str:
-        """Resolve a namespace command attribute to canonical id in-place.
-
-        Args:
-            ns: Parsed namespace object.
-            attr: Namespace attribute storing command id or alias.
-
-        Returns:
-            str: Canonical command id.
-
-        Raises:
-            ValueError: If ``attr`` is missing or is ``None``.
-        """
-        if not hasattr(ns, attr):
-            raise ValueError(f"Namespace has no attribute {attr!r}")
-        if (v := getattr(ns, attr, None)) is None:
-            raise ValueError(f"No command selected (ns.{attr} is None).")
-
-        c_id = self._core.resolve_alias(v)
-        setattr(ns, attr, c_id)
-        return c_id
 
     def build_subparsers(
         self,
@@ -203,14 +175,11 @@ class CommandRegistry:
             ...     SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
             ... )
             >>> _ = reg.build_subparsers(parser)
-            >>> isinstance(parser, argparse.ArgumentParser)
-            True
+            >>> ns = parser.parse_args(["run"])
+            >>> ns.command
+            'run'
         """
         cls_sub = parser.add_subparsers(title=title, dest=dest, required=if_required)
-
-        dict_aliases_by_id: dict[str, list[str]] = {k: [] for k in self._core.list_ids()}
-        for _ali, _id in self._core.iter_alias_pairs():
-            dict_aliases_by_id.setdefault(_id, []).append(_ali)
 
         cls_fmt = kind_formatter or parser.formatter_class
         for spec in self.list_commands(if_sort=if_sort_specs):
@@ -218,14 +187,12 @@ class CommandRegistry:
             if if_include_group_in_help and spec.group:
                 c_help = f"\\[{spec.group}] {c_help}"
 
-            l_aliases = sorted(dict_aliases_by_id.get(spec.id, []))
             sub = cls_sub.add_parser(
                 spec.id,
                 help=c_help,
                 formatter_class=cls_fmt,
-                aliases=l_aliases if l_aliases else [],
             )
-            sub.set_defaults(_cmd_id=spec.id, _cmd_entry=spec.entry, _cmd_group=spec.group)
+            sub.set_defaults(_cmd_entry=spec.entry, _cmd_group=spec.group)
             spec.arg_builder(sub)
 
             if if_apply_param_keys and spec.param_keys:
