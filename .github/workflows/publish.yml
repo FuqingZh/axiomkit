@@ -3,8 +3,6 @@ name: py-publish
 on:
   push:
     tags:
-      - "v*"
-      - "py-v*"
       - "*.*.*"
   workflow_dispatch:
 
@@ -26,6 +24,8 @@ jobs:
         working-directory: py
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
