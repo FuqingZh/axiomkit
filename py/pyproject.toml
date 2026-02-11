@@ -1,6 +1,6 @@
 [project]
 name = "axiomkit"
-version = "0.0.21"
+dynamic = ["version"]
 description = "Default template for PDM package"
 authors = [
     {name = "Fuqing Zhang", email = "fu.qing.zhang.work@gmail.com"},
@@ -602,3 +602,6 @@ redefining-builtins-modules = ["six.moves", "past.builtins", "future.builtins", 
 
 [tool.pdm]
 distribution = true
+
+[tool.pdm.version]
+source = "scm"
