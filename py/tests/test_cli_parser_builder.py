@@ -13,49 +13,50 @@ sys.path.insert(0, str(SRC_DIR))
 from axiomkit.cli import EnumGroupKey, ParserBuilder, SpecParam  # noqa: E402
 
 
+class EnumParamKey(StrEnum):
+    EXE_RSCRIPT = "executables.rscript"
+    THR_THREADS = "data_table.threads_dt"
+
+
 def _build_demo_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--demo-flag", action="store_true")
     return parser
 
 
 def _register_demo_params(app: ParserBuilder) -> None:
-    app.register_param(
+    app.register_params(
         SpecParam(
             id="executables.rscript",
             group=EnumGroupKey.EXECUTABLES,
             help="Path to Rscript executable",
             arg_builder=lambda g, s: s.add_argument(g, type=str),
-        )
-    )
-    app.register_param(
+        ),
         SpecParam(
             id="data_table.threads_dt",
             group=EnumGroupKey.PERFORMANCE,
             help="Thread count for data-table compute.",
             arg_builder=lambda g, s: s.add_argument(g, type=int),
-        )
+        ),
     )
 
 
-def test_parser_builder_applies_param_keys_and_resolves_alias() -> None:
+def test_parser_builder_applies_param_keys() -> None:
     app = ParserBuilder(prog="demo")
     _register_demo_params(app)
     app = app.add_command(
         id="demo",
         help="Demo command",
         arg_builder=_build_demo_args,
-        aliases=("dm",),
         param_keys=(
             "executables.rscript",
             "data_table.threads_dt",
         ),
     )
 
-    _ = app.build_parser()
-    ns = app.parse_args(["dm", "--rscript", "Rscript", "--threads_dt", "4"])
+    parser = app.build()
+    ns = parser.parse_args(["demo", "--rscript", "Rscript", "--threads_dt", "4"])
 
     assert ns.command == "demo"
-    assert ns._cmd_id == "demo"
     assert ns.rscript == "Rscript"
     assert ns.threads_dt == 4
 
@@ -68,16 +69,16 @@ def test_parser_builder_requires_param_registry_entries_for_param_keys() -> None
         param_keys=("executables.rscript",),
     )
 
-    with pytest.raises(ValueError, match="Unknown key/alias"):
-        app.build_parser()
+    with pytest.raises(ValueError, match="Register it first"):
+        app.build()
 
 
 def test_param_dest_must_not_shadow_command_metadata_fields() -> None:
     app = ParserBuilder(prog="demo")
-    app.register_param(
+    app.register_params(
         SpecParam(
             id="general.cmd_meta",
-            dest="_cmd_id",
+            dest="_cmd_entry",
             group=EnumGroupKey.GENERAL,
             arg_builder=lambda g, s: s.add_argument(g, type=str),
         )

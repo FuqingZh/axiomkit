@@ -1,6 +1,17 @@
+"""Registries that materialize command and parameter specs into argparse.
+
+This module is the stateful core of the parser package:
+
+- ``ParamRegistry`` stores and validates reusable ``SpecParam`` objects.
+- ``CommandRegistry`` stores ``SpecCommand`` objects and builds subparsers.
+
+Both registries resolve canonical ids and materialize specs into parser objects.
+"""
+
 import argparse
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from enum import StrEnum
 from typing import Protocol, Self, cast
 
 from .base import ArgAdder, CanonicalRegistry, SmartFormatter
@@ -10,11 +21,17 @@ _RESERVED_PARAM_DESTS: frozenset[str] = frozenset(
     {
         "command",
         "_handler",
-        "_cmd_id",
         "_cmd_entry",
         "_cmd_group",
     }
 )
+
+type ParamKey = str | StrEnum
+
+
+def _normalize_param_key(key: ParamKey) -> str:
+    """Normalize a canonical parameter key from ``str`` or ``StrEnum`` to ``str``."""
+    return str(key)
 
 
 def default_reserved_param_dests(*, command_dest: str = "command") -> set[str]:
@@ -223,56 +240,83 @@ class ParamRegistry:
 
     Examples:
         >>> reg = ParamRegistry()
-        >>> _ = reg.register_param(
+        >>> _ = reg.register_params(
         ...     SpecParam(id="general.flag", arg_builder=lambda g, s: s.add_argument(g))
         ... )
         >>> reg.contains_param("general.flag")
         True
+        >>> reg.contains_param("missing")
+        False
     """
 
     def __init__(self) -> None:
         """Initialize an empty parameter registry."""
         self._core: CanonicalRegistry[SpecParam] = CanonicalRegistry.new()
 
-    def register_param(self, spec: SpecParam) -> SpecParam:
-        """Register one parameter specification.
+    def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self:
+        """Register one or more parameter specifications.
 
         Args:
-            spec: Parameter specification.
+            *specs:
+                Parameter specs, or iterables of parameter specs.
+                Examples:
+                ``register_params(spec1, spec2)``
+                ``register_params([spec1, spec2])``
 
         Returns:
-            SpecParam: The registered specification.
+            Self: ``self`` for fluent chaining.
 
         Raises:
-            ValueError: If id or alias conflicts are detected.
+            ValueError: If id conflicts are detected.
         """
-        return self._core.register(spec, aliases=spec.aliases)
+        for item in specs:
+            if isinstance(item, SpecParam):
+                self._core.register(item)
+                continue
 
-    def select_param(self, key_or_alias: str) -> SpecParam:
-        """Select a parameter specification by id or alias.
+            for spec in item:
+                self._core.register(spec)
+
+        return self
+
+    def select_param(self, key: ParamKey) -> SpecParam:
+        """Select a parameter specification by canonical id.
 
         Args:
-            key_or_alias: Parameter id or alias.
+            key:
+                Canonical parameter id. Supports ``str`` and ``StrEnum``.
 
         Returns:
             SpecParam: Resolved parameter specification.
 
         Raises:
-            ValueError: If the key/alias is unknown.
+            ValueError: If the key is unknown.
         """
-        return self._core.get(key_or_alias)
+        c_key = _normalize_param_key(key)
+        try:
+            return self._core.get(c_key)
+        except ValueError as e:
+            l_ids = self._core.list_ids()
+            raise ValueError(
+                f"Unknown param id: {c_key!r}. "
+                "This parameter is not registered in ParamRegistry. "
+                "Register it first via `register_params(...)`, then call "
+                "`extract_params(...)` / `apply_param_specs(...)`. "
+                f"Available ids: {l_ids}."
+            ) from e
 
-    def contains_param(self, key_or_alias: str) -> bool:
-        """Check whether a parameter id/alias exists.
+    def contains_param(self, key: ParamKey) -> bool:
+        """Check whether a canonical parameter id exists.
 
         Args:
-            key_or_alias: Parameter id or alias.
+            key:
+                Canonical parameter id. Supports ``str`` and ``StrEnum``.
 
         Returns:
             bool: ``True`` if resolvable; otherwise ``False``.
         """
         try:
-            self.select_param(key_or_alias)
+            self.select_param(key)
             return True
         except ValueError:
             return False
@@ -312,14 +356,16 @@ class ParamRegistry:
         self,
         *,
         parser_reg: ParserRegistry,
-        keys: Sequence[str],
+        keys: Sequence[ParamKey],
         reserved_dests: set[str] | None,
     ) -> None:
         """Apply selected parameter specs onto a parser registry.
 
         Args:
             parser_reg: Parser/group wrapper used to resolve logical groups.
-            keys: Parameter ids or aliases to apply in order.
+            keys:
+                Canonical parameter ids to apply in order.
+                Supports ``str`` and ``StrEnum``.
             reserved_dests:
                 Dest names that are forbidden for parameter materialization.
                 Defaults to ``{"command", "_handler"}``.

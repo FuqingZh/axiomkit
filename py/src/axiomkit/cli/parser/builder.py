@@ -83,11 +83,13 @@ class ArgumentGroupHandler:
         """
         return self._adder.add_argument(*name_or_flags, **kwargs)
 
-    def extract_params(self, *param_keys: str) -> "ArgumentGroupHandler":
+    def extract_params(self, *param_keys: ParamKey) -> "ArgumentGroupHandler":
         """Apply selected registered params into this argument group.
 
         Args:
-            *param_keys: Canonical ids or aliases resolvable by ``ParamRegistry``.
+            *param_keys:
+                Canonical ids resolvable by ``ParamRegistry``.
+                Supports ``str`` and ``StrEnum``.
 
         Raises:
             ValueError:
@@ -99,10 +101,23 @@ class ArgumentGroupHandler:
             ArgumentGroupHandler: ``self`` for fluent chaining.
 
         Examples:
-            >>> # handler.extract_params("executables.rscript")
-            >>> # handler.add_argument("--extra", type=str)
+            >>> app = ParserBuilder(prog="demo")
+            >>> _ = app.register_params(
+            ...     SpecParam(
+            ...         id="executables.rscript",
+            ...         group=EnumGroupKey.EXECUTABLES,
+            ...         arg_builder=lambda g, s: s.add_argument(g, type=str),
+            ...     )
+            ... )
+            >>> _ = app.select_group(EnumGroupKey.EXECUTABLES).extract_params(
+            ...     "executables.rscript"
+            ... )
             >>> True
             True
+
+        Notes:
+            Parameters must be registered before extraction. If a key is
+            unknown, register it first via ``register_params``.
         """
         if self._params is None:
             raise ValueError(
@@ -471,36 +486,29 @@ class ParserBuilder:
         """
         return self._groups.select_group(key)
 
-    def register_param(self, spec: SpecParam) -> Self:
-        """Register one parameter specification.
+    def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self:
+        """Register one or more parameter specifications.
 
         Args:
-            spec: Parameter specification.
+            *specs:
+                Parameter specs, or iterables of parameter specs.
+                Examples:
+                ``register_params(spec1, spec2)``
+                ``register_params([spec1, spec2])``
 
         Returns:
             Self: ``self`` for fluent chaining.
         """
-        self.params.register_param(spec)
+        self.params.register_params(*specs)
         return self
 
-    def register_params(self, specs: Iterable[SpecParam]) -> Self:
-        """Register multiple parameter specifications.
-
-        Args:
-            specs: Iterable of parameter specifications.
-
-        Returns:
-            Self: ``self`` for fluent chaining.
-        """
-        for spec in specs:
-            self.register_param(spec)
-        return self
-
-    def apply_param_specs(self, *keys: str) -> Self:
+    def apply_param_specs(self, *keys: ParamKey) -> Self:
         """Apply selected param specs directly to the root parser groups.
 
         Args:
-            *keys: Param ids or aliases known by ``self.params``.
+            *keys:
+                Canonical param ids known by ``self.params``.
+                Supports ``str`` and ``StrEnum``.
 
         Returns:
             Self: ``self`` for fluent chaining.
@@ -533,8 +541,7 @@ class ParserBuilder:
         entry: str | None = None,
         group: str = "default",
         order: int = 0,
-        aliases: tuple[str, ...] = (),
-        param_keys: tuple[str, ...] = (),
+        param_keys: tuple[ParamKey, ...] = (),
     ) -> Self:
         """Create and register a command specification inline.
 
@@ -546,8 +553,9 @@ class ParserBuilder:
             entry: Optional command entry id/path for downstream dispatch.
             group: Logical command group used for help sorting.
             order: Sort key inside the command group.
-            aliases: Alternative command names.
-            param_keys: Param ids/aliases to auto-apply onto this command.
+            param_keys:
+                Param ids to auto-apply onto this command.
+                Supports ``str`` and ``StrEnum``.
 
         Returns:
             Self: ``self`` for fluent chaining.
