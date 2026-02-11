@@ -688,34 +688,3 @@ class ParserBuilder:
             if_apply_param_keys=if_apply_param_keys,
         )
         return self.parser
-
-    def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
-        """Parse CLI args and resolve selected command alias in-place.
-
-        Args:
-            args: Optional argv list. Uses ``sys.argv`` when omitted.
-
-        Returns:
-            argparse.Namespace: Parsed namespace with canonical command id.
-        """
-        ns = self.parser.parse_args(args)
-        if getattr(ns, self._command_dest, None) is not None:
-            self.commands.resolve_command_namespace(ns, attr=self._command_dest)
-        return ns
-
-    def resolve_command_namespace(
-        self,
-        ns: argparse.Namespace,
-        *,
-        attr: str = "command",
-    ) -> str:
-        """Resolve and rewrite command alias on a namespace.
-
-        Args:
-            ns: Parsed namespace object.
-            attr: Namespace attribute holding command id or alias.
-
-        Returns:
-            str: Canonical command id.
-        """
-        return self.commands.resolve_command_namespace(ns, attr=attr)
