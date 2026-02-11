@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from enum import StrEnum
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,74 @@ def test_deprecated_param_emits_warning() -> None:
 
     with pytest.warns(UserWarning, match="Deprecated param"):
         app.apply_param_specs("general.legacy_threads")
+
+
+def test_fluent_dsl_supports_multi_command_grouped_build() -> None:
+    app = ParserBuilder(prog="demo")
+    _register_demo_params(app)
+
+    (
+        app.command("t_test", help="T-test command")
+        .group(EnumGroupKey.EXECUTABLES)
+        .extract_params("executables.rscript")
+        .end()
+        .group(EnumGroupKey.INPUTS)
+        .add_argument("--file-in", type=str, required=True)
+        .done()
+    )
+    (
+        app.command("anova", help="ANOVA command")
+        .group(EnumGroupKey.PERFORMANCE)
+        .extract_params("data_table.threads_dt")
+        .done()
+    )
+
+    parser = app.build()
+
+    ns_t = parser.parse_args(
+        ["t_test", "--rscript", "Rscript", "--file-in", "in.parquet"]
+    )
+    assert ns_t.command == "t_test"
+    assert ns_t.rscript == "Rscript"
+    assert ns_t.file_in == "in.parquet"
+
+    ns_a = parser.parse_args(["anova", "--threads_dt", "8"])
+    assert ns_a.command == "anova"
+    assert ns_a.threads_dt == 8
+
+
+def test_fluent_dsl_extract_params_rejects_cross_group_param_keys() -> None:
+    app = ParserBuilder(prog="demo")
+    _register_demo_params(app)
+
+    (
+        app.command("demo", help="Demo command")
+        .group(EnumGroupKey.INPUTS)
+        .extract_params("executables.rscript")
+        .done()
+    )
+
+    with pytest.raises(ValueError, match="belongs to group"):
+        app.build()
+
+
+def test_extract_params_supports_str_enum_keys() -> None:
+    app = ParserBuilder(prog="demo")
+    _register_demo_params(app)
+
+    (
+        app.command("demo", help="Demo command")
+        .group(EnumGroupKey.EXECUTABLES)
+        .extract_params(EnumParamKey.EXE_RSCRIPT)
+        .end()
+        .group(EnumGroupKey.PERFORMANCE)
+        .extract_params(EnumParamKey.THR_THREADS)
+        .done()
+    )
+
+    parser = app.build()
+    ns = parser.parse_args(["demo", "--rscript", "Rscript", "--threads_dt", "2"])
+
+    assert ns.command == "demo"
+    assert ns.rscript == "Rscript"
+    assert ns.threads_dt == 2
