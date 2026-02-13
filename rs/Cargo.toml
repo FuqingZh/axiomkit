@@ -1,7 +1,8 @@
 [workspace]
 members = [
-  "crates/axiomkit_io",
-  "crates/axiomkit_log",
-  "crates/axiomkit_manifest",
+  "crates/axiomkit_io_fs",
+  "crates/axiomkit_io_fs_py",
+  "crates/axiomkit_io_xlsx",
+  "crates/axiomkit_io_xlsx_py",
 ]
 resolver = "2"
