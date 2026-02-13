@@ -1,0 +1,12 @@
+[package]
+name = "axiomkit_io_fs_py"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "_axiomkit_io_fs_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+axiomkit_io_fs = { path = "../axiomkit_io_fs" }
+pyo3 = { version = "0.23.4", features = ["extension-module"] }
