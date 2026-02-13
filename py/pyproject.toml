@@ -61,6 +61,7 @@ dev = [
     "ruff>=0.15.0",
     "scipy>=1.17.0",
     "xlsxwriter>=3.2.9",
+    "maturin>=1.11.5",
 ]
 
 [tool.pylint.main]
