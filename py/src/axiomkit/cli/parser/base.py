@@ -8,7 +8,8 @@ fields, mainly:
 """
 
 import re
-from collections.abc import Callable
+import argparse
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, Protocol, TypeVar
 
@@ -31,7 +32,22 @@ class ArgAdder(Protocol):
     touching private types.
     """
 
-    def add_argument(self, *name_or_flags: str, **kwargs: Any) -> Any: ...
+    def add_argument(
+        self,
+        *name_or_flags: str,
+        action: str | type[argparse.Action] = ...,
+        nargs: int | str | None = None,
+        const: Any = ...,
+        default: Any = ...,
+        type: Callable[[str], Any] | None = None,
+        choices: Iterable[Any] | None = None,
+        required: bool = False,
+        help: str | None = None,
+        metavar: str | tuple[str, ...] | None = None,
+        dest: str | None = None,
+        version: str = ...,
+        **kwargs: Any,
+    ) -> argparse.Action: ...
 
 
 _RE_REGISTRY_TOKEN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*$")

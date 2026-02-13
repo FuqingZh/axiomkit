@@ -82,6 +82,9 @@ class ActionPath(argparse.Action):
 
     Notes:
         - Defaults are normalized during parser construction.
+        - If a non-``None`` default fails validation, parser construction
+          fails immediately; this can prevent even ``--help`` from rendering
+          for that invocation.
         - For executables, "activate" scripts are not checked; only existence
           and executability are validated.
     """
@@ -114,7 +117,9 @@ class ActionPath(argparse.Action):
 
         Raises:
             ValueError: If an invalid ``kind_entry`` is provided.
-            argparse.ArgumentError: If the default value fails validation.
+            argparse.ArgumentError:
+                If a non-``None`` default value fails validation. This happens
+                at parser construction time (before parsing argv).
         """
         super().__init__(option_strings, dest, **kwargs)
 
@@ -303,6 +308,11 @@ class ActionPath(argparse.Action):
     def from_spec(cls, spec: SpecPath) -> type[argparse.Action]:
         """Factory returning a ``partial`` with a preset ``SpecPath``.
 
+        Notes:
+            - Validation semantics are the same as :class:`ActionPath`,
+              including eager validation of non-``None`` defaults during parser
+              construction.
+
         Args:
             spec: Path specification to enforce.
 
@@ -330,6 +340,11 @@ class ActionPath(argparse.Action):
         if_writable: bool = False,
     ) -> type[argparse.Action]:
         """Convenience factory that builds ``SpecPath`` from keyword inputs.
+
+        Notes:
+            - Validation semantics are the same as :class:`ActionPath`,
+              including eager validation of non-``None`` defaults during parser
+              construction.
 
         Args:
             kind_entry: Expected entry type.
@@ -375,6 +390,11 @@ class ActionPath(argparse.Action):
     ) -> type[argparse.Action]:
         """Factory for file path validation.
 
+        Notes:
+            - Non-``None`` defaults are validated during parser construction.
+            - If the default violates existence/extension/readability rules,
+              parser construction fails and ``--help`` may not render.
+
         Args:
             exts: Allowed file extensions.
             if_must_exist: Whether the file must already exist.
@@ -408,6 +428,11 @@ class ActionPath(argparse.Action):
     ) -> type[argparse.Action]:
         """Factory for directory path validation.
 
+        Notes:
+            - Non-``None`` defaults are validated during parser construction.
+            - If the default violates existence/accessibility rules, parser
+              construction fails and ``--help`` may not render.
+
         Args:
             if_must_exist: Whether the directory must already exist.
             if_readable: Whether readability/execute permission is required.
@@ -432,6 +457,12 @@ class ActionPath(argparse.Action):
     @classmethod
     def exe(cls) -> type[argparse.Action]:
         """Factory for executable path/command validation.
+
+        Notes:
+            - Non-``None`` defaults are validated during parser construction.
+            - When used as ``action=ActionPath.exe(), default=\"some_tool\"``,
+              if ``some_tool`` is not resolvable in current PATH, parser
+              construction fails and ``--help`` may not render.
 
         Returns:
             A callable suitable for argparse ``action``.
