@@ -10,7 +10,7 @@ import pytest
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from axiomkit.cli import EnumGroupKey, ParserBuilder, SpecParam  # noqa: E402
+from axiomkit.cli.parser import EnumGroupKey, ParserBuilder, SpecParam  # noqa: E402
 
 
 class EnumParamKey(StrEnum):

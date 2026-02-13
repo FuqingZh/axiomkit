@@ -4,9 +4,14 @@ from typing import TYPE_CHECKING, Any
 
 from axiomkit._optional_deps import import_optional_attr
 
+from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
 from .spec import EnumGroupKey, SpecParam
 
 __all__ = [
+    "ActionCommandPrefix",
+    "ActionHexColor",
+    "ActionNumericRange",
+    "ActionPath",
     "ParserBuilder",
     "SpecParam",
     "EnumGroupKey",

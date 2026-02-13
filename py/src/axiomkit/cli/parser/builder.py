@@ -417,6 +417,19 @@ class ParserBuilder:
     Parsing itself remains explicit and delegated to argparse.
 
     Examples:
+        Minimal command without grouped specs:
+            >>> app = ParserBuilder(prog="demo")
+            >>> _ = app.add_command(
+            ...     id="ping",
+            ...     help="Ping command",
+            ...     arg_builder=lambda p: p.add_argument("--name", required=True) or p,
+            ... )
+            >>> parser = app.build()
+            >>> ns = parser.parse_args(["ping", "--name", "alice"])
+            >>> (ns.command, ns.name)
+            ('ping', 'alice')
+
+        Fluent DSL with grouped reusable params:
         >>> app = ParserBuilder(prog="demo")
         >>> _ = app.register_params(
         ...     SpecParam(

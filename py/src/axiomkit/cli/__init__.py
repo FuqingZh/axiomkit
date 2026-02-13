@@ -1,28 +1,30 @@
 from __future__ import annotations
 
+from importlib import import_module
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-from .parser import EnumGroupKey, SpecParam
-
-__all__ = [
-    "CliHeadings",
-    "ParserBuilder",
-    "SpecParam",
-    "EnumGroupKey",
-]
+__all__ = ["parser", "console"]
 
 if TYPE_CHECKING:
-    from .console import CliHeadings
-    from .parser import ParserBuilder
+    import axiomkit.cli.console as console
+    import axiomkit.cli.parser as parser
+
+_ALIAS_MODULES: dict[str, str] = {
+    "parser": "axiomkit.cli.parser",
+    "console": "axiomkit.cli.console",
+}
 
 
 def __getattr__(name: str) -> Any:
-    if name == "ParserBuilder":
-        from .parser import ParserBuilder
+    module_name = _ALIAS_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-        return ParserBuilder
-    if name == "CliHeadings":
-        from .console import CliHeadings
+    module_loaded: ModuleType = import_module(module_name)
+    globals()[name] = module_loaded
+    return module_loaded
 
-        return CliHeadings
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
