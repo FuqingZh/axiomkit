@@ -1,10 +1,16 @@
 # Contributing to axiomkit
 
-This document defines contributor-facing conventions for public API naming, method verbs, and repository workflow.
+This document defines contributor-facing conventions for public API naming, method verbs, internal naming, schema/header conventions, and repository workflow.
 
 ## Scope
 
-- This file is normative for new public APIs in `py/`, `r/`, and `rs/`.
+- This file is normative for:
+    - public API naming in `py/`, `r/`, and `rs/`
+    - module-level function prefixes
+    - public method verbs
+    - CLI option naming
+    - internal variable naming conventions (when writing new code)
+    - public-facing schema/header naming for exports
 - Existing APIs can migrate incrementally; do not break external contracts without deprecation.
 - Tooling (`ruff`, `pyright`, tests, CI) is the final gate for merge, but naming and architecture review still applies.
 
@@ -44,21 +50,21 @@ This document defines contributor-facing conventions for public API naming, meth
 
 #### 变换前缀判准矩阵
 
-| 前缀 | 必须满足 | 不应包含 |
-| --- | --- | --- |
-| `convert_` | 语义等价、尽量可逆 | 统计意义改变、丢信息不声明 |
-| `sanitize_` | 修复非法输入使其可处理 | 业务过滤/删样本（用 `filter_` / `drop_`） |
-| `center_` | 仅加减常数/向量（location） | 乘除/非线性 |
-| `scale_` | 仅乘除尺度（scale） | 分布对齐 |
-| `standardize_` | 明确定义的统计标准化（如 z-score） | 模糊“规范化” |
-| `normalize_` | 分布/尺度整体规范（quantile、unit norm、min-max 等）或 umbrella | 单纯 centering（用 `center_`） |
+| 前缀           | 必须满足                                                        | 不应包含                                  |
+| -------------- | --------------------------------------------------------------- | ----------------------------------------- |
+| `convert_`     | 语义等价、尽量可逆                                              | 统计意义改变、丢信息不声明                |
+| `sanitize_`    | 修复非法输入使其可处理                                          | 业务过滤/删样本（用 `filter_` / `drop_`） |
+| `center_`      | 仅加减常数/向量（location）                                     | 乘除/非线性                               |
+| `scale_`       | 仅乘除尺度（scale）                                             | 分布对齐                                  |
+| `standardize_` | 明确定义的统计标准化（如 z-score）                              | 模糊“规范化”                              |
+| `normalize_`   | 分布/尺度整体规范（quantile、unit norm、min-max 等）或 umbrella | 单纯 centering（用 `center_`）            |
 
 ### 选择
 
 - `filter_`: 按谓词过滤（不用于选列）
 - `select_`: 字段/列投影与重排
 
-### 抽取（可选）
+### 抽取
 
 - `extract_`: 从嵌套/复合结构抽取子结构（不用于表格投影）
 
@@ -111,12 +117,16 @@ Object methods should only keep protocol-required verbs. Domain behaviors remain
 - `add_*`: 仅用于可变累积器（errors/warnings/counters），不用于普通业务对象。
 - `run()`: 可运行对象的主执行入口。
 - `render()` / `report()`: 生成展示对象，不隐式落盘。
+- `from_*()` / `make()`: 仅允许作为 classmethod factory。
+    - `from_*`: 从显式结构（Spec/Config/Schema）构造，语义为映射/适配。
+    - `make`: 从显式参数构造的便利入口；内部必须委托到 `from_*` 或 `create_*`。
+    - `from_*` 与 `make` 不属于 module-level Function Prefixes 体系。
 
 ### Disallowed Public Method Verbs
 
 - `save/load/export/dump`
 - `execute/start/stop/finish/shutdown/dispose`
-- `make/process/do/get/show`
+- `process/do/get/show`
 
 ### Allowed Public Methods
 
@@ -125,11 +135,57 @@ Object methods should only keep protocol-required verbs. Domain behaviors remain
 - `run()`
 - `render()`
 - `report()`
+- `from_*()` (classmethod factory only)
+- `make()` (classmethod factory only)
 - Python protocol essentials: `__init__`, `__enter__`, `__exit__`
+
+## CLI Option Naming
+
+- Boolean options:
+    - `is_...`: factual/state toggles
+    - `should_...`: policy/strategy toggles
+    - Use argparse `store_true` / `store_false` consistently
+- Non-boolean options:
+    - Prefer explicit semantic names over abbreviations
+    - Path-like options prefer `file_...` / `dir_...` as appropriate
+
+## Internal Naming Conventions
+
+- Prefer type-specific prefixes for typed instances:
+    - `path_` for `pathlib.Path`
+    - `url_` for URL-like objects
+    - `regex_` for compiled regex
+- Generic `cls_` is not required; choose a type-specific prefix based on the concrete class.
+- Optional scalar-type hints when it improves clarity:
+    - `c_` (str), `n_` (num), `b_` (bool), `l_` (list), `dict_` (dict), `ns_` (namespace)
+- - Loop variables:
+  - Prefer placeholder-style leading markers for loop indices/values to make intent explicit.
+    - Python/Rust: use leading underscore when the loop var is non-essential or may be unused: `(_idx, _val)`.
+    - R: use leading dot for the same purpose: `.idx`, `.val`.
+  - Avoid shadowing outer-scope names.
+  - Reserve trailing underscore only for collision avoidance when a leading marker is not appropriate.
+
+
+## Public-facing Schema / Header Naming
+
+- Exported headers use PascalCase.
+- Abbreviation rule:
+    - Standalone header token: ALLCAPS (e.g., `ID`, `PTM`, `FDR`)
+    - As part of a multi-token header: PascalCase abbreviation segment (e.g., `SampleId`, `PtmFdr`)
+- Internal storage uses snake_case; expose PascalCase via views / aliases.
+
+## Argparse Action Factory Pattern
+
+- Action classes must not use `build()`.
+- Provide factories as classmethods:
+    - `from_spec(spec: Spec*)`: core factory (explicit spec input)
+    - `make(...params...)`: convenience factory delegating to `from_spec`
+    - additional convenience wrappers delegate to `make`
+- Factories should return callables suitable for argparse `action=` (commonly `functools.partial`).
 
 ## Workflow（提交要求）
 
-1. Keep API changes minimal and explicit.
-2. Add or update tests with each behavior change.
-3. Keep docs and examples in sync with public API.
-4. Prefer additive evolution; deprecate before removal.
+- Keep API changes minimal and explicit.
+- Add or update tests with each behavior change.
+- Keep docs and examples in sync with public API.
+- Prefer additive evolution; deprecate before removal.
