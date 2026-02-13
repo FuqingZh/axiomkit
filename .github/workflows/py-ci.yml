@@ -15,9 +15,26 @@ jobs:
         working-directory: py
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs -> rs/target
+      - name: Build Rust Python backends
+        working-directory: .
+        run: |
+          cargo build --manifest-path rs/Cargo.toml --release \
+            -p axiomkit_io_fs_py \
+            -p axiomkit_io_xlsx_py
+      - name: Relink backend modules
+        working-directory: .
+        run: |
+          ln -sfn ../../../../../rs/target/release/lib_axiomkit_io_fs_rs.so \
+            py/src/axiomkit/io/fs/_axiomkit_io_fs_rs.so
+          ln -sfn ../../../../../rs/target/release/lib_axiomkit_io_xlsx_rs.so \
+            py/src/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.so
       - run: python -m pip install -U pip pdm
       - run: pdm sync -G dev --no-self
       - run: pdm run python -c "import sys; print(sys.executable)"
