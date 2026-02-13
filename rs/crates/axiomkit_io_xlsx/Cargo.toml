@@ -1,0 +1,8 @@
+[package]
+name = "axiomkit_io_xlsx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+polars = { version = "0.51.0", default-features = false, features = ["ipc"] }
+rust_xlsxwriter = "0.90.2"
