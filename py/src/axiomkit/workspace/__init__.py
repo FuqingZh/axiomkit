@@ -1,5 +1,9 @@
-from .prepare_workspace import prepare_workspace
+from .plan import (
+    SpecWorkspaceLayout,
+    WorkspacePlan,
+)
 
 __all__ = [
-    "prepare_workspace",
+    "SpecWorkspaceLayout",
+    "WorkspacePlan",
 ]
