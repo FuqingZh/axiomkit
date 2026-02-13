@@ -106,7 +106,23 @@ class SpecXlsxWriteOptions:
             border=0, top=0, bottom=0, left=0, right=0
         )
     )
-    warn_addon_override_conflicts: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class SpecScientificPolicy:
+    rule_scope: Literal["none", "decimal", "integer", "all"] = "decimal"
+    thr_min: float = 0.0001
+    thr_max: float = 1_000_000_000_000.0
+    height_body_inferred_max: int | None = 20_000
+
+
+@dataclass(frozen=True, slots=True)
+class SpecAutofitCellsPolicy:
+    rule_columns: Literal["none", "header", "body", "all"] = "header"
+    height_body_inferred_max: int | None = 20_000
+    width_cell_min: int = 8
+    width_cell_max: int = 60
+    width_cell_padding: int = 2
 
 
 # #endregion

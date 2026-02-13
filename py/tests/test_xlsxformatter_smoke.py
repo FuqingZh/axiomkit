@@ -9,7 +9,7 @@ import polars as pl
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from axiomkit.io import XlsxWriter  # noqa: E402
+from axiomkit.io.xlsx import XlsxWriter  # noqa: E402
 
 
 def test_write_sheet_smoke_creates_xlsx_and_records_report(tmp_path: Path) -> None:
