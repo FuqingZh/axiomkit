@@ -1,6 +1,4 @@
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import ClassVar
+from dataclasses import dataclass
 
 from .spec import SpecCopyError
 
@@ -86,56 +84,4 @@ class ReportCopy:
             f"skipped_count={self.cnt_skipped}, "
             f"errors_count={self.error_count}, "
             f"warnings_count={self.warning_count})"
-        )
-
-
-@dataclass(slots=True)
-class ReportCopyBuilder:
-    """Mutable accumulator for copy statistics."""
-
-    COUNTER_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"cnt_matched", "cnt_scanned", "cnt_copied", "cnt_skipped"}
-    )
-
-    cnt_matched: int = 0
-    cnt_scanned: int = 0
-    cnt_copied: int = 0
-    cnt_skipped: int = 0
-    errors: list[SpecCopyError] = field(default_factory=lambda: [])
-    warnings: list[str] = field(default_factory=lambda: [])
-
-    def add_counts(self, *field_names: str, value: int = 1) -> None:
-        if not field_names:
-            raise ValueError("`field_names` is required.")
-        for _name in field_names:
-            if _name not in self.COUNTER_FIELDS:
-                raise ValueError(f"Unsupported counter: {_name}")
-            setattr(self, _name, getattr(self, _name) + value)
-
-    def add_matched(self) -> None:
-        self.cnt_matched += 1
-
-    def add_scanned(self) -> None:
-        self.cnt_scanned += 1
-
-    def add_copied(self) -> None:
-        self.cnt_copied += 1
-
-    def add_skipped(self) -> None:
-        self.cnt_skipped += 1
-
-    def add_warning(self, warning: str) -> None:
-        self.warnings.append(warning)
-
-    def add_error(self, path: Path, error: Exception) -> None:
-        self.errors.append(SpecCopyError(path, error))
-
-    def build(self) -> ReportCopy:
-        return ReportCopy(
-            cnt_matched=self.cnt_matched,
-            cnt_scanned=self.cnt_scanned,
-            cnt_copied=self.cnt_copied,
-            cnt_skipped=self.cnt_skipped,
-            errors=tuple(self.errors),
-            warnings=tuple(self.warnings),
         )
