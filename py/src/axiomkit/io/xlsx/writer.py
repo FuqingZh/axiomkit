@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, ClassVar, Literal, Protocol, Self, cast
 
 from ._rs_bridge import create_xlsx_writer_via_rs, is_rs_backend_available
-from .conf import DEFAULT_XLSX_FORMATS, DEFAULT_XLSX_WRITE_OPTIONS, ColumnIdentifier
+from .conf import (
+    DEFAULT_XLSX_FORMATS,
+    DEFAULT_XLSX_WRITE_OPTIONS,
+    ColumnIdentifier,
+    LIT_FMT_KEYS,
+)
 from .spec import (
     SpecAutofitCellsPolicy,
     SpecCellFormat,
@@ -15,6 +20,28 @@ from .spec import (
     SpecXlsxReport,
     SpecXlsxWriteOptions,
 )
+
+
+class ProtocolXlsxWriterBackend(Protocol):
+    def close(self) -> None: ...
+
+    def report(self) -> tuple[SpecXlsxReport, ...]: ...
+
+    def write_sheet(
+        self,
+        df: Any,
+        sheet_name: str,
+        *,
+        df_header: Any | None = None,
+        cols_integer: Sequence[ColumnIdentifier] | None = None,
+        cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
+        col_freeze: int = 0,
+        row_freeze: int | None = None,
+        if_merge_header: bool = False,
+        if_keep_missing_values: bool | None = None,
+        policy_autofit: SpecAutofitCellsPolicy | None = None,
+        policy_scientific: SpecScientificPolicy | None = None,
+    ) -> Any: ...
 
 
 class XlsxWriter:
@@ -25,7 +52,9 @@ class XlsxWriter:
     thin Python facade that preserves call signatures and return types.
     """
 
-    DEFAULT_XLSX_FORMATS: ClassVar[dict[str, SpecCellFormat]] = DEFAULT_XLSX_FORMATS
+    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, SpecCellFormat]] = (
+        DEFAULT_XLSX_FORMATS
+    )
     DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[SpecXlsxWriteOptions] = (
         DEFAULT_XLSX_WRITE_OPTIONS
     )
@@ -47,14 +76,17 @@ class XlsxWriter:
             )
 
         self.file_out = Path(file_out)
-        self._writer = create_xlsx_writer_via_rs(
-            str(self.file_out),
-            fmt_text=fmt_text,
-            fmt_integer=fmt_integer,
-            fmt_decimal=fmt_decimal,
-            fmt_scientific=fmt_scientific,
-            fmt_header=fmt_header,
-            write_options=write_options,
+        self._writer: ProtocolXlsxWriterBackend = cast(
+            ProtocolXlsxWriterBackend,
+            create_xlsx_writer_via_rs(
+                str(self.file_out),
+                fmt_text=fmt_text,
+                fmt_integer=fmt_integer,
+                fmt_decimal=fmt_decimal,
+                fmt_scientific=fmt_scientific,
+                fmt_header=fmt_header,
+                write_options=write_options,
+            ),
         )
 
     def __enter__(self) -> "XlsxWriter":
