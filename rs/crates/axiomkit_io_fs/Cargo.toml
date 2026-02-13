@@ -1,0 +1,11 @@
+[package]
+name = "axiomkit_io_fs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+filetime = "0.2.25"
+globset = "0.4.16"
+rayon = "1.10.0"
+regex = "1.11.1"
+xattr = "1.6.1"
