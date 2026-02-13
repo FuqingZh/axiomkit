@@ -1,0 +1,64 @@
+{
+  "timestamp_utc": "2026-02-12T10:02:36.267509+00:00",
+  "command": "scripts/benchmark_fs_copy_tree.py --repeat 3",
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python_version": "3.13.2",
+  "scenario": {
+    "name": "small_files_10k",
+    "n_dirs": 50,
+    "n_files_per_dir": 200,
+    "n_file_size_bytes": 256
+  },
+  "results": [
+    {
+      "backend_profile": "debug",
+      "backend_binary": "/home/being/projects/axiomkit/rs/target/debug/lib_axiomkit_fs_rs.so",
+      "scenario": {
+        "name": "small_files_10k",
+        "n_dirs": 50,
+        "n_files_per_dir": 200,
+        "n_file_size_bytes": 256
+      },
+      "repeats": 3,
+      "times_seconds": [
+        0.11305431699975088,
+        0.13643986999977642,
+        0.11072069400006512
+      ],
+      "mean_seconds": 0.12007162699986414,
+      "min_seconds": 0.11072069400006512,
+      "max_seconds": 0.13643986999977642,
+      "cnt_matched": 10050,
+      "cnt_scanned": 10050,
+      "cnt_copied": 10050,
+      "cnt_skipped": 0,
+      "cnt_errors": 0,
+      "cnt_warnings": 0
+    },
+    {
+      "backend_profile": "release",
+      "backend_binary": "/home/being/projects/axiomkit/rs/target/release/lib_axiomkit_fs_rs.so",
+      "scenario": {
+        "name": "small_files_10k",
+        "n_dirs": 50,
+        "n_files_per_dir": 200,
+        "n_file_size_bytes": 256
+      },
+      "repeats": 3,
+      "times_seconds": [
+        0.10990636599990466,
+        0.09755043399991337,
+        0.10918713000000935
+      ],
+      "mean_seconds": 0.10554797666660913,
+      "min_seconds": 0.09755043399991337,
+      "max_seconds": 0.10990636599990466,
+      "cnt_matched": 10050,
+      "cnt_scanned": 10050,
+      "cnt_copied": 10050,
+      "cnt_skipped": 0,
+      "cnt_errors": 0,
+      "cnt_warnings": 0
+    }
+  ]
+}
