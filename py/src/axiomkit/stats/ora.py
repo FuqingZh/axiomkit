@@ -122,7 +122,7 @@ def calculate_ora(
             The effective foreground used in counting and in ``FgTotal`` is ``foreground_elements ∩ background_elements``.
         background_elements (set[str] | None, optional): Background elements. Defaults to None.
             - If None, the universe is inferred from `df` (all unique elements present in the mapping table);
-            - If provided, the mapping is restricted to these elements. 
+            - If provided, the mapping is restricted to these elements.
                 `BgTotal` is ``len(background_elements)`` and the mapping table is restricted to those elements.
                 The provided universe may include elements not present in ``df`` (elements without any mapping),
                 those elements contribute to ``BgTotal`` but not to ``BgHits``.
