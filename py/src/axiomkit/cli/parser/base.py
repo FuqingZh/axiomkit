@@ -9,7 +9,7 @@ fields, mainly:
 
 import argparse
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, Protocol, TypeVar
 
