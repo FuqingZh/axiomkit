@@ -981,6 +981,7 @@ class ActionNumericRange(argparse.Action):
     @classmethod
     def unit_interval(
         cls,
+        kind_value: Literal["int", "float"] = "float",
         *,
         if_inclusive_min: bool = True,
         if_inclusive_max: bool = True,
@@ -1012,7 +1013,7 @@ class ActionNumericRange(argparse.Action):
             ... )
         """
         return cls.make(
-            kind_value="float",
+            kind_value=kind_value,
             min_value=0.0,
             max_value=1.0,
             if_inclusive_min=if_inclusive_min,
