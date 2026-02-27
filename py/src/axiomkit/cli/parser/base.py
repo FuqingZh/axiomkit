@@ -7,8 +7,8 @@ fields, mainly:
 - generic canonical-id registry with collision validation.
 """
 
-import re
 import argparse
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, Protocol, TypeVar
@@ -35,17 +35,6 @@ class ArgAdder(Protocol):
     def add_argument(
         self,
         *name_or_flags: str,
-        action: str | type[argparse.Action] = ...,
-        nargs: int | str | None = None,
-        const: Any = ...,
-        default: Any = ...,
-        type: Callable[[str], Any] | None = None,
-        choices: Iterable[Any] | None = None,
-        required: bool = False,
-        help: str | None = None,
-        metavar: str | tuple[str, ...] | None = None,
-        dest: str | None = None,
-        version: str = ...,
         **kwargs: Any,
     ) -> argparse.Action: ...
 

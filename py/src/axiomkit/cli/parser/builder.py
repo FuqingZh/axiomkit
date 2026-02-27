@@ -26,14 +26,13 @@ import argparse
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self, overload
+from typing import Any, Self
 
 from .base import SmartFormatter
 from .registry import CommandRegistry, ParamRegistry, default_reserved_param_dests
 from .spec import DICT_ARG_GROUP_META, ArgAdder, EnumGroupKey, SpecCommand, SpecParam
 
 type ParamKey = str | StrEnum
-type ArgumentValueParser = Callable[[str], Any]
 
 
 def create_param_registry() -> ParamRegistry:
@@ -70,24 +69,6 @@ class ArgumentGroupHandler:
     _adder: ArgAdder
     _parser_reg: "ArgGroupRegistry"
     _params: "ParamRegistry | None" = None
-
-    @overload
-    def add_argument(
-        self,
-        *name_or_flags: str,
-        action: str | type[argparse.Action] = ...,
-        nargs: int | str | None = None,
-        const: Any = ...,
-        default: Any = ...,
-        type: ArgumentValueParser | None = None,
-        choices: Iterable[Any] | None = None,
-        required: bool = False,
-        help: str | None = None,
-        metavar: str | tuple[str, ...] | None = None,
-        dest: str | None = None,
-        version: str = ...,
-        **kwargs: Any,
-    ) -> argparse.Action: ...
 
     def add_argument(self, *name_or_flags: str, **kwargs: Any) -> Any:
         """Add an argparse argument to this group.
@@ -342,24 +323,6 @@ class GroupBuilder:
         """
         self._command_builder = command_builder
         self._key = key
-
-    @overload
-    def add_argument(
-        self,
-        *name_or_flags: str,
-        action: str | type[argparse.Action] = ...,
-        nargs: int | str | None = None,
-        const: Any = ...,
-        default: Any = ...,
-        type: ArgumentValueParser | None = None,
-        choices: Iterable[Any] | None = None,
-        required: bool = False,
-        help: str | None = None,
-        metavar: str | tuple[str, ...] | None = None,
-        dest: str | None = None,
-        version: str = ...,
-        **kwargs: Any,
-    ) -> "GroupBuilder": ...
 
     def add_argument(self, *name_or_flags: str, **kwargs: Any) -> "GroupBuilder":
         """Record one argparse argument operation in this group.
