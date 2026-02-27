@@ -272,6 +272,8 @@ def calculate_ora(
         .with_columns(
             FgRatio=pl.col("FgHits") / pl.col("FgTotal"),
             BgRatio=pl.col("BgHits") / pl.col("BgTotal"),
+        )
+        .with_columns(
             FoldEnrichment=pl.when(pl.col("BgRatio") > 0)
             .then(pl.col("FgRatio") / pl.col("BgRatio"))
             .otherwise(np.inf),
