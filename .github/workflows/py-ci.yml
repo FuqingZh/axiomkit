@@ -10,6 +10,7 @@ jobs:
     env:
       PDM_IGNORE_SAVED_PYTHON: "1"
       PDM_VENV_IN_PROJECT: "1"
+      PDM_USE_UV: "0"
     defaults:
       run:
         working-directory: py
@@ -25,7 +26,6 @@ jobs:
       - run: python -m pip install -U pip pdm
       - run: pdm sync -G dev --no-self
       - run: pdm run python -c "import sys; print(sys.executable)"
-      - run: pdm run pytest -q tests
       - run: pdm run ruff check src tests
       - run: pdm run pyright src
       - name: Build wheel artifact
@@ -62,43 +62,6 @@ jobs:
               if not has_ext("axiomkit/io/xlsx/_axiomkit_io_xlsx_rs"):
                   raise SystemExit("Missing xlsx Rust extension in wheel.")
           PY
-      - name: Smoke install built wheel
+      - name: Package QA On Built Wheel
         run: |
-          python - <<'PY'
-          import pathlib
-          import subprocess
-          import tempfile
-
-          wheel = sorted(pathlib.Path("dist").glob("axiomkit-*.whl"))[0]
-          uri = wheel.resolve().as_uri()
-          venv_dir = pathlib.Path(tempfile.mkdtemp(prefix="axiomkit-wheel-venv-"))
-
-          subprocess.run(["python", "-m", "venv", str(venv_dir)], check=True)
-          py = venv_dir / "bin" / "python"
-          subprocess.run([str(py), "-m", "pip", "install", "-U", "pip"], check=True)
-          subprocess.run([str(py), "-m", "pip", "install", f"axiomkit[all] @ {uri}"], check=True)
-
-          script = r'''
-          from pathlib import Path
-          import polars as pl
-          from axiomkit.io.fs._rs_bridge import is_rs_backend_available as fs_backend_ok
-          from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available as xlsx_backend_ok
-          from axiomkit.io.xlsx import XlsxWriter
-
-          if not fs_backend_ok():
-              raise SystemExit("fs backend unavailable after wheel install")
-          if not xlsx_backend_ok():
-              raise SystemExit("xlsx backend unavailable after wheel install")
-
-          out = Path("/tmp/axiomkit_install_smoke.xlsx")
-          with XlsxWriter(out) as writer:
-              writer.write_sheet(
-                  pl.DataFrame({"a": [1], "b": ["x"]}),
-                  "S",
-                  df_header=pl.DataFrame({"a": ["列A", "A"], "b": ["列B", "B"]}),
-              )
-          if not out.exists() or out.stat().st_size <= 0:
-              raise SystemExit("xlsx smoke output missing")
-          '''
-          subprocess.run([str(py), "-c", script], check=True)
-          PY
+          python scripts/run_package_qa.py --dist-dir dist --tests-dir tests

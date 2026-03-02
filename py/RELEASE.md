@@ -6,7 +6,7 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
 - `pyproject.toml` has valid:
   - `project.name`
-  - `project.version`
+  - `tool.pdm.version` (`source = "scm"`)
   - `project.description`
   - `project.requires-python`
   - `project.readme`
@@ -15,33 +15,42 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
 ## 2. Versioning Notes
 
-- Current version must not already exist on target index.
-- If you prefer `0.0.000`, note:
-  - PEP 440 canonicalizes it to `0.0.0`.
-  - On indexes, `0.0.000` and `0.0.0` are effectively the same release version.
-  - Use monotonically increasing versions for each publish.
+- Version is derived from Git tags/SCM metadata.
+- Publish tags must be canonical PEP 440 (e.g. `0.0.27`, not `v0.0.27`).
+- The release workflow validates tag format before building.
 
-## 3. Local Validation
+## 3. Validation Strategy
 
 From `py/`:
 
 ```bash
+export PDM_USE_UV=0
 pdm sync -G dev --no-self
 pdm run ruff check src tests
-pdm run pytest -q tests
 pdm run pyright src
 ```
 
-## 4. Build Artifacts
+Then run package-level QA against the built wheel (isolated venv):
 
 ```bash
-pdm build
+pdm build --no-sdist
+python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```
 
-Expected outputs in `dist/`:
+`PDM_USE_UV=0` is required here to keep `pdm build --no-sdist` from falling back to
+an sdist-first wheel path on machines where `use_uv=true` is configured.
 
-- `axiomkit-<version>-py3-none-any.whl`
-- `axiomkit-<version>.tar.gz`
+## 4. Build Artifacts
+
+Build command:
+
+```bash
+pdm build --no-sdist
+```
+
+Expected output in `dist/`:
+
+- `axiomkit-<version>-<platform>.whl` (non-`py3-none-any`, includes Rust extensions)
 
 ## 5. Publish Credentials
 

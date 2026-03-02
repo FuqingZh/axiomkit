@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
-
-SRC_DIR = Path(__file__).resolve().parents[1] / "src"
-sys.path.insert(0, str(SRC_DIR))
 
 from axiomkit.io.fs._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.fs.copy import copy_tree  # noqa: E402

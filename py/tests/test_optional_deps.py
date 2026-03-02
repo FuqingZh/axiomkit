@@ -1,14 +1,8 @@
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 
 import pytest
-
-# Ensure src-layout imports work when running tests from repo checkout.
-SRC_DIR = Path(__file__).resolve().parents[1] / "src"
-sys.path.insert(0, str(SRC_DIR))
 
 from axiomkit._optional_deps import import_optional_module  # noqa: E402
 
