@@ -6,7 +6,7 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
 - `pyproject.toml` has valid:
   - `project.name`
-  - `tool.pdm.version` (`source = "scm"`)
+  - `tool.setuptools_scm`
   - `project.description`
   - `project.requires-python`
   - `project.readme`
@@ -33,6 +33,7 @@ Then run package-level QA against the built wheel (isolated venv):
 
 ```bash
 pdm run python -m build --wheel --installer uv
+pdm run python scripts/validate_wheel.py --dist-dir dist
 pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```
 

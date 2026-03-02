@@ -25,7 +25,7 @@ jobs:
       - run: python -m pip install -U pip pdm
       - run: pdm sync -G dev --no-self
       - run: pdm run python -c "import sys; print(sys.executable)"
-      - run: pdm run ruff check src tests
+      - run: pdm run ruff check src tests scripts
       - run: pdm run pyright src
       - name: Build wheel artifact
         run: |
@@ -33,34 +33,7 @@ jobs:
           pdm run python -m build --wheel --installer uv
       - name: Validate wheel is binary and ships Rust extensions
         run: |
-          python - <<'PY'
-          import pathlib
-          import zipfile
-
-          dist = pathlib.Path("dist")
-          wheels = sorted(dist.glob("axiomkit-*.whl"))
-          if not wheels:
-              raise SystemExit("No wheel artifact produced.")
-
-          for wheel in wheels:
-              if wheel.name.endswith("none-any.whl"):
-                  raise SystemExit(f"Wheel must be platform-specific, got: {wheel.name}")
-
-              with zipfile.ZipFile(wheel) as zf:
-                  names = zf.namelist()
-
-              def has_ext(prefix: str) -> bool:
-                  return any(
-                      name.startswith(prefix)
-                      and name.endswith((".so", ".pyd", ".dylib"))
-                      for name in names
-                  )
-
-              if not has_ext("axiomkit/io/fs/_axiomkit_io_fs_rs"):
-                  raise SystemExit("Missing fs Rust extension in wheel.")
-              if not has_ext("axiomkit/io/xlsx/_axiomkit_io_xlsx_rs"):
-                  raise SystemExit("Missing xlsx Rust extension in wheel.")
-          PY
+          pdm run python scripts/validate_wheel.py --dist-dir dist
       - name: Package QA On Built Wheel
         run: |
           pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests

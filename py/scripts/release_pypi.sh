@@ -66,48 +66,14 @@ if [[ "$RUN_SYNC" -eq 1 ]]; then
 fi
 
 if [[ "$RUN_CHECKS" -eq 1 ]]; then
-    pdm run ruff check src tests
+    pdm run ruff check src tests scripts
     pdm run pyright src
 fi
 
 rm -rf dist
 pdm run python -m build --wheel --installer uv
 
-VERSION_RAW="$(pdm run python - <<'PY'
-import pathlib
-import re
-import zipfile
-
-dist = pathlib.Path("dist")
-wheels = sorted(dist.glob("axiomkit-*.whl"))
-if not wheels:
-    raise SystemExit("No wheel built in dist/.")
-
-match = re.match(r"^axiomkit-([^-]+)-", wheels[0].name)
-if not match:
-    raise SystemExit(f"Cannot parse version from wheel name: {wheels[0].name}")
-
-for wheel in wheels:
-    if wheel.name.endswith("none-any.whl"):
-        raise SystemExit(f"Wheel must be platform-specific, got: {wheel.name}")
-
-    with zipfile.ZipFile(wheel) as zf:
-        names = zf.namelist()
-
-    def has_ext(prefix: str) -> bool:
-        return any(
-            name.startswith(prefix) and name.endswith((".so", ".pyd", ".dylib"))
-            for name in names
-        )
-
-    if not has_ext("axiomkit/io/fs/_axiomkit_io_fs_rs"):
-        raise SystemExit(f"{wheel.name} missing fs Rust extension.")
-    if not has_ext("axiomkit/io/xlsx/_axiomkit_io_xlsx_rs"):
-        raise SystemExit(f"{wheel.name} missing xlsx Rust extension.")
-
-print(match.group(1))
-PY
-)"
+VERSION_RAW="$(pdm run python scripts/validate_wheel.py --dist-dir dist --print-version)"
 
 if [[ "$RUN_CHECKS" -eq 1 ]]; then
     pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests

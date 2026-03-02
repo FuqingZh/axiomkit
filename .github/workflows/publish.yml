@@ -69,7 +69,7 @@ jobs:
 
       - name: Run checks
         run: |
-          pdm run ruff check src tests
+          pdm run ruff check src tests scripts
           pdm run pyright src
 
       - name: Build artifacts
@@ -79,42 +79,9 @@ jobs:
 
       - name: Verify built wheel matches tag and contains Rust extensions
         run: |
-          python - <<'PY'
-          import pathlib
-          import zipfile
-
-          tag = "${{ github.ref_name }}"
-          dist = pathlib.Path("dist")
-          wheels = list(dist.glob("axiomkit-*.whl"))
-          if not wheels:
-              raise SystemExit("Expected at least one wheel artifact in dist/.")
-
-          if not any(w.name.startswith(f"axiomkit-{tag}-") for w in wheels):
-              raise SystemExit(
-                  f"No wheel matches tag version {tag!r}. Found: {[w.name for w in wheels]}"
-              )
-
-          for wheel in wheels:
-              if wheel.name.endswith("none-any.whl"):
-                  raise SystemExit(f"Wheel must be platform-specific, got: {wheel.name}")
-
-              with zipfile.ZipFile(wheel) as zf:
-                  names = zf.namelist()
-
-              def has_ext(prefix: str) -> bool:
-                  return any(
-                      name.startswith(prefix)
-                      and name.endswith((".so", ".pyd", ".dylib"))
-                      for name in names
-                  )
-
-              if not has_ext("axiomkit/io/fs/_axiomkit_io_fs_rs"):
-                  raise SystemExit(f"{wheel.name} missing fs Rust extension.")
-              if not has_ext("axiomkit/io/xlsx/_axiomkit_io_xlsx_rs"):
-                  raise SystemExit(f"{wheel.name} missing xlsx Rust extension.")
-
-          print(f"Wheel validation passed for tag: {tag}")
-          PY
+          pdm run python scripts/validate_wheel.py \
+            --dist-dir dist \
+            --expected-version "${{ github.ref_name }}"
 
       - name: Package QA On Built Wheel
         run: |
