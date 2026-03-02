@@ -24,3 +24,7 @@ renv/staging/
 
 # Rust
 target/
+
+# Rust extension artifacts (built during packaging/tests, never committed)
+py/src/axiomkit/io/fs/_axiomkit_io_fs_rs.so
+py/src/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.so

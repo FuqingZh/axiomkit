@@ -10,6 +10,7 @@ import pytest
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
+from axiomkit.io.fs._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.fs.copy import copy_tree  # noqa: E402
 from axiomkit.io.fs.spec import (  # noqa: E402
     EnumCopyDepthLimitMode,
@@ -34,6 +35,9 @@ def _assert_symlink(path: Path) -> None:
 
 
 def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust fs backend is unavailable")
+
     src = tmp_path / "src"
     dst = tmp_path / "dst"
     src.mkdir()
