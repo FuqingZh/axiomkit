@@ -70,6 +70,11 @@ if [[ "$RUN_CHECKS" -eq 1 ]]; then
     pdm run pyright src
 fi
 
+if ! pdm run uv --version >/dev/null 2>&1; then
+    echo "uv executable not found in the PDM environment. Run 'pdm sync -G dev --no-self' first." >&2
+    exit 1
+fi
+
 rm -rf dist
 pdm run python -m build --wheel --installer uv
 

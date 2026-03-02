@@ -25,6 +25,7 @@ jobs:
       - run: python -m pip install -U pip pdm
       - run: pdm sync -G dev --no-self
       - run: pdm run python -c "import sys; print(sys.executable)"
+      - run: pdm run uv --version
       - run: pdm run ruff check src tests scripts
       - run: pdm run pyright src
       - name: Build wheel artifact

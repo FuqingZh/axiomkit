@@ -67,6 +67,9 @@ jobs:
       - name: Sync dev dependencies
         run: pdm sync -G dev --no-self
 
+      - name: Verify uv executable
+        run: pdm run uv --version
+
       - name: Run checks
         run: |
           pdm run ruff check src tests scripts
