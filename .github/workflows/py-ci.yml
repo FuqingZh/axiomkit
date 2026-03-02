@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Install patchelf
+        run: sudo apt-get update && sudo apt-get install -y patchelf
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rs -> rs/target
@@ -30,8 +32,12 @@ jobs:
       - run: pdm run pyright src
       - name: Build wheel artifact
         run: |
-          rm -rf dist
+          rm -rf dist dist-repaired
           pdm run python -m build --wheel --installer uv
+          mkdir -p dist-repaired
+          pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+          rm -f dist/axiomkit-*.whl
+          mv dist-repaired/*.whl dist/
       - name: Validate wheel is binary and ships Rust extensions
         run: |
           pdm run python scripts/validate_wheel.py --dist-dir dist

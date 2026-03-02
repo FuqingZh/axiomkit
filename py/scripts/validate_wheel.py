@@ -70,6 +70,11 @@ def validate_wheels(path_dist: Path, expected_version: str | None) -> str:
     for path_wheel in wheels:
         if path_wheel.name.endswith("none-any.whl"):
             raise RuntimeError(f"Wheel must be platform-specific, got: {path_wheel.name}")
+        if "-linux_" in path_wheel.name and "manylinux" not in path_wheel.name:
+            raise RuntimeError(
+                f"Unrepaired Linux wheel tag detected: {path_wheel.name}. "
+                "Run auditwheel repair to produce a manylinux wheel."
+            )
 
         with zipfile.ZipFile(path_wheel) as zip_file:
             names = zip_file.namelist()

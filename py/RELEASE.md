@@ -34,6 +34,10 @@ Then run package-level QA against the built wheel (isolated venv):
 
 ```bash
 pdm run python -m build --wheel --installer uv
+# Linux only: repair wheel platform tags to manylinux
+# Requires patchelf on PATH (e.g. apt install patchelf)
+pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+rm -f dist/axiomkit-*.whl && mv dist-repaired/*.whl dist/
 pdm run python scripts/validate_wheel.py --dist-dir dist
 pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```

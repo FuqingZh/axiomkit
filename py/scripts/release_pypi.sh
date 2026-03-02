@@ -75,8 +75,18 @@ if ! pdm run uv --version >/dev/null 2>&1; then
     exit 1
 fi
 
-rm -rf dist
+rm -rf dist dist-repaired
 pdm run python -m build --wheel --installer uv
+if [[ "$(uname -s)" == "Linux" ]]; then
+    if ! command -v patchelf >/dev/null 2>&1; then
+        echo "patchelf is required for Linux wheel repair. Install it first (e.g. apt install patchelf)." >&2
+        exit 1
+    fi
+    mkdir -p dist-repaired
+    pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+    rm -f dist/axiomkit-*.whl
+    mv dist-repaired/*.whl dist/
+fi
 
 VERSION_RAW="$(pdm run python scripts/validate_wheel.py --dist-dir dist --print-version)"
 

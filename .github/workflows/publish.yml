@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Install patchelf
+        run: sudo apt-get update && sudo apt-get install -y patchelf
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -77,8 +79,12 @@ jobs:
 
       - name: Build artifacts
         run: |
-          rm -rf dist
+          rm -rf dist dist-repaired
           pdm run python -m build --wheel --installer uv
+          mkdir -p dist-repaired
+          pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+          rm -f dist/axiomkit-*.whl
+          mv dist-repaired/*.whl dist/
 
       - name: Verify built wheel matches tag and contains Rust extensions
         run: |
@@ -119,6 +125,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist
           skip-existing: true
+          attestations: false
 
   publish-pypi:
     needs: publish-testpypi
