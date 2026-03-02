@@ -72,8 +72,7 @@ if [[ "$RUN_CHECKS" -eq 1 ]]; then
 fi
 
 rm -rf dist
-pdm build
-rm -f dist/*.tar.gz
+pdm build --no-sdist
 
 VERSION_RAW="$(python - <<'PY'
 import pathlib

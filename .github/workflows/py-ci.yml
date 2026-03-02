@@ -31,8 +31,7 @@ jobs:
       - name: Build wheel artifact
         run: |
           rm -rf dist
-          pdm build
-          rm -f dist/*.tar.gz
+          pdm build --no-sdist
       - name: Validate wheel is binary and ships Rust extensions
         run: |
           python - <<'PY'
