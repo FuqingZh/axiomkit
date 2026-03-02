@@ -24,7 +24,6 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 From `py/`:
 
 ```bash
-export PDM_USE_UV=0
 pdm sync -G dev --no-self
 pdm run ruff check src tests
 pdm run pyright src
@@ -33,19 +32,16 @@ pdm run pyright src
 Then run package-level QA against the built wheel (isolated venv):
 
 ```bash
-pdm build --no-sdist
-python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
+pdm run python -m build --wheel --installer uv
+pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```
-
-`PDM_USE_UV=0` is required here to keep `pdm build --no-sdist` from falling back to
-an sdist-first wheel path on machines where `use_uv=true` is configured.
 
 ## 4. Build Artifacts
 
 Build command:
 
 ```bash
-pdm build --no-sdist
+pdm run python -m build --wheel --installer uv
 ```
 
 Expected output in `dist/`:

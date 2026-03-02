@@ -54,9 +54,6 @@ done
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# Keep behavior consistent across machines (some user configs enable uv build path).
-export PDM_USE_UV=0
-
 if [[ "$ALLOW_DIRTY" -eq 0 ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     if ! git diff --quiet || ! git diff --cached --quiet; then
         echo "Refusing to publish from a dirty git tree. Commit/stash changes or use --allow-dirty." >&2
@@ -74,9 +71,9 @@ if [[ "$RUN_CHECKS" -eq 1 ]]; then
 fi
 
 rm -rf dist
-pdm build --no-sdist
+pdm run python -m build --wheel --installer uv
 
-VERSION_RAW="$(python - <<'PY'
+VERSION_RAW="$(pdm run python - <<'PY'
 import pathlib
 import re
 import zipfile
@@ -113,7 +110,7 @@ PY
 )"
 
 if [[ "$RUN_CHECKS" -eq 1 ]]; then
-    python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
+    pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 fi
 
 case "$REPO" in

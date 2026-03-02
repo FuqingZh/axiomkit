@@ -19,7 +19,6 @@ jobs:
     env:
       PDM_IGNORE_SAVED_PYTHON: "1"
       PDM_VENV_IN_PROJECT: "1"
-      PDM_USE_UV: "0"
     defaults:
       run:
         working-directory: py
@@ -76,7 +75,7 @@ jobs:
       - name: Build artifacts
         run: |
           rm -rf dist
-          pdm build --no-sdist
+          pdm run python -m build --wheel --installer uv
 
       - name: Verify built wheel matches tag and contains Rust extensions
         run: |
@@ -119,7 +118,7 @@ jobs:
 
       - name: Package QA On Built Wheel
         run: |
-          python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
+          pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 
       - name: Upload dist
         uses: actions/upload-artifact@v4
