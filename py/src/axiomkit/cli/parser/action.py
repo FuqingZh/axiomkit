@@ -81,6 +81,8 @@ class ActionPath(argparse.Action):
         ... )
 
     Notes:
+        - Parsed values stored in ``argparse.Namespace`` are always
+          ``pathlib.Path`` objects (resolved absolute paths).
         - Defaults are normalized during parser construction.
         - If a non-``None`` default fails validation, parser construction
           fails immediately; this can prevent even ``--help`` from rendering
@@ -279,6 +281,10 @@ class ActionPath(argparse.Action):
         Raises:
             argparse.ArgumentError: On invalid value types or normalization
                 failures.
+
+        Notes:
+            - ``namespace.<dest>`` is set to a normalized ``pathlib.Path``
+              instance (resolved absolute path).
         """
         c_name = option_string or self.dest
 

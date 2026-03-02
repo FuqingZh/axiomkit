@@ -13,16 +13,17 @@ __all__ = [
     "ActionNumericRange",
     "ActionPath",
     "ParserBuilder",
+    "CommandBuilder",
     "SpecParam",
     "EnumGroupKey",
 ]
 
 if TYPE_CHECKING:
-    from .builder import ParserBuilder
+    from .builder import CommandBuilder, ParserBuilder
 
 
 def __getattr__(name: str) -> Any:
-    if name == "ParserBuilder":
+    if name in {"ParserBuilder", "CommandBuilder"}:
         return import_optional_attr(
             module_name=".builder",
             attr_name=name,
