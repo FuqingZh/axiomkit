@@ -19,5 +19,6 @@ def test_optional_import_error_contains_install_hint() -> None:
 
     message = str(exc_info.value)
     assert "axiomkit.io.xlsx is unavailable" in message
-    assert re.search(r'pip install "axiomkit\[xlsx\]"', message)
-    assert "pdm sync -G dev -G xlsx" in message
+    assert re.search(r"pip install -U axiomkit", message)
+    assert re.search(r"pip install missing_feature_module", message)
+    assert "Feature group hint: xlsx." in message

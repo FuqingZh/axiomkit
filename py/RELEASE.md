@@ -11,7 +11,7 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
   - `project.requires-python`
   - `project.readme`
   - `project.license`
-- Optional extras are defined and documented (`cli`, `parquet`, `xlsx`, `fasta`, `stats`, `all`).
+- Runtime dependencies are declared in `project.dependencies` (full install by default).
 
 ## 2. Versioning Notes
 

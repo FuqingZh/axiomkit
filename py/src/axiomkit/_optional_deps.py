@@ -17,6 +17,7 @@ def build_optional_dependency_error(
     missing_module: str | None,
 ) -> ModuleNotFoundError:
     extras_text = _format_extra_names(extras)
+    module_hint = (missing_module or "").split(".")[-1] or "required package(s)"
     missing_text = (
         f"Missing optional dependency `{missing_module}`."
         if missing_module
@@ -24,9 +25,11 @@ def build_optional_dependency_error(
     )
     message = (
         f"{feature} is unavailable. {missing_text} "
-        f"Install extras with `pip install \"axiomkit[{extras_text}]\"` "
-        f"or sync in development with `pdm sync -G dev -G {extras_text}`."
+        "Install/upgrade axiomkit with `pip install -U axiomkit`, "
+        f"or install missing package manually (e.g. `pip install {module_hint}`)."
     )
+    if extras_text:
+        message += f" Feature group hint: {extras_text}."
     return ModuleNotFoundError(message)
 
 

@@ -33,9 +33,9 @@ def parse_args() -> argparse.Namespace:
         help="Pytest target directory.",
     )
     parser.add_argument(
-        "--extras",
-        default="all",
-        help="Extras to install from wheel, e.g. 'all' or 'xlsx'.",
+        "--install-target",
+        default="axiomkit",
+        help="Package target to install from wheel QA environment.",
     )
     return parser.parse_args()
 
@@ -75,7 +75,7 @@ def main() -> None:
                 "-m",
                 "pip",
                 "install",
-                f"axiomkit[{args.extras}] @ {path_wheel.as_uri()}",
+                f"{args.install_target} @ {path_wheel.as_uri()}",
                 "pytest",
             ],
             check=True,
