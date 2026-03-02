@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -61,9 +62,12 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="axiomkit-wheel-qa-") as dir_temp:
         path_venv = Path(dir_temp) / "venv"
-        subprocess.run(["python", "-m", "venv", str(path_venv)], check=True)
+        subprocess.run([sys.executable, "-m", "venv", str(path_venv)], check=True)
 
-        path_python = path_venv / "bin" / "python"
+        if os.name == "nt":
+            path_python = path_venv / "Scripts" / "python.exe"
+        else:
+            path_python = path_venv / "bin" / "python"
         subprocess.run([str(path_python), "-m", "pip", "install", "-U", "pip"], check=True)
         subprocess.run(
             [
