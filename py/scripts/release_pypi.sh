@@ -61,17 +61,6 @@ if [[ "$ALLOW_DIRTY" -eq 0 ]] && git rev-parse --is-inside-work-tree >/dev/null 
     fi
 fi
 
-VERSION_RAW="$(awk -F'"' '/^version = /{print $2; exit}' pyproject.toml)"
-if [[ -z "$VERSION_RAW" ]]; then
-    echo "Cannot read project.version from pyproject.toml" >&2
-    exit 1
-fi
-
-VERSION_CANONICAL="$(python -c 'import sys; from packaging.version import Version; print(Version(sys.argv[1]))' "$VERSION_RAW" 2>/dev/null || true)"
-if [[ -n "$VERSION_CANONICAL" && "$VERSION_CANONICAL" != "$VERSION_RAW" ]]; then
-    echo "Version canonicalization note: '$VERSION_RAW' -> '$VERSION_CANONICAL' (PEP 440)."
-fi
-
 if [[ "$RUN_SYNC" -eq 1 ]]; then
     pdm sync -G dev --no-self
 fi
@@ -84,6 +73,43 @@ fi
 
 rm -rf dist
 pdm build
+rm -f dist/*.tar.gz
+
+VERSION_RAW="$(python - <<'PY'
+import pathlib
+import re
+import zipfile
+
+dist = pathlib.Path("dist")
+wheels = sorted(dist.glob("axiomkit-*.whl"))
+if not wheels:
+    raise SystemExit("No wheel built in dist/.")
+
+match = re.match(r"^axiomkit-([^-]+)-", wheels[0].name)
+if not match:
+    raise SystemExit(f"Cannot parse version from wheel name: {wheels[0].name}")
+
+for wheel in wheels:
+    if wheel.name.endswith("none-any.whl"):
+        raise SystemExit(f"Wheel must be platform-specific, got: {wheel.name}")
+
+    with zipfile.ZipFile(wheel) as zf:
+        names = zf.namelist()
+
+    def has_ext(prefix: str) -> bool:
+        return any(
+            name.startswith(prefix) and name.endswith((".so", ".pyd", ".dylib"))
+            for name in names
+        )
+
+    if not has_ext("axiomkit/io/fs/_axiomkit_io_fs_rs"):
+        raise SystemExit(f"{wheel.name} missing fs Rust extension.")
+    if not has_ext("axiomkit/io/xlsx/_axiomkit_io_xlsx_rs"):
+        raise SystemExit(f"{wheel.name} missing xlsx Rust extension.")
+
+print(match.group(1))
+PY
+)"
 
 case "$REPO" in
     testpypi)
