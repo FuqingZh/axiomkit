@@ -83,7 +83,16 @@ if [[ "$(uname -s)" == "Linux" ]]; then
         exit 1
     fi
     mkdir -p dist-repaired
-    pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+    if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+        python3 -m pip install -U auditwheel
+        python3 -m auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+    elif command -v python >/dev/null 2>&1 && python -m pip --version >/dev/null 2>&1; then
+        python -m pip install -U auditwheel
+        python -m auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+    else
+        echo "python pip is unavailable, fallback to uv tool run for auditwheel." >&2
+        pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+    fi
     rm -f dist/axiomkit-*.whl
     mv dist-repaired/*.whl dist/
 fi

@@ -81,8 +81,9 @@ jobs:
         run: |
           rm -rf dist dist-repaired
           pdm run python -m build --wheel --installer uv
+          python -m pip install -U auditwheel
           mkdir -p dist-repaired
-          pdm run uv tool run --from auditwheel auditwheel repair dist/axiomkit-*.whl -w dist-repaired
+          python -m auditwheel repair dist/axiomkit-*.whl -w dist-repaired
           rm -f dist/axiomkit-*.whl
           mv dist-repaired/*.whl dist/
 
