@@ -53,7 +53,7 @@ pdm run python -m build --wheel --installer uv
 
 Expected output in `dist/`:
 
-- `axiomkit-<version>-<platform>.whl` (non-`py3-none-any`, includes Rust extensions)
+- `axiomkit-<version>-cp310-abi3-<platform>.whl` (non-`py3-none-any`, includes Rust extensions)
 
 ## 5. Publish Credentials
 
