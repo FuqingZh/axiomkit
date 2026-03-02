@@ -44,8 +44,16 @@ all = [
 ]
 
 [build-system]
-requires = ["pdm-backend"]
+requires = [
+    "pdm-backend",
+    "setuptools>=77.0.0",
+    "setuptools-rust>=1.12.0",
+]
 build-backend = "pdm.backend"
+
+[tool.pdm.build]
+run-setuptools = true
+is-purelib = false
 
 
 [dependency-groups]
