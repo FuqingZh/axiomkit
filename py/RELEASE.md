@@ -25,7 +25,7 @@ From `py/`:
 
 ```bash
 pdm sync -G dev --no-self
-pdm run ruff check src tests
+pdm run ruff check src tests scripts
 pdm run pyright src
 ```
 
