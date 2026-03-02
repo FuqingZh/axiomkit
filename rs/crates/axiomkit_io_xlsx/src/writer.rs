@@ -797,6 +797,10 @@ fn derive_string_grid_from_dataframe(df: &DataFrame) -> Result<Vec<Vec<String>>,
 fn derive_header_text_from_any_value(value: AnyValue<'_>) -> String {
     match value {
         AnyValue::Null => String::new(),
+        // Keep raw string payload for header cells; AnyValue::to_string() wraps
+        // Utf8 values in quotes, which leaks into XLSX header text.
+        AnyValue::String(val) => val.to_string(),
+        AnyValue::StringOwned(val) => val.to_string(),
         _ => value.to_string(),
     }
 }
