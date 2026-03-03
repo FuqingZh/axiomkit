@@ -9,6 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Thread
 from typing import Any, Protocol, TypeVar, cast
 
 
@@ -24,6 +25,11 @@ class ProtocolRunLogger(Protocol):
     def warning(self, message: str) -> Any: ...
 
     def error(self, message: str) -> Any: ...
+
+
+class ProtocolTimedReport(Protocol):
+    @property
+    def seconds(self) -> float: ...
 
 
 def _get_default_logger() -> ProtocolRunLogger:
@@ -45,6 +51,56 @@ def _log_success(cls_logger: ProtocolRunLogger, message: str) -> None:
     cls_logger.info(message)
 
 
+R = TypeVar("R", bound=ProtocolTimedReport)
+
+
+def _run_with_logging(
+    *,
+    title: str,
+    lines_tail: int,
+    if_write_tail_to_stderr: bool,
+    logger: ProtocolRunLogger,
+    fn_execute: Callable[[], R],
+) -> R:
+    t0 = time.perf_counter()
+    try:
+        cls_report = fn_execute()
+    except subprocess.CalledProcessError as e:
+        n_elapsed = time.perf_counter() - t0
+        logger.error(f"Fail: [{title}] (rc={e.returncode}) in {n_elapsed:.1f}s")
+        c_tail = str(e.output or "")
+        if if_write_tail_to_stderr and lines_tail > 0 and c_tail:
+            sys.stderr.write(f"--- output tail (last {lines_tail} lines) ---\n{c_tail}")
+            sys.stderr.flush()
+        raise
+    except KeyboardInterrupt:
+        logger.warning(f"KeyboardInterrupt received during [{title}], terminating...")
+        raise
+    else:
+        _log_success(logger, f"Done: [{title}] in {cls_report.seconds:.1f}s")
+        return cls_report
+
+
+def _terminate_process(
+    proc: subprocess.Popen[Any], *, wait_seconds: float = 5.0
+) -> None:
+    if proc.poll() is not None:
+        return
+    with suppress(Exception):
+        proc.terminate()
+    with suppress(Exception):
+        proc.wait(wait_seconds)
+    if proc.poll() is None:
+        with suppress(Exception):
+            proc.kill()
+
+
+def _kill_process_if_running(proc: subprocess.Popen[Any]) -> None:
+    if proc.poll() is None:
+        with suppress(Exception):
+            proc.kill()
+
+
 # #endregion
 ################################################################################
 # #region WorkerDistribution
@@ -56,10 +112,10 @@ class ReportWorkerDistribution:
 
 def derive_worker_distribution(
     threads: int,
+    title: str = "",
     *,
     per_threads_min: int = 2,
     per_threads_max: int = 16,
-    desc: str = "",
     logger: ProtocolRunLogger | None = None,
 ) -> ReportWorkerDistribution:
     """Derive worker/thread split under a total thread budget.
@@ -72,10 +128,10 @@ def derive_worker_distribution(
 
     Args:
         threads: Total available thread budget. Must be >= 1.
+        title: Optional label for debug logs.
         per_threads_min: Preferred minimum threads per worker. Must be >= 1.
         per_threads_max: Preferred maximum threads per worker.
             Must satisfy ``per_threads_max >= per_threads_min``.
-        desc: Optional label for debug logs.
         logger: Optional logger implementing ``ProtocolRunLogger``.
             If omitted, defaults to ``loguru.logger`` when available.
             If loguru is unavailable, falls back to stdlib logging.
@@ -111,16 +167,16 @@ def derive_worker_distribution(
 
     cls_logger = logger or _get_default_logger()
     cls_logger.debug(
-        f"Workers for `{desc}`: {n_workers}, threads per worker: {n_threads}"
+        f"Workers for `{title}`: {n_workers}, threads per worker: {n_threads}"
     )
     return ReportWorkerDistribution(workers=n_workers, threads_per_worker=n_threads)
 
 
 # #endregion
 ################################################################################
-# #region StepRunner
+# #region CommandRunner
 @dataclass(frozen=True)
-class ReportStep:
+class ReportCmd:
     return_code: int
     seconds: float
     hours: float
@@ -129,16 +185,16 @@ class ReportStep:
     tail: str
 
 
-def run_step(
+def run_cmd(
     cmd: Sequence[Any],
-    title: str = "Step",
+    title: str = "Command",
     *,
     file_log: Path | None = None,
     lines_tail: int = 100,
     timeout: float | None = None,
     logger: ProtocolRunLogger | None = None,
     if_write_tail_to_stderr: bool = True,
-) -> ReportStep:
+) -> ReportCmd:
     """Run one shell command and return a structured execution report.
 
     Args:
@@ -147,7 +203,7 @@ def run_step(
         title: Human-readable title for logs and diagnostics.
         file_log: Optional file path to stream full command output.
             If provided, parent directories are created automatically.
-        lines_tail: Number of trailing output lines kept in ``ReportStep.tail``.
+        lines_tail: Number of trailing output lines kept in ``ReportCmd.tail``.
             Also controls how many lines are printed to ``stderr`` on failures.
             Set to ``0`` to disable tail capture.
         timeout: Optional timeout in seconds passed to subprocess wait.
@@ -158,7 +214,7 @@ def run_step(
             ``stderr``. Disable in library-only integration scenarios.
 
     Returns:
-        ReportStep: Structured execution report including return code, elapsed
+        ReportCmd: Structured execution report including return code, elapsed
         time, normalized command, log file path, and output tail.
 
     Raises:
@@ -170,13 +226,13 @@ def run_step(
     Examples:
         Basic command:
 
-        >>> report = run_step(["python3", "-V"], title="Show Python version")
+        >>> report = run_cmd(["python3", "-V"], title="Show Python version")
         >>> report.return_code
         0
 
         With persistent log and timeout:
 
-        >>> report = run_step(
+        >>> report = run_cmd(
         ...     ["echo", "hello"],
         ...     title="Echo hello",
         ...     file_log=Path("logs/echo.log"),
@@ -189,12 +245,12 @@ def run_step(
 
         >>> import logging
         >>> log = logging.getLogger("demo")
-        >>> _ = run_step(["echo", "ok"], title="Echo", logger=log)
+        >>> _ = run_cmd(["echo", "ok"], title="Echo", logger=log)
 
         Disable ``stderr`` tail output on failures:
 
         >>> try:
-        ...     _ = run_step(
+        ...     _ = run_cmd(
         ...         ["python3", "-c", "import sys; sys.exit(1)"],
         ...         title="Fail without stderr tail",
         ...         if_write_tail_to_stderr=False,
@@ -203,54 +259,42 @@ def run_step(
         ...     pass
     """
     cls_logger = logger or _get_default_logger()
-    t0 = time.perf_counter()
-    l_cmd = [str(i) for i in cmd]
+    l_cmd = _normalize_cmd(cmd, label="cmd")
     cls_logger.debug(f"RUN [{title}]:: {shlex.join(l_cmd)}")
 
-    try:
-        report_step = execute_step(
+    return _run_with_logging(
+        title=title,
+        lines_tail=lines_tail,
+        if_write_tail_to_stderr=if_write_tail_to_stderr,
+        logger=cls_logger,
+        fn_execute=lambda: execute_cmd(
             cmd=cmd,
             title=title,
             file_log=file_log,
             lines_tail=lines_tail,
             timeout=timeout,
-        )
-    except subprocess.CalledProcessError as e:
-        n_elapsed = time.perf_counter() - t0
-        cls_logger.error(f"Fail: [{title}] (rc={e.returncode}) in {n_elapsed:.1f}s")
-        c_tail = str(e.output or "")
-        if if_write_tail_to_stderr and lines_tail > 0 and c_tail:
-            sys.stderr.write(f"--- output tail (last {lines_tail} lines) ---\n{c_tail}")
-            sys.stderr.flush()
-        raise
-    except KeyboardInterrupt:
-        cls_logger.warning(
-            f"KeyboardInterrupt received during [{title}], terminating..."
-        )
-        raise
-    else:
-        _log_success(cls_logger, f"Done: [{title}] in {report_step.seconds:.1f}s")
-        return report_step
+        ),
+    )
 
 
-def execute_step(
+def execute_cmd(
     cmd: Sequence[Any],
     title: str | None = None,
     *,
     file_log: Path | None = None,
     lines_tail: int = 100,
     timeout: float | None = None,
-) -> ReportStep:
+) -> ReportCmd:
     """Execute one command with minimal side effects (internal helper).
 
     Technical behavior:
         - streams merged ``stdout/stderr`` to ``file_log`` when provided,
         - captures only trailing lines (bounded by ``lines_tail``),
-        - returns ``ReportStep`` on success,
+        - returns ``ReportCmd`` on success,
         - raises subprocess exceptions on failure/timeout.
 
     This helper intentionally does not write status logs and does not print to
-    ``stderr``; external-facing UX is handled by :func:`run_step`.
+    ``stderr``; external-facing UX is handled by :func:`run_cmd`.
 
     Args:
         cmd: Command sequence to execute.
@@ -260,14 +304,14 @@ def execute_step(
         timeout: Optional timeout in seconds.
 
     Returns:
-        ReportStep: Structured execution report.
+        ReportCmd: Structured execution report.
 
     Raises:
         subprocess.CalledProcessError: The command exits with non-zero code.
         subprocess.TimeoutExpired: Timeout reached while waiting for process.
     """
     t0 = time.perf_counter()
-    l_cmd = [str(i) for i in cmd]
+    l_cmd = _normalize_cmd(cmd, label="cmd")
 
     q: deque[str] | None = (
         deque(maxlen=lines_tail) if lines_tail and lines_tail > 0 else None
@@ -308,12 +352,7 @@ def execute_step(
             try:
                 n_return_code = p.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                with suppress(Exception):
-                    p.terminate()
-                with suppress(Exception):
-                    p.wait(5)
-                with suppress(Exception):
-                    p.kill()
+                _terminate_process(p)
                 raise
 
         c_tail = "".join(q) if q else ""
@@ -332,7 +371,7 @@ def execute_step(
                 output=c_tail,
             )
 
-        return ReportStep(
+        return ReportCmd(
             return_code=n_return_code,
             seconds=t1,
             hours=t1 / 3600,
@@ -343,8 +382,247 @@ def execute_step(
 
     finally:
         if p and p.poll() is None:
+            _kill_process_if_running(p)
+
+
+# #endregion
+################################################################################
+# #region PipeRunner
+@dataclass(frozen=True)
+class ReportPipeCmd:
+    index: int
+    cmd: list[str]
+    return_code: int
+
+
+@dataclass(frozen=True)
+class ReportPipe:
+    return_code: int
+    failed_indices: list[int]
+    steps: list[ReportPipeCmd]
+    seconds: float
+    hours: float
+    file_log: Path | None
+    tail: str
+
+
+def run_pipe(
+    *cmds: Sequence[Any],
+    title: str = "Pipe",
+    file_log: Path | None = None,
+    lines_tail: int = 100,
+    timeout: float | None = None,
+    logger: ProtocolRunLogger | None = None,
+    if_write_tail_to_stderr: bool = True,
+) -> ReportPipe:
+    """Run shell command pipeline(s): ``cmd1 | cmd2 | ...``.
+
+    Supports one call shape:
+        - ``run_pipe(cmd1, cmd2, cmd3, ...)``
+    """
+    cls_logger = logger or _get_default_logger()
+    if not cmds:
+        raise ValueError("At least one command is required.")
+    l_cmds = [_normalize_cmd(cmd, label=f"cmds[{i}]") for i, cmd in enumerate(cmds)]
+    c_show = " | ".join(shlex.join(cmd) for cmd in l_cmds)
+    cls_logger.debug(f"RUN [{title}]:: {c_show}")
+
+    return _run_with_logging(
+        title=title,
+        lines_tail=lines_tail,
+        if_write_tail_to_stderr=if_write_tail_to_stderr,
+        logger=cls_logger,
+        fn_execute=lambda: execute_pipe(
+            cmds=l_cmds,
+            title=title,
+            file_log=file_log,
+            lines_tail=lines_tail,
+            timeout=timeout,
+        ),
+    )
+
+
+def execute_pipe(
+    cmds: Sequence[Sequence[Any]],
+    title: str | None = None,
+    *,
+    file_log: Path | None = None,
+    lines_tail: int = 100,
+    timeout: float | None = None,
+) -> ReportPipe:
+    """Execute one command pipeline with pipefail-like failure behavior."""
+    l_cmds = [
+        _normalize_cmd(
+            cmd,
+            label=f"cmds[{i}]",
+        )
+        for i, cmd in enumerate(cmds)
+    ]
+    if not l_cmds:
+        raise ValueError("cmds must contain at least one command.")
+
+    if file_log and file_log.parent != Path("."):
+        file_log.parent.mkdir(parents=True, exist_ok=True)
+
+    q: deque[str] | None = (
+        deque(maxlen=lines_tail) if lines_tail and lines_tail > 0 else None
+    )
+    t0 = time.perf_counter()
+    c_title = title or " | ".join(shlex.join(cmd) for cmd in l_cmds)
+    l_proc: list[subprocess.Popen[str]] = []
+    l_stderr_threads: list[Thread] = []
+
+    file_ctx = open(file_log, "a", encoding="utf-8") if file_log else nullcontext()
+
+    def _consume_stream(
+        stream: Any,
+        *,
+        prefix: str = "",
+        fh: Any = None,
+    ) -> None:
+        try:
+            for line in stream:
+                c_line = f"{prefix}{line}" if prefix else line
+                if fh:
+                    fh.write(c_line)
+                if q is not None:
+                    q.append(c_line)
+        finally:
             with suppress(Exception):
-                p.kill()
+                stream.close()
+
+    try:
+        with file_ctx as fh:
+            if fh:
+                c_started = time.strftime("%Y-%m-%d %H:%M:%S")
+                fh.write(f"--- [{c_title}] started at {c_started} ---\n")
+                for i, cmd in enumerate(l_cmds, start=1):
+                    fh.write(f"cmd[{i}]: {shlex.join(cmd)}\n")
+                fh.write("\n")
+                fh.flush()
+
+            stream_prev_out = None
+            for i, cmd in enumerate(l_cmds):
+                p = subprocess.Popen(
+                    cmd,
+                    stdin=stream_prev_out,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    errors="replace",
+                    close_fds=True,
+                    encoding="utf-8",
+                )
+                l_proc.append(p)
+
+                if stream_prev_out is not None:
+                    stream_prev_out.close()
+
+                assert p.stderr is not None
+                th_err = Thread(
+                    target=_consume_stream,
+                    args=(p.stderr,),
+                    kwargs={"prefix": f"[stderr:{i + 1}] ", "fh": fh},
+                    daemon=True,
+                )
+                th_err.start()
+                l_stderr_threads.append(th_err)
+
+                stream_prev_out = p.stdout
+
+            assert stream_prev_out is not None
+            _consume_stream(stream_prev_out, fh=fh)
+
+            n_deadline = (time.monotonic() + timeout) if timeout is not None else None
+            l_rc: list[int] = []
+            for p in l_proc:
+                if n_deadline is None:
+                    l_rc.append(p.wait())
+                    continue
+
+                assert timeout is not None
+                n_remain = n_deadline - time.monotonic()
+                if n_remain <= 0:
+                    raise subprocess.TimeoutExpired(cmd=l_cmds[0], timeout=timeout)
+                l_rc.append(p.wait(timeout=n_remain))
+
+            for th in l_stderr_threads:
+                th.join(timeout=1.0)
+
+            l_steps = [
+                ReportPipeCmd(
+                    index=i + 1,
+                    cmd=cmd,
+                    return_code=rc,
+                )
+                for i, (cmd, rc) in enumerate(zip(l_cmds, l_rc, strict=True))
+            ]
+            l_failed_indices = [i + 1 for i, rc in enumerate(l_rc) if rc != 0]
+            n_pipeline_rc = l_rc[l_failed_indices[-1] - 1] if l_failed_indices else 0
+
+            c_tail = "".join(q) if q else ""
+            t1 = time.perf_counter() - t0
+
+            if fh:
+                fh.write(
+                    f"\n--- [{c_title}] finished rc={n_pipeline_rc} elapsed={t1:.1f}s ({t1 / 3600:.2f}h) ---\n"
+                )
+                fh.flush()
+
+            if n_pipeline_rc != 0:
+                idx_failed = l_failed_indices[-1] - 1
+                raise subprocess.CalledProcessError(
+                    returncode=n_pipeline_rc,
+                    cmd=l_cmds[idx_failed],
+                    output=c_tail,
+                )
+
+            return ReportPipe(
+                return_code=0,
+                failed_indices=[],
+                steps=l_steps,
+                seconds=t1,
+                hours=t1 / 3600,
+                file_log=file_log,
+                tail=c_tail,
+            )
+    except subprocess.TimeoutExpired:
+        for p in l_proc:
+            _terminate_process(p)
+        raise
+    finally:
+        for p in l_proc:
+            if p.poll() is None:
+                _kill_process_if_running(p)
+
+
+def _is_non_string_sequence(value: object) -> bool:
+    return isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    )
+
+
+def _normalize_cmd(cmd: Sequence[Any], *, label: str) -> list[str]:
+    if not _is_non_string_sequence(cmd):
+        raise TypeError(f"{label} must be a command sequence, got {type(cmd)!r}.")
+
+    l_items = list(cmd)
+    if not l_items:
+        raise ValueError(f"{label} must not be empty.")
+
+    if any(isinstance(item, (bytes, bytearray)) for item in l_items):
+        raise TypeError(
+            f"{label} contains bytes-like token; decode to str explicitly before calling."
+        )
+
+    if any(_is_non_string_sequence(item) for item in l_items):
+        raise TypeError(
+            f"{label} must be a flat command sequence; nested sequence token detected."
+        )
+
+    return [str(item) for item in l_items]
 
 
 # #endregion
@@ -410,12 +688,12 @@ def run_jobs(
         ... )
         ReportJobs(num_done=3, num_failed=0, jobs_done=[...], jobs_failed=[])
 
-        Run external commands with ``run_step``:
+        Run external commands with ``run_cmd``:
 
         >>> jobs = [["echo", "A"], ["echo", "B"]]
         >>> run_jobs(
         ...     jobs=jobs,
-        ...     fn_worker=lambda cmd: run_step(cmd, title=f"Run: {' '.join(cmd)}"),
+        ...     fn_worker=lambda cmd: run_cmd(cmd, title=f"Run: {' '.join(cmd)}"),
         ...     id_getter=lambda cmd: " ".join(cmd),
         ...     max_workers=2,
         ...     if_raise_on_failure=True,
@@ -429,7 +707,7 @@ def run_jobs(
         ... ]
         >>> run_jobs(
         ...     jobs=jobs,
-        ...     fn_worker=lambda j: run_step(
+        ...     fn_worker=lambda j: run_cmd(
         ...         j["cmd"],
         ...         title=f"{j['sample']}::{j['stage']}",
         ...     ),
@@ -445,7 +723,7 @@ def run_jobs(
         ... ]
         >>> def _worker(job):
         ...     c_id = f"{job['sample']}_{job['lane']}"
-        ...     return run_step(
+        ...     return run_cmd(
         ...         job["cmd"],
         ...         title=f"Process {c_id}",
         ...         file_log=Path("logs") / f"{c_id}.log",
