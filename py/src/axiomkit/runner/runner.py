@@ -628,29 +628,42 @@ def _normalize_cmd(cmd: Sequence[Any], *, label: str) -> list[str]:
 # #endregion
 ################################################################################
 # #region JobRunner
-T = TypeVar("T")
+TJob = TypeVar("TJob")
+TResult = TypeVar("TResult")
 
 
-@dataclass(frozen=True)
-class ReportJobs:
-    num_done: int
-    num_failed: int
-    jobs_done: list[tuple[str, Any]]
-    jobs_failed: list[tuple[str, str]]
+@dataclass(frozen=True, slots=True)
+class SpecReportJobDone[TResult]:
+    id: str
+    payload: TResult
+
+
+@dataclass(frozen=True, slots=True)
+class SpecReportJobFailed:
+    id: str
+    msg_error: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReportJobs[TResult]:
+    cnt_done: int
+    cnt_failed: int
+    jobs_done: list[SpecReportJobDone[TResult]]
+    jobs_failed: list[SpecReportJobFailed]
 
 
 def run_jobs(
-    jobs: Iterable[T],
-    fn_worker: Callable[[T], Any],
+    jobs: Iterable[TJob],
+    fn_worker: Callable[[TJob], TResult],
     *,
     max_workers: int = 1,
     title: str = "Job",
-    id_getter: Callable[[T], str] | None = None,
+    id_getter: Callable[[TJob], str] | None = None,
     if_raise_on_interrupt: bool = True,
     if_raise_on_failure: bool = True,
     file_failed_log: Path | None = None,
     logger: ProtocolRunLogger | None = None,
-) -> ReportJobs:
+) -> ReportJobs[TResult]:
     """Run jobs in a thread pool and collect failures.
 
     Args:
@@ -686,7 +699,7 @@ def run_jobs(
         ...     fn_worker=lambda n: n * n,
         ...     max_workers=2,
         ... )
-        ReportJobs(num_done=3, num_failed=0, jobs_done=[...], jobs_failed=[])
+        ReportJobs(cnt_done=3, cnt_failed=0, jobs_done=[...], jobs_failed=[])
 
         Run external commands with ``run_cmd``:
 
@@ -744,13 +757,13 @@ def run_jobs(
 
     l_jobs = list(jobs)
     if not l_jobs:
-        return ReportJobs(num_done=0, num_failed=0, jobs_done=[], jobs_failed=[])
+        return ReportJobs(cnt_done=0, cnt_failed=0, jobs_done=[], jobs_failed=[])
 
-    l_failed: list[tuple[str, str]] = []
-    l_done: list[tuple[str, Any]] = []
+    l_failed: list[SpecReportJobFailed] = []
+    l_done: list[SpecReportJobDone[TResult]] = []
     n_done = 0
     n_total = len(l_jobs)
-    dict_futs: dict[Future[Any], T] = {}
+    dict_futs: dict[Future[TResult], TJob] = {}
     cls_executor: ThreadPoolExecutor | None = None
 
     try:
@@ -762,11 +775,11 @@ def run_jobs(
             try:
                 v_result = fut.result()
                 n_done += 1
-                l_done.append((sid, v_result))
+                l_done.append(SpecReportJobDone(id=sid, payload=v_result))
                 if n_done % 10 == 0 or n_done == n_total:
                     cls_logger.info(f"[{title}] Completed: {n_done}/{n_total}")
             except Exception as e:
-                l_failed.append((sid, str(e)))
+                l_failed.append(SpecReportJobFailed(id=sid, msg_error=str(e)))
                 cls_logger.error(f"[{title}] Failed {sid}: {e}")
 
     except KeyboardInterrupt:
@@ -792,8 +805,8 @@ def run_jobs(
                 cls_executor.shutdown(wait=False)
 
     cls_report = ReportJobs(
-        num_done=n_done,
-        num_failed=len(l_failed),
+        cnt_done=n_done,
+        cnt_failed=len(l_failed),
         jobs_done=l_done,
         jobs_failed=l_failed,
     )
@@ -801,26 +814,26 @@ def run_jobs(
     if file_failed_log and l_failed:
         file_failed_log.parent.mkdir(parents=True, exist_ok=True)
         file_failed_log.write_text(
-            "\n".join(f"{sid}\t{msg}" for sid, msg in l_failed),
+            "\n".join(f"{job.id}\t{job.msg_error}" for job in l_failed),
             encoding="utf-8",
         )
         cls_logger.error(
-            f"[{title}] Fail: {cls_report.num_failed} tasks. See: {file_failed_log}"
+            f"[{title}] Fail: {cls_report.cnt_failed} tasks. See: {file_failed_log}"
         )
 
     if if_raise_on_failure and l_failed:
         c_info_log = f" See {file_failed_log} for details." if file_failed_log else ""
         raise RuntimeError(
-            f"[{title}] {cls_report.num_failed}/{n_total} tasks failed.{c_info_log}"
+            f"[{title}] {cls_report.cnt_failed}/{n_total} tasks failed.{c_info_log}"
         )
 
     return cls_report
 
 
 def _resolve_job_id(
-    job: T,
+    job: TJob,
     *,
-    id_getter: Callable[[T], str] | None,
+    id_getter: Callable[[TJob], str] | None,
 ) -> str:
     """Resolve a stable job ID for logs/errors."""
     if id_getter is not None:
