@@ -158,12 +158,15 @@ Object methods should only keep protocol-required verbs. Domain behaviors remain
 - Generic `cls_` is not required; choose a type-specific prefix based on the concrete class.
 - Optional scalar-type hints when it improves clarity:
     - `c_` (str), `n_` (num), `b_` (bool), `l_` (list), `dict_` (dict), `ns_` (namespace)
-- - Loop variables:
-  - Prefer placeholder-style leading markers for loop indices/values to make intent explicit.
-    - Python/Rust: use leading underscore when the loop var is non-essential or may be unused: `(_idx, _val)`.
-    - R: use leading dot for the same purpose: `.idx`, `.val`.
-  - Avoid shadowing outer-scope names.
-  - Reserve trailing underscore only for collision avoidance when a leading marker is not appropriate.
+- Loop variables:
+    - Use leading markers for loop variables:
+        - Python/Rust: leading underscore, e.g. `_idx`, `_key`, `_val`.
+        - R: leading dot, e.g. `.idx`, `.key`, `.val`.
+    - Do not use type prefixes for loop variables (no `c_`/`n_`/`l_` etc. on loop vars).
+    - If semantic naming is clear, prefer semantic names with the same leading marker.
+    - If semantic naming is unclear, use fixed placeholders: `_idx` / `_key` / `_val` (R: `.idx` / `.key` / `.val`).
+    - Avoid shadowing outer-scope names.
+    - Reserve trailing underscore only for collision avoidance when a leading marker is not appropriate.
 
 
 ## Public-facing Schema / Header Naming
