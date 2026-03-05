@@ -7,6 +7,16 @@ from numpy.typing import ArrayLike
 from scipy import stats
 
 
+def _validate_non_negative(value: int | float, name: str) -> None:
+    if value < 0:
+        raise ValueError(f"Arg `{name}` must be non-negative, yours: '{value}'.")
+
+
+def _validate_unity_interval(value: float, name: str) -> None:
+    if not np.isfinite(value) or value < 0.0 or value > 1.0:
+        raise ValueError(f"Arg `{name}` must be in [0.0, 1.0], yours: '{value}'.")
+
+
 def _calculate_hypergeometric_right_tail_pvalue(
     fg_hits: ArrayLike,
     bg_hits: ArrayLike,
@@ -97,7 +107,9 @@ def calculate_ora(
     background_elements: set[str] | None = None,
     rule_p_adjust: Literal["bh", "bonferroni"] | None = "bh",
     thr_bg_hits_min: int = 0,
+    thr_bg_hits_max: int | None = None,
     thr_fg_hits_min: int = 0,
+    thr_fg_hits_max: int | None = None,
     thr_p_value: float = 0.05,
     thr_p_adjust: float = 1.0,
     if_keep_fg_members: bool = True,
@@ -130,8 +142,20 @@ def calculate_ora(
             - "bh": Benjamini–Hochberg FDR;
             - "bonferroni": Bonferroni correction;
             - None: no adjustment (PAdjust == PValue).
-        thr_bg_hits_min (int, optional): Minimum number of background hits to consider a term. Defaults to 0.
-        thr_fg_hits_min (int, optional): Minimum number of foreground hits to consider a term. Defaults to 0.
+        thr_bg_hits_min (int, optional):
+            Minimum number of background hits to consider a term. [0, ∞).
+            Defaults to 0.
+        thr_bg_hits_max (int | None, optional):
+            Maximum number of background hits to consider a term.
+            [``thr_bg_hits_min``, ∞) or None for no maximum.
+            Defaults to None.
+        thr_fg_hits_min (int, optional):
+            Minimum number of foreground hits to consider a term. [0, ∞).
+            Defaults to 0.
+        thr_fg_hits_max (int | None, optional):
+            Maximum number of foreground hits to consider a term.
+            [``thr_fg_hits_min``, ∞) or None for no maximum.
+            Defaults to None.
         thr_p_value (float, optional): P-value threshold for significance. Defaults to 0.05.
         thr_p_adjust (float, optional): Adjusted p-value threshold for significance. Defaults to 1.0.
         if_keep_fg_members (bool, optional): Whether to keep foreground members in the result. Defaults to True.
@@ -169,13 +193,17 @@ def calculate_ora(
 
     ############################################################
     # #region checkExistence
-    if thr_p_value < 0.0 or thr_p_value > 1.0:
+    _validate_unity_interval(thr_p_value, "thr_p_value")
+    _validate_unity_interval(thr_p_adjust, "thr_p_adjust")
+    _validate_non_negative(thr_bg_hits_min, "thr_bg_hits_min")
+    _validate_non_negative(thr_fg_hits_min, "thr_fg_hits_min")
+    if thr_bg_hits_max is not None and thr_bg_hits_max < thr_bg_hits_min:
         raise ValueError(
-            f"Arg `thr_p_value` must in [0.0, 1.0], yours: '{thr_p_value}'."
+            f"Arg `thr_bg_hits_max` must be in [`thr_bg_hits_min`, ∞) or None, yours: '{thr_bg_hits_max}'."
         )
-    if thr_p_adjust < 0.0 or thr_p_adjust > 1.0:
+    if thr_fg_hits_max is not None and thr_fg_hits_max < thr_fg_hits_min:
         raise ValueError(
-            f"Arg `thr_p_adjust` must in [0.0, 1.0], yours: '{thr_p_adjust}'."
+            f"Arg `thr_fg_hits_max` must be in [`thr_fg_hits_min`, ∞) or None, yours: '{thr_fg_hits_max}'."
         )
     # endregion
     ############################################################
@@ -266,8 +294,14 @@ def calculate_ora(
         )
         .with_columns(FgTotal=pl.lit(n_fg_total), BgTotal=pl.lit(n_bg_total))
         .filter(
-            pl.col("BgHits") >= thr_bg_hits_min,
-            pl.col("FgHits") >= thr_fg_hits_min,
+            pl.col("BgHits").ge(thr_bg_hits_min),
+            pl.col("BgHits").le(thr_bg_hits_max)
+            if thr_bg_hits_max is not None
+            else True,
+            pl.col("FgHits").ge(thr_fg_hits_min),
+            pl.col("FgHits").le(thr_fg_hits_max)
+            if thr_fg_hits_max is not None
+            else True,
         )
         .with_columns(
             FgRatio=pl.col("FgHits") / pl.col("FgTotal"),
@@ -285,7 +319,9 @@ def calculate_ora(
         logger.warning(
             f"""
             No terms pass filters.
-            BgTotal={n_bg_total}, FgTotal={n_fg_total}, thr_bg_hits_min={thr_bg_hits_min}, thr_fg_hits_min={thr_fg_hits_min}.
+            BgTotal={n_bg_total}, FgTotal={n_fg_total};
+            thr_bg_hits_min={thr_bg_hits_min}, thr_fg_hits_min={thr_fg_hits_min},
+            thr_bg_hits_max={thr_bg_hits_max}, thr_fg_hits_max={thr_fg_hits_max}.
             Possible causes:
                 (1) no mappings,
                 (2) background not overlapping mapping,
