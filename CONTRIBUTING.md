@@ -151,13 +151,21 @@ Object methods should only keep protocol-required verbs. Domain behaviors remain
 
 ## Internal Naming Conventions
 
-- Prefer type-specific prefixes for typed instances:
-    - `path_` for `pathlib.Path`
-    - `url_` for URL-like objects
-    - `regex_` for compiled regex
-- Generic `cls_` is not required; choose a type-specific prefix based on the concrete class.
-- Optional scalar-type hints when it improves clarity:
-    - `c_` (str), `n_` (num), `b_` (bool), `l_` (list), `dict_` (dict), `ns_` (namespace)
+- Function parameters should use semantic + role prefixes, not scalar type prefixes.
+- Do not use scalar/type-hint prefixes in function parameters:
+    - disallowed: `c_`, `n_`, `b_`, `l_`, `set_`, `dict_`, etc.
+- Preferred parameter prefixes:
+    - `if_...`: boolean flags
+    - `size_...`: memory/storage sizes (`MB` / `GB` / bytes-like semantics)
+    - `df_...`: `polars.DataFrame` / dataframe objects
+    - `lf_...`: `polars.LazyFrame` objects
+    - `height_...` / `width_...`: dataframe shape scalars
+    - `cnt_...`: counters / counts
+    - `file_...`: file paths or file-like inputs
+    - `dir_...`: directory paths or directory-like inputs
+    - `rule_...`: rule/config inputs
+    - `thr_...`: threshold inputs
+- Non-parameter local variables may keep pragmatic naming, but new code should still prefer semantic names over type-abbreviation names.
 - Loop variables:
     - Use leading markers for loop variables:
         - Python/Rust: leading underscore, e.g. `_idx`, `_key`, `_val`.
