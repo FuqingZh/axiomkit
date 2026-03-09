@@ -1,200 +1,180 @@
 # Contributing to axiomkit
 
-This document defines contributor-facing conventions for public API naming, method verbs, internal naming, schema/header conventions, and repository workflow.
+This document defines contributor-facing conventions for public API naming,
+method boundaries, CLI option naming, export schema/header naming, and
+repository workflow.
 
 ## Scope
 
 - This file is normative for:
-    - public API naming in `py/`, `r/`, and `rs/`
-    - module-level function prefixes
-    - public method verbs
-    - CLI option naming
-    - internal variable naming conventions (when writing new code)
-    - public-facing schema/header naming for exports
-- Existing APIs can migrate incrementally; do not break external contracts without deprecation.
-- Tooling (`ruff`, `pyright`, tests, CI) is the final gate for merge, but naming and architecture review still applies.
+  - public API naming in `py/`, `r/`, and `rs/`
+  - module-level function prefixes
+  - public method boundaries
+  - public CLI option naming
+  - public-facing schema/header naming for exports
+  - repository workflow expectations
+- Existing APIs can migrate incrementally; do not break external contracts
+  without deprecation.
+- Internal variable naming is guidance, not a merge gate.
+- Tooling (`ruff`, `pyright`, tests, CI) is the final gate for merge, but
+  naming and architecture review still applies.
 
-## Function Prefixes
+## Public API Naming
 
-### 计算/推断
+### Compute and Infer
 
-- `calculate_`: 确定性数值计算
-- `derive_`: 派生结构/字段
-- `estimate_`: 近似数值
-- `infer_`: 离散标签/属性
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `calculate_` | deterministic numeric calculation | numeric result |
+| `derive_` | derive structure, fields, or non-scalar artifacts | structural result |
+| `estimate_` | approximate numeric value | approximation allowed |
+| `infer_` | infer discrete label, enum, or categorical property | discrete result only |
 
-### 构建
+### Construction
 
-- `create_`: 创建/实例化对象
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `create_` | create or instantiate a single object | single-object construction |
+| `generate_` | generate a sequence or batch of outputs | batch or sequence output |
+| `sample_` | random sampling | stochastic selection |
 
-### 解析/编解码
+### Parse and Encode
 
-- `decode_`: 编码 -> 原始
-- `encode_`: 原始 -> 编码
-- `parse_`: 文本/头信息 -> 结构
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `parse_` | text, headers, or lightweight metadata to structure | parsing to structure |
+| `decode_` | encoded representation to raw value | encoded to raw |
+| `encode_` | raw value to encoded representation | raw to encoded |
 
-### 验证
+### Validation
 
-- `is_`: 事实判断，返回 `bool`
-- `should_`: 策略判断，返回 `bool`
-- `validate_`: 强校验，失败抛异常
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `is_` | factual predicate | returns `bool` |
+| `should_` | policy predicate | returns `bool` |
+| `validate_` | strong validation | invalid input raises |
 
-### 变换/规范化（Transform）
+### Transform
 
-- `convert_`: 类型/格式等价转换，尽量可逆
-- `sanitize_`: 文本/字段名/非法字符清洗
-- `center_`: 仅做位置平移（location）
-- `scale_`: 仅做尺度变换（scale）
-- `standardize_`: 明确定义的统计标准化（如 z-score）
-- `normalize_`: 分布/尺度整体规范化，或作为 umbrella 前缀
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `convert_` | equivalent type or format conversion | prefer reversibility |
+| `sanitize_` | repair invalid text, field names, or unsupported characters | not business filtering |
+| `center_` | location shift only | additive shift only |
+| `scale_` | scale change only | multiplicative change only |
+| `standardize_` | explicitly defined statistical standardization | for named statistical transforms |
+| `normalize_` | broader distribution or scale normalization | use when a more precise transform prefix does not fit |
 
-#### 变换前缀判准矩阵
+### Selection and Extraction
 
-| 前缀           | 必须满足                                                        | 不应包含                                  |
-| -------------- | --------------------------------------------------------------- | ----------------------------------------- |
-| `convert_`     | 语义等价、尽量可逆                                              | 统计意义改变、丢信息不声明                |
-| `sanitize_`    | 修复非法输入使其可处理                                          | 业务过滤/删样本（用 `filter_` / `drop_`） |
-| `center_`      | 仅加减常数/向量（location）                                     | 乘除/非线性                               |
-| `scale_`       | 仅乘除尺度（scale）                                             | 分布对齐                                  |
-| `standardize_` | 明确定义的统计标准化（如 z-score）                              | 模糊“规范化”                              |
-| `normalize_`   | 分布/尺度整体规范（quantile、unit norm、min-max 等）或 umbrella | 单纯 centering（用 `center_`）            |
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `filter_` | predicate-based filtering | not projection |
+| `select_` | projection or reordering of fields or columns | not predicate filtering |
+| `extract_` | extract substructure from nested or composite input | for nested or composite inputs |
 
-### 选择
+### Planning and Application
 
-- `filter_`: 按谓词过滤（不用于选列）
-- `select_`: 字段/列投影与重排
-
-### 抽取
-
-- `extract_`: 从嵌套/复合结构抽取子结构（不用于表格投影）
-
-### 规划/应用
-
-- `plan_`: 生成方案
-- `apply_`: 将方案应用到目标
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `plan_` | produce a plan or specification | planning step |
+| `apply_` | apply a plan to a target | application step |
 
 ### I/O
 
-- `copy_`: 复制/迁移对象或文件系统资源
-- `read_`: 读取并解析为对象
-- `scan_`: 惰性/轻量读取
-- `sink_`: 流式/管道式写出
-- `write_`: 序列化并写出对象
+| Prefix | Use | Notes |
+| --- | --- | --- |
+| `copy_` | copy or migrate objects or filesystem resources | object or filesystem copying |
+| `read_` | read and parse into an object | materialized read |
+| `scan_` | lazy, lightweight, or metadata-first read | avoid full materialization by default |
+| `sink_` | truly streaming write without full materialization | streaming output only |
+| `write_` | serialize and write an object | non-streaming persistence |
 
-### 生成
+### Workflow and Presentation
 
-- `generate_`: 批量/序列生成
-- `sample_`: 随机采样
+| Prefix | Use |
+| --- | --- |
+| `prepare_` | preparation step |
+| `run_` | main workflow step |
+| `finalize_` | finalization step |
+| `render_` | presentation rendering |
+| `report_` | reporting output |
 
-### 流程
+## Naming Boundaries
 
-- `prepare_`
-- `run_`
-- `finalize_`
+| Boundary | Use | Avoid |
+| --- | --- | --- |
+| `infer_` | discrete results such as `Enum` or `Literal[...]`; if multiple fields are needed, return a clearly named `Spec*` with discrete fields | plain boolean predicates |
+| `is_` / `should_` | `is_` for factual `bool` checks; `should_` for policy decisions | using `infer_` for boolean checks |
+| `calculate_` / `derive_` | `calculate_` for numeric statistics or measurements; `derive_` for structure, fields, or schemas | mixing numeric outputs into `derive_` without structural intent |
+| `create_` / `generate_` | `create_` for a single object; `generate_` for batch or sequence output | using `generate_` for one-off construction |
+| `read_` / `scan_` | `read_` for materialized parsing; `scan_` for lazy, lightweight, or metadata-first access | materializing the primary payload by default in `scan_` |
+| `write_` / `sink_` | `write_` for ordinary serialization and persistence; `sink_` for truly streaming output | using `sink_` for non-streaming writes |
+| `select_` / `filter_` | `select_` for projection or reordering; `filter_` for predicates | mixing projection into `filter_` or predicates into `select_` |
+| `sanitize_` | repair invalid input so it can be processed | business filtering or row dropping |
+| `center_` / `scale_` / `standardize_` / `normalize_` | prefer the specific transform name when semantics are clear | defaulting to `normalize_` when a more precise prefix fits |
+| `validate_` | strong validation; light I/O such as existence checks is acceptable | heavy I/O that belongs in `read_` or `write_` |
 
-### 呈现
+## Public Method Boundaries
 
-- `render_`
-- `report_`
+Public methods should primarily express protocol, lifecycle, or object-local
+configuration. Domain behavior should remain module-level functions following
+the prefix rules above.
 
-## Naming Boundaries（边界规则）
+- `close()`: canonical resource termination or commit method
+- `run()`: main execution entry for runnable objects
+- `render()` / `report()`: produce presentation objects without implicit writes
+- `build()`: allowed as the terminal method on `*Builder` types
+- `from_*()` / `make()`: allowed as classmethod factories
+- `add_*`, `select_*`, `group()`, `command()`, `done()`, `end()`, `with_*`:
+  allowed on builders, registries, and fluent configuration helpers
 
-- `infer_` 返回 `bool | Enum | Literal[...]`。如需多字段结果，返回命名明确的 `Spec*`，字段必须是离散属性，不返回连续数值。
-- `calculate_` vs `derive_`: 前者输出数值/统计量，后者输出结构/字段。
-- `read_` vs `write_`: 前者读取并解析为对象，后者序列化并写出对象。
-- `sink_` vs `write_`: `sink_` 仅用于真正流式写出（无需全量物化），否则用 `write_`。
-- `validate_`: 允许轻量 IO（如 exists）；重 IO 放到 `read_`/`write_`。
-- `scan_`: 返回 lazy/iterator/metadata，不默认物化主体数据。
-- `select_` vs `filter_`: `select_` 只做投影/重排；`filter_` 只做谓词过滤。
-- `create_` vs `generate_`: 单对象用 `create_`，序列/批量用 `generate_`。
+Prefer module-level functions over generic public methods such as:
 
-## Method Verbs（Lifecycle and Protocol）
+- `save`, `load`, `export`, `dump`
+- `execute`, `start`, `stop`, `finish`, `shutdown`, `dispose`
+- `process`, `do`, `get`, `show`
 
-Object methods should only keep protocol-required verbs. Domain behaviors remain module functions with prefix rules above.
-
-- `close()`: 唯一资源终止/提交动词。实现 context manager 时，`__exit__` 必须调用 `close()`。
-- `build()`: 仅允许在 `*Builder` 类型作为终止方法。
-- `add_*`: 仅用于可变累积器（errors/warnings/counters），不用于普通业务对象。
-- `run()`: 可运行对象的主执行入口。
-- `render()` / `report()`: 生成展示对象，不隐式落盘。
-- `from_*()` / `make()`: 仅允许作为 classmethod factory。
-    - `from_*`: 从显式结构（Spec/Config/Schema）构造，语义为映射/适配。
-    - `make`: 从显式参数构造的便利入口；内部必须委托到 `from_*` 或 `create_*`。
-    - `from_*` 与 `make` 不属于 module-level Function Prefixes 体系。
-
-### Disallowed Public Method Verbs
-
-- `save/load/export/dump`
-- `execute/start/stop/finish/shutdown/dispose`
-- `process/do/get/show`
-
-### Allowed Public Methods
-
-- `close()`
-- `build()` (builder only)
-- `run()`
-- `render()`
-- `report()`
-- `from_*()` (classmethod factory only)
-- `make()` (classmethod factory only)
-- Python protocol essentials: `__init__`, `__enter__`, `__exit__`
+Language-level protocol essentials are allowed where applicable.
 
 ## CLI Option Naming
 
 - Boolean options:
-    - `is_...`: factual/state toggles
-    - `should_...`: policy/strategy toggles
-    - Use argparse `store_true` / `store_false` consistently
+  - `is_...`: factual or state toggles
+  - `should_...`: policy or strategy toggles
 - Non-boolean options:
-    - Prefer explicit semantic names over abbreviations
-    - Path-like options prefer `file_...` / `dir_...` as appropriate
+  - prefer explicit semantic names over abbreviations
+  - use `file_...` and `dir_...` for file and directory paths when known
+  - use `rule_...` for strategy or mode selectors
+  - use `thr_...` for thresholds and cutoffs
 
-## Internal Naming Conventions
+## Internal Naming Guidance
 
-- Function parameters should use semantic + role prefixes, not scalar type prefixes.
-- Do not use scalar/type-hint prefixes in function parameters:
-    - disallowed: `c_`, `n_`, `b_`, `l_`, `set_`, `dict_`, etc.
-- Preferred parameter prefixes:
-    - `if_...`: boolean flags
-    - `size_...`: memory/storage sizes (`MB` / `GB` / bytes-like semantics)
-    - `df_...`: `polars.DataFrame` / dataframe objects
-    - `lf_...`: `polars.LazyFrame` objects
-    - `height_...` / `width_...`: dataframe shape scalars
-    - `cnt_...`: counters / counts
-    - `file_...`: file paths or file-like inputs
-    - `dir_...`: directory paths or directory-like inputs
-    - `rule_...`: rule/config inputs
-    - `thr_...`: threshold inputs
-- Non-parameter local variables may keep pragmatic naming, but new code should still prefer semantic names over type-abbreviation names.
-- Loop variables:
-    - Use leading markers for loop variables:
-        - Python/Rust: leading underscore, e.g. `_idx`, `_key`, `_val`.
-        - R: leading dot, e.g. `.idx`, `.key`, `.val`.
-    - Do not use type prefixes for loop variables (no `c_`/`n_`/`l_` etc. on loop vars).
-    - If semantic naming is clear, prefer semantic names with the same leading marker.
-    - If semantic naming is unclear, use fixed placeholders: `_idx` / `_key` / `_val` (R: `.idx` / `.key` / `.val`).
-    - Avoid shadowing outer-scope names.
-    - Reserve trailing underscore only for collision avoidance when a leading marker is not appropriate.
+Internal names are a readability aid, not a rigid contract.
 
+- Prefer semantic names over type-only names.
+- For parameters, use role-oriented names such as `file_...`, `dir_...`,
+  `path_...`, `rule_...`, `thr_...`, `df_...`, `lf_...`, `dt_...`, `map_...`,
+  `set_...`, and `fn_...` when they improve clarity.
+- For local variables, prefer clear domain names; short container hints such as
+  `df_...`, `dt_...`, or `map_...` are optional when they materially improve
+  scan speed.
+- Avoid generic names such as `obj`, `tmp`, `x`, or `value` when a concrete
+  role is available.
+- Loop variables may use short transient prefixes such as `_sheet`, `_name`,
+  `.sheet`, or `.name`, but do not force them when a plain semantic name reads
+  better.
 
-## Public-facing Schema / Header Naming
+## Public-facing Schema and Header Naming
 
-- Exported headers use PascalCase.
-- Abbreviation rule:
-    - Standalone header token: ALLCAPS (e.g., `ID`, `PTM`, `FDR`)
-    - As part of a multi-token header: PascalCase abbreviation segment (e.g., `SampleId`, `PtmFdr`)
-- Internal storage uses snake_case; expose PascalCase via views / aliases.
+| Context | Rule | Example |
+| --- | --- | --- |
+| Exported headers | use PascalCase | `SampleId`, `PtmFdr` |
+| Standalone abbreviation token | use ALLCAPS | `ID`, `PTM`, `FDR` |
+| Abbreviation inside a multi-token header | use PascalCase abbreviation segment | `SampleId`, `PtmFdr` |
+| Internal storage | snake_case is acceptable internally; expose PascalCase through views, aliases, or export adapters | `sample_id` -> `SampleId` |
 
-## Argparse Action Factory Pattern
-
-- Action classes must not use `build()`.
-- Provide factories as classmethods:
-    - `from_spec(spec: Spec*)`: core factory (explicit spec input)
-    - `make(...params...)`: convenience factory delegating to `from_spec`
-    - additional convenience wrappers delegate to `make`
-- Factories should return callables suitable for argparse `action=` (commonly `functools.partial`).
-
-## Workflow（提交要求）
+## Workflow
 
 - Keep API changes minimal and explicit.
 - Add or update tests with each behavior change.

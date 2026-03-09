@@ -20,7 +20,7 @@ def _derive_hex_hash(s: str, *, size_digest: int) -> str:
 
 
 def _sanitize_and_truncate(
-    s: str,
+    value: str,
     *,
     size_bytes_seg_max: int = N_SIZE_BYTES_SEG_MAX,
     size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
@@ -31,22 +31,22 @@ def _sanitize_and_truncate(
     This keeps the final UTF-8 segment length under ``size_bytes_seg_max`` while
     preserving uniqueness via a hash suffix when truncation occurs.
     """
-    s = unicodedata.normalize("NFKC", s)  # normalize unicode
-    if len(s_ := s.encode("utf-8")) <= size_bytes_seg_max:
-        return s
+    value = unicodedata.normalize("NFKC", value)  # normalize unicode
+    if len(value_encoded := value.encode("utf-8")) <= size_bytes_seg_max:
+        return value
 
-    n_hash_hex = 2 * size_bytes_hash
-    if (n_cut := size_bytes_seg_max - (1 + n_hash_hex)) < 16:
+    len_hash_suffix_byte = 2 * size_bytes_hash
+    if (len_seg_max := size_bytes_seg_max - (1 + len_hash_suffix_byte)) < 16:
         raise ValueError(
             "Arg `size_bytes_seg_max` too small for hash suffix: "
             f"max_seg_bytes={size_bytes_seg_max}, hash_bytes={size_bytes_hash}. "
             "Increase `size_bytes_seg_max` or decrease `size_bytes_hash`."
         )
-    s_cut = s_[:n_cut]
-    while s_cut and (s_cut[-1] & 0b1100_0000) == 0b1000_0000:
-        s_cut = s_cut[:-1]
-    s_cut = s_cut.decode("utf-8", errors="ignore")
-    return f"{s_cut}~{_derive_hex_hash(s, size_digest=size_bytes_hash)}"
+    value_truncated = value_encoded[:len_seg_max]
+    while value_truncated and (value_truncated[-1] & 0b1100_0000) == 0b1000_0000:
+        value_truncated = value_truncated[:-1]
+    value_truncated = value_truncated.decode("utf-8", errors="ignore")
+    return f"{value_truncated}~{_derive_hex_hash(value, size_digest=size_bytes_hash)}"
 
 
 def _sanitize_partition_cols(
@@ -86,9 +86,9 @@ def _sanitize_partition_cols(
     # This optimization prevents applying Python callbacks to all strings for performance reasons,
     # reduces the total cost from O(N) Python calls to O(K), where K is the number of long strings,
     # and K << N in typical scenarios.
-    b_is_long = expr_.str.len_bytes() > size_bytes_seg_max
+    is_long_segment = expr_.str.len_bytes() > size_bytes_seg_max
     expr_ = (
-        pl.when(b_is_long)
+        pl.when(is_long_segment)
         .then(
             expr_.map_elements(
                 lambda x: _sanitize_and_truncate(
@@ -112,22 +112,22 @@ def _validate_overwrite_permissions(dir_out: Path, dir_allowed: Path | None) -> 
     Refuses to overwrite root, home, or symlink directories. If ``dir_allowed``
     is provided, ``dir_out`` must be within it.
     """
-    cfg_dir_out_abs = dir_out.expanduser().resolve()
-    if cfg_dir_out_abs == Path("/"):
+    dir_out_abs = dir_out.expanduser().resolve()
+    if dir_out_abs == Path("/"):
         raise PermissionError("Refusing to overwrite root directory '/'.")
-    if cfg_dir_out_abs == Path.home():
+    if dir_out_abs == Path.home():
         raise PermissionError("Refusing to overwrite user's home directory.")
-    if cfg_dir_out_abs.exists() and cfg_dir_out_abs.is_symlink():
+    if dir_out_abs.exists() and dir_out_abs.is_symlink():
         raise PermissionError(
-            f"Refusing to overwrite symbolic link directory: `{cfg_dir_out_abs}`."
+            f"Refusing to overwrite symbolic link directory: `{dir_out_abs}`."
         )
     if dir_allowed is not None:
         dir_allowed_abs = dir_allowed.expanduser().resolve()
         try:
-            cfg_dir_out_abs.relative_to(dir_allowed_abs)
+            dir_out_abs.relative_to(dir_allowed_abs)
         except ValueError:
             raise PermissionError(
-                f"Output directory `{cfg_dir_out_abs}` is outside the allowed directory `{dir_allowed_abs}`."
+                f"Output directory `{dir_out_abs}` is outside the allowed directory `{dir_allowed_abs}`."
             )
 
 
