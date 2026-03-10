@@ -34,20 +34,20 @@ pub fn convert_nan_inf_to_str(
 /// Normalize cell value according to numeric/integer flags and value policy.
 pub fn convert_cell_value(
     value: &EnumCellValue,
-    if_is_numeric_col: bool,
-    if_is_integer_col: bool,
-    if_keep_missing_values: bool,
+    is_numeric_col: bool,
+    is_integer_col: bool,
+    should_keep_missing_values: bool,
     value_policy: &SpecXlsxValuePolicy,
 ) -> EnumCellValue {
     if matches!(value, EnumCellValue::None) {
-        return if if_keep_missing_values {
+        return if should_keep_missing_values {
             EnumCellValue::String(value_policy.missing_value_str.clone())
         } else {
             EnumCellValue::None
         };
     }
 
-    if !if_is_numeric_col {
+    if !is_numeric_col {
         return match value {
             EnumCellValue::String(s) => EnumCellValue::String(s.clone()),
             EnumCellValue::Number(n) => EnumCellValue::String(n.to_string()),
@@ -55,11 +55,11 @@ pub fn convert_cell_value(
         };
     }
 
-    if if_is_integer_col {
+    if is_integer_col {
         return match value {
             EnumCellValue::Number(n) => {
                 if !n.is_finite() {
-                    if if_keep_missing_values {
+                    if should_keep_missing_values {
                         EnumCellValue::String(
                             convert_nan_inf_to_str(*n, value_policy)
                                 .unwrap_or_else(|_| value_policy.nan_str.clone()),
@@ -82,7 +82,7 @@ pub fn convert_cell_value(
                     } else if let Ok(v) = s.parse::<f64>() {
                         if v.is_finite() {
                             EnumCellValue::Number(v as i64 as f64)
-                        } else if if_keep_missing_values {
+                        } else if should_keep_missing_values {
                             EnumCellValue::String(
                                 convert_nan_inf_to_str(v, value_policy)
                                     .unwrap_or_else(|_| value_policy.nan_str.clone()),
@@ -107,7 +107,7 @@ pub fn convert_cell_value(
         EnumCellValue::Number(n) => {
             if n.is_finite() {
                 EnumCellValue::Number(*n)
-            } else if if_keep_missing_values {
+            } else if should_keep_missing_values {
                 EnumCellValue::String(
                     convert_nan_inf_to_str(*n, value_policy)
                         .unwrap_or_else(|_| value_policy.nan_str.clone()),
@@ -120,7 +120,7 @@ pub fn convert_cell_value(
             if let Ok(v) = s.parse::<f64>() {
                 if v.is_finite() {
                     EnumCellValue::Number(v)
-                } else if if_keep_missing_values {
+                } else if should_keep_missing_values {
                     EnumCellValue::String(
                         convert_nan_inf_to_str(v, value_policy)
                             .unwrap_or_else(|_| value_policy.nan_str.clone()),

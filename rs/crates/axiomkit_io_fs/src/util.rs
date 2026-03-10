@@ -439,25 +439,25 @@ pub(crate) fn is_depth_within_limit(
     }
 }
 
-pub(crate) fn calculate_worker_limit(num_workers_max: Option<usize>) -> usize {
+pub(crate) fn calculate_worker_limit(workers_max: Option<usize>) -> usize {
     let n_cpu = std::thread::available_parallelism()
         .map(|v| v.get())
         .unwrap_or(1);
 
-    match num_workers_max {
+    match workers_max {
         Some(n) => n.clamp(1, n_cpu),
         None => n_cpu.clamp(1, 8),
     }
 }
 
-/// Derive destination path based on if_keep_tree option.
+/// Derive destination path based on `should_keep_tree`.
 ///
 /// # Arguments
 /// - `path_src`: Source path of the item being copied.
 /// - `path_item_name`: Name of the item being copied.
 /// - `path_dir_src`: Source directory path.
 /// - `path_dir_dst`: Destination directory path.
-/// - `if_keep_tree`:
+/// - `should_keep_tree`:
 ///   - `true`: Preserve the directory structure relative to `path_dir_src`.
 ///   - `false`: Copy item directly into `path_dir_dst`.
 ///
@@ -485,9 +485,9 @@ pub(crate) fn derive_destination_path(
     path_item_name: &str,
     path_dir_src: &Path,
     path_dir_dst: &Path,
-    if_keep_tree: bool,
+    should_keep_tree: bool,
 ) -> PathBuf {
-    if if_keep_tree {
+    if should_keep_tree {
         return path_dir_dst.join(
             path_src
                 .strip_prefix(path_dir_src)

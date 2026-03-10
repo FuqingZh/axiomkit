@@ -122,7 +122,7 @@ def run_single_copy_tree(path_src: Path, path_dst: Path) -> dict[str, Any]:
         "if path_dst.exists(): shutil.rmtree(path_dst)\n"
         "n_t0=perf_counter()\n"
         "report=copy_tree(path_src, path_dst, "
-        "rule_conflict_file='overwrite', rule_conflict_dir='merge', if_keep_tree=True)\n"
+        "rule_conflict_file='overwrite', rule_conflict_dir='merge', should_keep_tree=True)\n"
         "n_elapsed=perf_counter()-n_t0\n"
         "print(json.dumps({'elapsed': n_elapsed, 'report': report.to_dict()}))\n"
     )

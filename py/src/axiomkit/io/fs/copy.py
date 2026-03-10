@@ -36,9 +36,9 @@ def copy_tree(
     rule_symlink: EnumCopySymlinkStrategy | str = "copy_symlinks",
     depth_limit: int | None = None,
     rule_depth_limit: EnumCopyDepthLimitMode | str = "at_most",
-    num_workers_max: int | None = None,
-    if_keep_tree: bool = True,
-    if_dry_run: bool = False,
+    workers_max: int | None = None,
+    should_keep_tree: bool = True,
+    should_dry_run: bool = False,
 ) -> ReportCopy:
     """Copy a directory tree with filtering, depth limits, and conflict handling.
 
@@ -84,11 +84,11 @@ def copy_tree(
             - ``exact``: Copy items at depth == depth_limit.
             It requires ``depth_limit`` to be set.
 
-        num_workers_max: Maximum worker threads.
-        if_keep_tree:
+        workers_max: Maximum worker threads.
+        should_keep_tree:
             - ``True``: (Default) Keep source directory structure in destination.
             - ``False``: Flatten structure; copy all matched files into destination root.
-        if_dry_run:
+        should_dry_run:
             - ``False``: (Default) Perform actual copy.
             - ``True``: Simulate copy without making changes.
 
@@ -118,7 +118,7 @@ def copy_tree(
         >>> report_flat = copy_tree(
         ...     Path("data/raw"),
         ...     Path("data/flat"),
-        ...     if_keep_tree=False,
+        ...     should_keep_tree=False,
         ...     patterns_include_files=["*.txt"],
         ... )
         >>> report_flat.error_count == 0
@@ -154,7 +154,7 @@ def copy_tree(
         rule_symlink=enum_rule_symlink,
         depth_limit=depth_limit,
         rule_depth_limit=enum_rule_depth_limit,
-        num_workers_max=num_workers_max,
-        if_keep_tree=if_keep_tree,
-        if_dry_run=if_dry_run,
+        workers_max=workers_max,
+        should_keep_tree=should_keep_tree,
+        should_dry_run=should_dry_run,
     )

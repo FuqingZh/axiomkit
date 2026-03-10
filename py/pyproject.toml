@@ -53,6 +53,8 @@ dev = [
     "rich-argparse>=1.7.2",
     "ruff>=0.15.0",
     "scipy>=1.17.0",
+    "setuptools>=77.0.0",
+    "setuptools-rust>=1.12.0",
     "uv>=0.8.0",
     "xlsxwriter>=3.2.9",
 ]

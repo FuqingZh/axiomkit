@@ -42,7 +42,7 @@ def copy_tree(
     rule_symlink: str = "copy_symlinks",
     depth_limit: int | None = None,
     rule_depth_limit: str = "at_most",
-    num_workers_max: int | None = None,
-    if_keep_tree: bool = True,
-    if_dry_run: bool = False,
+    workers_max: int | None = None,
+    should_keep_tree: bool = True,
+    should_dry_run: bool = False,
 ) -> ReportCopy: ...

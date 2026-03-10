@@ -62,7 +62,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report2 = copy_tree(
         src,
         dst2,
-        if_keep_tree=False,
+        should_keep_tree=False,
         patterns_include_files=["*.txt"],
         rule_pattern=EnumCopyPatternMode.GLOB,
     )
@@ -79,7 +79,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         dst3,
         depth_limit=1,
         rule_depth_limit=EnumCopyDepthLimitMode.EXACT,
-        if_keep_tree=True,
+        should_keep_tree=True,
     )
     assert report3.error_count == 0
     _assert_exists(dst3 / "root.txt")

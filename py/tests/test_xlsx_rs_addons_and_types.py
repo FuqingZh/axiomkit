@@ -41,3 +41,22 @@ def test_xlsx_rs_writer_no_longer_accepts_addons(tmp_path: Path) -> None:
                 "S",
                 addons=(),
             )
+
+
+def test_xlsx_rs_writer_accepts_should_keywords(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "should_keywords.xlsx"
+    df = pl.DataFrame({"a": [1, None], "b": ["x", "y"]})
+
+    with XlsxWriter(path_file_out) as inst_xlsx_writer:
+        result = inst_xlsx_writer.write_sheet(
+            df,
+            "S",
+            should_merge_header=True,
+            should_keep_missing_values=True,
+        )
+
+    assert result is inst_xlsx_writer
+    assert path_file_out.exists()

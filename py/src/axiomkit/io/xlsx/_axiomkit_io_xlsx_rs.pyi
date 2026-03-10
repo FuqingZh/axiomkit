@@ -47,8 +47,8 @@ class XlsxWriter:
         cols_decimal: Sequence[str | int] | str | Literal[False] | None = ...,
         col_freeze: int = ...,
         row_freeze: int | None = ...,
-        if_merge_header: bool = ...,
-        if_keep_missing_values: bool | None = ...,
+        should_merge_header: bool = ...,
+        should_keep_missing_values: bool | None = ...,
         policy_autofit: SpecAutofitCellsPolicy | None = ...,
         policy_scientific: SpecScientificPolicy | None = ...,
     ) -> XlsxWriter: ...

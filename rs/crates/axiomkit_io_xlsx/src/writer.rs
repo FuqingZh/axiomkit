@@ -32,9 +32,9 @@ pub struct SpecXlsxSheetWriteOptions {
     /// Frozen row index; defaults to header height when `None`.
     pub row_freeze: Option<usize>,
     /// Enable merged multi-row header behavior.
-    pub if_merge_header: bool,
+    pub should_merge_header: bool,
     /// Override writer-level keep-missing behavior.
-    pub if_keep_missing_values: Option<bool>,
+    pub should_keep_missing_values: Option<bool>,
     /// Column autofit policy.
     pub policy_autofit: SpecAutofitCellsPolicy,
     /// Scientific-format trigger policy.
@@ -78,7 +78,7 @@ pub struct XlsxWriter {
     write_options: SpecXlsxWriteOptions,
     set_sheet_names_existing: BTreeSet<String>,
     l_reports: Vec<SpecXlsxReport>,
-    if_closed: bool,
+    is_closed: bool,
 }
 
 impl XlsxWriter {
@@ -106,7 +106,7 @@ impl XlsxWriter {
             write_options,
             set_sheet_names_existing: BTreeSet::new(),
             l_reports: Vec::new(),
-            if_closed: false,
+            is_closed: false,
         }
     }
 
@@ -122,13 +122,13 @@ impl XlsxWriter {
 
     /// Flush workbook to disk. Idempotent.
     pub fn close(&mut self) -> Result<(), String> {
-        if self.if_closed {
+        if self.is_closed {
             return Ok(());
         }
         self.workbook
             .save(&self.path_file_out)
             .map_err(derive_xlsx_error_text)?;
-        self.if_closed = true;
+        self.is_closed = true;
         Ok(())
     }
 
@@ -140,7 +140,7 @@ impl XlsxWriter {
         df_header: Option<&DataFrame>,
         options: &SpecXlsxSheetWriteOptions,
     ) -> Result<(), String> {
-        if self.if_closed {
+        if self.is_closed {
             return Err("Cannot write after close().".to_string());
         }
         self.write_sheet(df_data, sheet_name, df_header, options)
@@ -156,7 +156,7 @@ impl XlsxWriter {
         v_ipc_df_header: Option<&[u8]>,
         options: &SpecXlsxSheetWriteOptions,
     ) -> Result<(), String> {
-        if self.if_closed {
+        if self.is_closed {
             return Err("Cannot write after close().".to_string());
         }
 
@@ -178,8 +178,8 @@ impl XlsxWriter {
         validate_policy_autofit(&options.policy_autofit)?;
         validate_policy_scientific(&options.policy_scientific)?;
 
-        let if_keep_missing_values = options
-            .if_keep_missing_values
+        let should_keep_missing_values = options
+            .should_keep_missing_values
             .unwrap_or(self.write_options.keep_missing_values);
         let value_policy = self.write_options.value_policy.clone();
 
@@ -326,12 +326,12 @@ impl XlsxWriter {
             let mut l_width_by_col_header = vec![0usize; l_fmt_data_by_col.len()];
             let mut l_width_by_col_body = vec![0usize; l_fmt_data_by_col.len()];
 
-            let if_autofit_columns = !matches!(
+            let should_autofit_columns = !matches!(
                 options.policy_autofit.rule_columns,
                 EnumAutofitColumnsRule::None
             );
 
-            if if_autofit_columns && !l_fmt_data_by_col.is_empty() {
+            if should_autofit_columns && !l_fmt_data_by_col.is_empty() {
                 for n_idx_col in 0..l_fmt_data_by_col.len() {
                     for row in &l_header_grid_slice {
                         let value = &row[n_idx_col];
@@ -345,7 +345,7 @@ impl XlsxWriter {
                                 false,
                                 false,
                                 false,
-                                if_keep_missing_values,
+                                should_keep_missing_values,
                                 &value_policy,
                             ),
                         );
@@ -356,7 +356,7 @@ impl XlsxWriter {
             write_header(
                 worksheet,
                 l_header_grid_slice,
-                options.if_merge_header,
+                options.should_merge_header,
                 &fmt_header,
             )?;
 
@@ -397,9 +397,9 @@ impl XlsxWriter {
                 let n_row_chunk_end = n_row_chunk_start + n_rows_chunk_len;
                 for n_row_local in n_row_chunk_start..n_row_chunk_end {
                     for (n_idx_col, col) in l_cols_slice.iter().enumerate() {
-                        let if_is_numeric_col = set_cols_idx_numeric.contains(&n_idx_col);
-                        let if_is_integer_col = set_cols_idx_integer.contains(&n_idx_col);
-                        let if_is_scientific_col = set_cols_idx_scientific.contains(&n_idx_col);
+                        let is_numeric_col = set_cols_idx_numeric.contains(&n_idx_col);
+                        let is_integer_col = set_cols_idx_integer.contains(&n_idx_col);
+                        let is_scientific_col = set_cols_idx_scientific.contains(&n_idx_col);
 
                         let value_raw = derive_cell_value_from_any_value(
                             col.get(n_row_local)
@@ -407,13 +407,13 @@ impl XlsxWriter {
                         );
                         let value = convert_cell_value(
                             &value_raw,
-                            if_is_numeric_col,
-                            if_is_integer_col,
-                            if_keep_missing_values,
+                            is_numeric_col,
+                            is_integer_col,
+                            should_keep_missing_values,
                             &value_policy,
                         );
 
-                        if if_autofit_columns
+                        if should_autofit_columns
                             && (options.policy_autofit.height_body_inferred_max.is_none()
                                 || n_rows_seen_for_autofit
                                     < options.policy_autofit.height_body_inferred_max.unwrap_or(0))
@@ -422,10 +422,10 @@ impl XlsxWriter {
                                 l_width_by_col_body[n_idx_col],
                                 estimate_width_len(
                                     &value,
-                                    if_is_numeric_col,
-                                    if_is_integer_col,
-                                    if_is_scientific_col,
-                                    if_keep_missing_values,
+                                    is_numeric_col,
+                                    is_integer_col,
+                                    is_scientific_col,
+                                    should_keep_missing_values,
                                     &value_policy,
                                 ),
                             );
@@ -440,7 +440,7 @@ impl XlsxWriter {
                         )?;
                     }
 
-                    if if_autofit_columns
+                    if should_autofit_columns
                         && (options.policy_autofit.height_body_inferred_max.is_none()
                             || n_rows_seen_for_autofit
                                 < options.policy_autofit.height_body_inferred_max.unwrap_or(0))
@@ -450,7 +450,7 @@ impl XlsxWriter {
                 }
             }
 
-            if if_autofit_columns && !l_fmt_data_by_col.is_empty() {
+            if should_autofit_columns && !l_fmt_data_by_col.is_empty() {
                 let n_min = usize::max(1, options.policy_autofit.width_cell_min);
                 let n_max = usize::min(
                     255,
@@ -520,15 +520,15 @@ impl XlsxWriter {
 /// Used by autofit inference logic.
 pub fn estimate_width_len(
     value: &EnumCellValue,
-    if_is_numeric_col: bool,
-    if_is_integer_col: bool,
-    if_is_scientific_col: bool,
-    if_keep_missing_values: bool,
+    is_numeric_col: bool,
+    is_integer_col: bool,
+    is_scientific_col: bool,
+    should_keep_missing_values: bool,
     value_policy: &SpecXlsxValuePolicy,
 ) -> usize {
     match value {
         EnumCellValue::None => {
-            if if_keep_missing_values {
+            if should_keep_missing_values {
                 value_policy.missing_value_str.len()
             } else {
                 0
@@ -538,25 +538,25 @@ pub fn estimate_width_len(
             if s.is_empty() {
                 return 0;
             }
-            if !if_is_numeric_col {
+            if !is_numeric_col {
                 return estimate_unicode_string_width(s);
             }
-            if if_is_scientific_col && let Ok(val) = s.parse::<f64>() {
+            if is_scientific_col && let Ok(val) = s.parse::<f64>() {
                 return format!("{val:.2E}").len();
             }
-            if if_is_integer_col && let Ok(val) = s.parse::<i64>() {
+            if is_integer_col && let Ok(val) = s.parse::<i64>() {
                 return val.to_string().len();
             }
             estimate_unicode_string_width(s)
         }
         EnumCellValue::Number(n) => {
-            if !if_is_numeric_col {
+            if !is_numeric_col {
                 return estimate_unicode_string_width(&n.to_string());
             }
-            if if_is_scientific_col {
+            if is_scientific_col {
                 return format!("{n:.2E}").len();
             }
-            if if_is_integer_col {
+            if is_integer_col {
                 return (*n as i64).to_string().len();
             }
             format!("{n:.4}").len()
@@ -698,7 +698,7 @@ fn derive_scientific_column_indices(
     let set_cols_idx_integer: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
     let set_cols_idx_decimal_specified: BTreeSet<usize> =
         cols_idx_decimal_specified.iter().copied().collect();
-    let if_decimal_is_explicit = !set_cols_idx_decimal_specified.is_empty();
+    let is_decimal_explicit = !set_cols_idx_decimal_specified.is_empty();
 
     let n_rows_sample_max = match policy_scientific.height_body_inferred_max {
         Some(n_max) => usize::min(df.height(), n_max),
@@ -708,27 +708,27 @@ fn derive_scientific_column_indices(
 
     let mut l_cols_idx_scientific = Vec::new();
     for n_idx_col in cols_idx_numeric {
-        let if_is_integer_col = set_cols_idx_integer.contains(n_idx_col);
-        let if_include = match policy_scientific.rule_scope {
+        let is_integer_col = set_cols_idx_integer.contains(n_idx_col);
+        let should_include = match policy_scientific.rule_scope {
             EnumScientificScope::None => false,
             EnumScientificScope::Decimal => {
-                if if_is_integer_col {
+                if is_integer_col {
                     false
-                } else if if_decimal_is_explicit {
+                } else if is_decimal_explicit {
                     set_cols_idx_decimal_specified.contains(n_idx_col)
                 } else {
                     true
                 }
             }
-            EnumScientificScope::Integer => if_is_integer_col,
+            EnumScientificScope::Integer => is_integer_col,
             EnumScientificScope::All => true,
         };
-        if !if_include {
+        if !should_include {
             continue;
         }
 
         let col = &l_cols[*n_idx_col];
-        let mut if_use_scientific = false;
+        let mut should_use_scientific = false;
         for n_idx_row in 0..n_rows_sample_max {
             let value = col
                 .get(n_idx_row)
@@ -744,12 +744,12 @@ fn derive_scientific_column_indices(
             if n_abs >= policy_scientific.thr_max
                 || (n_abs > 0.0 && n_abs < policy_scientific.thr_min)
             {
-                if_use_scientific = true;
+                should_use_scientific = true;
                 break;
             }
         }
 
-        if if_use_scientific {
+        if should_use_scientific {
             l_cols_idx_scientific.push(*n_idx_col);
         }
     }
@@ -848,10 +848,10 @@ fn derive_slice_indices(
 fn write_header(
     worksheet: &mut Worksheet,
     mut header_grid: Vec<Vec<String>>,
-    if_merge: bool,
+    should_merge: bool,
     fmt_header: &Format,
 ) -> Result<(), String> {
-    if !if_merge {
+    if !should_merge {
         for (row_idx, row_values) in header_grid.iter().enumerate() {
             for (col_idx, cell_value) in row_values.iter().enumerate() {
                 if cell_value.is_empty() {

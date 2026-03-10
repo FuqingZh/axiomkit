@@ -87,11 +87,11 @@ pub struct SpecCopyOptions {
     /// Depth evaluation mode.
     pub rule_depth_limit: EnumCopyDepthLimitMode,
     /// Maximum worker threads for file-copy stage.
-    pub num_workers_max: Option<usize>,
+    pub workers_max: Option<usize>,
     /// Keep relative source tree structure in destination.
-    pub if_keep_tree: bool,
+    pub should_keep_tree: bool,
     /// Do not mutate filesystem; record what would happen.
-    pub if_dry_run: bool,
+    pub should_dry_run: bool,
 }
 
 impl Default for SpecCopyOptions {
@@ -107,9 +107,9 @@ impl Default for SpecCopyOptions {
             rule_symlink: EnumCopySymlinkStrategy::CopySymlinks,
             depth_limit: None,
             rule_depth_limit: EnumCopyDepthLimitMode::AtMost,
-            num_workers_max: None,
-            if_keep_tree: true,
-            if_dry_run: false,
+            workers_max: None,
+            should_keep_tree: true,
+            should_dry_run: false,
         }
     }
 }

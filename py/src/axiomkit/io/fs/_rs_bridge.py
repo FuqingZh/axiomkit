@@ -98,9 +98,9 @@ def copy_tree_via_rs(
     rule_symlink: EnumCopySymlinkStrategy,
     depth_limit: int | None,
     rule_depth_limit: EnumCopyDepthLimitMode,
-    num_workers_max: int | None,
-    if_keep_tree: bool,
-    if_dry_run: bool,
+    workers_max: int | None,
+    should_keep_tree: bool,
+    should_dry_run: bool,
 ) -> ReportCopy:
     if _copy_tree_rs is None:  # pragma: no cover
         _raise_unavailable()
@@ -118,9 +118,9 @@ def copy_tree_via_rs(
             rule_symlink=rule_symlink.value,
             depth_limit=depth_limit,
             rule_depth_limit=rule_depth_limit.value,
-            num_workers_max=num_workers_max,
-            if_keep_tree=if_keep_tree,
-            if_dry_run=if_dry_run,
+            workers_max=workers_max,
+            should_keep_tree=should_keep_tree,
+            should_dry_run=should_dry_run,
         )
 
     errors = tuple(

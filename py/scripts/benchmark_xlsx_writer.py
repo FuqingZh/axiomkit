@@ -33,7 +33,7 @@ class XlsxBenchmarkScenario:
     n_rows: int
     n_numeric_cols: int
     n_text_cols: int
-    if_autofit_columns: bool = True
+    should_autofit_columns: bool = True
     rule_autofit_columns: str = "header"
 
 
@@ -98,7 +98,7 @@ def build_scenarios(profile: str) -> list[XlsxBenchmarkScenario]:
                 n_rows=40_000,
                 n_numeric_cols=8,
                 n_text_cols=3,
-                if_autofit_columns=True,
+                should_autofit_columns=True,
                 rule_autofit_columns="header",
             ),
             XlsxBenchmarkScenario(
@@ -106,7 +106,7 @@ def build_scenarios(profile: str) -> list[XlsxBenchmarkScenario]:
                 n_rows=10_000,
                 n_numeric_cols=24,
                 n_text_cols=12,
-                if_autofit_columns=True,
+                should_autofit_columns=True,
                 rule_autofit_columns="all",
             ),
         ]
@@ -117,7 +117,7 @@ def build_scenarios(profile: str) -> list[XlsxBenchmarkScenario]:
             n_rows=250_000,
             n_numeric_cols=10,
             n_text_cols=4,
-            if_autofit_columns=True,
+            should_autofit_columns=True,
             rule_autofit_columns="header",
         ),
         XlsxBenchmarkScenario(
@@ -125,7 +125,7 @@ def build_scenarios(profile: str) -> list[XlsxBenchmarkScenario]:
             n_rows=50_000,
             n_numeric_cols=40,
             n_text_cols=20,
-            if_autofit_columns=True,
+            should_autofit_columns=True,
             rule_autofit_columns="all",
         ),
     ]
@@ -288,13 +288,13 @@ def run_one_write(
     writer_cls: Any,
     df: pl.DataFrame,
     path_xlsx_out: Path,
-    if_autofit_columns: bool,
+    should_autofit_columns: bool,
     rule_autofit_columns: str,
 ) -> float:
     n_t_start = perf_counter()
     with writer_cls(path_xlsx_out) as inst_writer:
         policy_autofit = SpecAutofitCellsPolicy(
-            rule_columns=rule_autofit_columns if if_autofit_columns else "none"
+            rule_columns=rule_autofit_columns if should_autofit_columns else "none"
         )
         inst_writer.write_sheet(
             df=df,
@@ -325,7 +325,7 @@ def benchmark_scenario(
             writer_cls=writer_cls,
             df=df,
             path_xlsx_out=path_file_out,
-            if_autofit_columns=scenario.if_autofit_columns,
+            should_autofit_columns=scenario.should_autofit_columns,
             rule_autofit_columns=scenario.rule_autofit_columns,
         )
         validate_xlsx_output(
@@ -344,7 +344,7 @@ def benchmark_scenario(
             writer_cls=writer_cls,
             df=df,
             path_xlsx_out=path_file_out,
-            if_autofit_columns=scenario.if_autofit_columns,
+            should_autofit_columns=scenario.should_autofit_columns,
             rule_autofit_columns=scenario.rule_autofit_columns,
         )
         validate_xlsx_output(
@@ -406,7 +406,7 @@ def render_markdown_summary(payload: dict[str, object]) -> str:
         l_lines.append(
             "| "
             f"{item['backend']} | {cfg['name']} | {cfg['n_rows']} | {item['n_cols']} | "
-            f"{cfg['if_autofit_columns']} ({cfg['rule_autofit_columns']}) | "
+            f"{cfg['should_autofit_columns']} ({cfg['rule_autofit_columns']}) | "
             f"{item['repeats']} | {item['median_seconds']:.3f} | "
             f"{item['mean_seconds']:.3f} | {item['min_seconds']:.3f} | "
             f"{item['max_seconds']:.3f} | {item['stdev_seconds']:.3f} | {n_size_mb:.2f} |"

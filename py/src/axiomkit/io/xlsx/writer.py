@@ -37,8 +37,8 @@ class ProtocolXlsxWriterBackend(Protocol):
         cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         col_freeze: int = 0,
         row_freeze: int | None = None,
-        if_merge_header: bool = False,
-        if_keep_missing_values: bool | None = None,
+        should_merge_header: bool = False,
+        should_keep_missing_values: bool | None = None,
         policy_autofit: SpecAutofitCellsPolicy | None = None,
         policy_scientific: SpecScientificPolicy | None = None,
     ) -> Any: ...
@@ -113,8 +113,8 @@ class XlsxWriter:
         cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         col_freeze: int = 0,
         row_freeze: int | None = None,
-        if_merge_header: bool = False,
-        if_keep_missing_values: bool | None = None,
+        should_merge_header: bool = False,
+        should_keep_missing_values: bool | None = None,
         policy_autofit: SpecAutofitCellsPolicy | None = None,
         policy_scientific: SpecScientificPolicy | None = None,
     ) -> Self:
@@ -126,8 +126,8 @@ class XlsxWriter:
             cols_decimal=cols_decimal,
             col_freeze=col_freeze,
             row_freeze=row_freeze,
-            if_merge_header=if_merge_header,
-            if_keep_missing_values=if_keep_missing_values,
+            should_merge_header=should_merge_header,
+            should_keep_missing_values=should_keep_missing_values,
             policy_autofit=policy_autofit,
             policy_scientific=policy_scientific,
         )

@@ -197,9 +197,9 @@ fn map_copy_tree_error(exception: CopyTreeError) -> PyErr {
     rule_symlink = "copy_symlinks",
     depth_limit = None,
     rule_depth_limit = "at_most",
-    num_workers_max = None,
-    if_keep_tree = true,
-    if_dry_run = false
+    workers_max = None,
+    should_keep_tree = true,
+    should_dry_run = false
 ))]
 #[allow(clippy::too_many_arguments)]
 fn copy_tree_py(
@@ -216,9 +216,9 @@ fn copy_tree_py(
     rule_symlink: &str,
     depth_limit: Option<usize>,
     rule_depth_limit: &str,
-    num_workers_max: Option<usize>,
-    if_keep_tree: bool,
-    if_dry_run: bool,
+    workers_max: Option<usize>,
+    should_keep_tree: bool,
+    should_dry_run: bool,
 ) -> PyResult<PyReportCopy> {
     let spec_cp_options = SpecCopyOptions {
         patterns_include_files,
@@ -231,9 +231,9 @@ fn copy_tree_py(
         rule_symlink: parse_rule_symlink(rule_symlink)?,
         depth_limit,
         rule_depth_limit: parse_rule_depth_limit(rule_depth_limit)?,
-        num_workers_max,
-        if_keep_tree,
-        if_dry_run,
+        workers_max,
+        should_keep_tree,
+        should_dry_run,
     };
 
     let report_copy = py.allow_threads(|| copy_tree(dir_source, dir_destination, spec_cp_options));

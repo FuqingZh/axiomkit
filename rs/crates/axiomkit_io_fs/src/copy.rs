@@ -45,7 +45,7 @@ struct SpecCopyContext {
     path_dir_dst: PathBuf,
     spec_cp_options: SpecCopyOptions,
     spec_cp_pats: SpecCopyPatterns,
-    n_workers_max: usize,
+    workers_max: usize,
     builder_cp_report: ReportCopyBuilder,
     set_visited_dirs: HashSet<(u64, u64)>,
     l_tasks_file_copy: Vec<SpecCopyTaskFile>,
@@ -58,7 +58,7 @@ struct SpecCopyContext {
 /// - conflict policies for destination files/directories,
 /// - symlink handling strategy,
 /// - optional depth limiting,
-/// - flatten (`if_keep_tree=false`) vs keep-tree copy mode,
+/// - flatten (`should_keep_tree=false`) vs keep-tree copy mode,
 /// - dry-run and worker count.
 ///
 /// This function performs:
@@ -128,14 +128,14 @@ where
         spec_cp_options.patterns_exclude_dirs.as_deref(),
         spec_cp_options.rule_pattern,
     )?;
-    let n_workers_max = calculate_worker_limit(spec_cp_options.num_workers_max);
+    let workers_max = calculate_worker_limit(spec_cp_options.workers_max);
 
     let mut spec_cp_ctx = SpecCopyContext {
         path_dir_src: path_dir_src.clone(),
         path_dir_dst,
         spec_cp_options,
         spec_cp_pats,
-        n_workers_max,
+        workers_max,
         builder_cp_report: ReportCopyBuilder::default(),
         set_visited_dirs: HashSet::new(),
         l_tasks_file_copy: Vec::new(),
@@ -175,7 +175,7 @@ fn flush_file_copy_tasks(spec_cp_ctx: &mut SpecCopyContext) {
         }
     };
 
-    if spec_cp_ctx.n_workers_max <= 1 {
+    if spec_cp_ctx.workers_max <= 1 {
         let l_results = l_tasks_file_copy
             .into_iter()
             .map(|spec_task| {
@@ -195,12 +195,12 @@ fn flush_file_copy_tasks(spec_cp_ctx: &mut SpecCopyContext) {
     }
 
     let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(spec_cp_ctx.n_workers_max)
+        .num_threads(spec_cp_ctx.workers_max)
         .build();
     let Ok(thread_pool) = thread_pool else {
         spec_cp_ctx.builder_cp_report.add_warning(format!(
             "Failed to initialize thread pool (workers={}); fallback to serial copy.",
-            spec_cp_ctx.n_workers_max
+            spec_cp_ctx.workers_max
         ));
         let l_results = l_tasks_file_copy
             .into_iter()
@@ -370,12 +370,12 @@ fn handle_dir_entry(
     let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
     let enum_rule_conflict_dir = spec_cp_ctx.spec_cp_options.rule_conflict_dir;
     let enum_rule_conflict_file = spec_cp_ctx.spec_cp_options.rule_conflict_file;
-    let if_keep_tree = spec_cp_ctx.spec_cp_options.if_keep_tree;
-    let if_dry_run = spec_cp_ctx.spec_cp_options.if_dry_run;
+    let should_keep_tree = spec_cp_ctx.spec_cp_options.should_keep_tree;
+    let should_dry_run = spec_cp_ctx.spec_cp_options.should_dry_run;
 
     if spec_dir_entry.if_is_symlink {
         if enum_rule_symlink == EnumCopySymlinkStrategy::SkipSymlinks {
-            if if_keep_tree && b_depth_within {
+            if should_keep_tree && b_depth_within {
                 spec_cp_ctx
                     .builder_cp_report
                     .add_counts(&["cnt_scanned", "cnt_matched", "cnt_skipped"], 1);
@@ -391,7 +391,7 @@ fn handle_dir_entry(
                     spec_dir_entry.path_dir_src_sub.display()
                 ),
             );
-            if if_keep_tree && b_depth_within {
+            if should_keep_tree && b_depth_within {
                 spec_cp_ctx
                     .builder_cp_report
                     .add_counts(&["cnt_scanned", "cnt_matched"], 1);
@@ -407,13 +407,13 @@ fn handle_dir_entry(
                 .builder_cp_report
                 .add_counts(&["cnt_scanned", "cnt_matched"], 1);
 
-            if if_keep_tree {
+            if should_keep_tree {
                 let path_dir_dst_sub = derive_destination_path(
                     &spec_dir_entry.path_dir_src_sub,
                     &spec_dir_entry.name_dir,
                     &spec_cp_ctx.path_dir_src,
                     &spec_cp_ctx.path_dir_dst,
-                    if_keep_tree,
+                    should_keep_tree,
                 );
                 if should_error_unsafe_destination_path(&path_dir_dst_sub, spec_cp_ctx) {
                     return false;
@@ -436,7 +436,7 @@ fn handle_dir_entry(
                     return false;
                 }
 
-                if if_dry_run {
+                if should_dry_run {
                     spec_cp_ctx.builder_cp_report.add_skipped();
                     return false;
                 }
@@ -461,7 +461,7 @@ fn handle_dir_entry(
                 return false;
             }
 
-            if if_dry_run {
+            if should_dry_run {
                 spec_cp_ctx.builder_cp_report.add_skipped();
                 return false;
             }
@@ -475,7 +475,7 @@ fn handle_dir_entry(
         }
     }
 
-    if if_keep_tree && b_depth_within {
+    if should_keep_tree && b_depth_within {
         spec_cp_ctx
             .builder_cp_report
             .add_counts(&["cnt_scanned", "cnt_matched"], 1);
@@ -484,7 +484,7 @@ fn handle_dir_entry(
             &spec_dir_entry.name_dir,
             &spec_cp_ctx.path_dir_src,
             &spec_cp_ctx.path_dir_dst,
-            if_keep_tree,
+            should_keep_tree,
         );
         if should_error_unsafe_destination_path(&path_dir_dst_sub, spec_cp_ctx) {
             return false;
@@ -498,7 +498,7 @@ fn handle_dir_entry(
             return false;
         }
 
-        if if_dry_run {
+        if should_dry_run {
             spec_cp_ctx.builder_cp_report.add_skipped();
         } else if let Err(e) = fs::create_dir_all(&path_dir_dst_sub) {
             spec_cp_ctx
@@ -608,19 +608,19 @@ fn handle_file_entry(
         }
     }
 
-    let if_keep_tree = spec_cp_ctx.spec_cp_options.if_keep_tree;
+    let should_keep_tree = spec_cp_ctx.spec_cp_options.should_keep_tree;
     let path_file_dst = derive_destination_path(
         &spec_file_entry.path_file_src,
         &spec_file_entry.name_file,
         &spec_cp_ctx.path_dir_src,
         &spec_cp_ctx.path_dir_dst,
-        if_keep_tree,
+        should_keep_tree,
     );
     if should_error_unsafe_destination_path(&path_file_dst, spec_cp_ctx) {
         return;
     }
 
-    if if_keep_tree
+    if should_keep_tree
         && let Some(path_parent_dst) = path_file_dst.parent()
         && let Err(e) = fs::create_dir_all(path_parent_dst)
     {
@@ -639,7 +639,7 @@ fn handle_file_entry(
         return;
     }
 
-    if spec_cp_ctx.spec_cp_options.if_dry_run {
+    if spec_cp_ctx.spec_cp_options.should_dry_run {
         spec_cp_ctx.builder_cp_report.add_skipped();
         return;
     }
@@ -732,7 +732,7 @@ mod tests {
         write_text(&src.join("a/file1.md"), "a");
 
         let spec_cp_options = SpecCopyOptions {
-            if_keep_tree: false,
+            should_keep_tree: false,
             patterns_include_files: Some(vec!["*.txt".to_string()]),
             ..SpecCopyOptions::default()
         };
@@ -979,7 +979,7 @@ mod tests {
         write_text(&src.join("c.txt"), "c");
 
         let spec_cp_options = SpecCopyOptions {
-            num_workers_max: Some(1),
+            workers_max: Some(1),
             ..SpecCopyOptions::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -999,7 +999,7 @@ mod tests {
         write_text(&src.join("a.txt"), "a");
 
         let spec_cp_options = SpecCopyOptions {
-            num_workers_max: Some(0),
+            workers_max: Some(0),
             ..SpecCopyOptions::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");

@@ -146,8 +146,8 @@ impl PyXlsxWriter {
         cols_decimal = None,
         col_freeze = 0,
         row_freeze = None,
-        if_merge_header = false,
-        if_keep_missing_values = None,
+        should_merge_header = false,
+        should_keep_missing_values = None,
         policy_autofit = None,
         policy_scientific = None
     ))]
@@ -162,8 +162,8 @@ impl PyXlsxWriter {
         cols_decimal: Option<&Bound<'py, PyAny>>,
         col_freeze: usize,
         row_freeze: Option<usize>,
-        if_merge_header: bool,
-        if_keep_missing_values: Option<bool>,
+        should_merge_header: bool,
+        should_keep_missing_values: Option<bool>,
         policy_autofit: Option<&Bound<'py, PyAny>>,
         policy_scientific: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<PyRefMut<'py, Self>> {
@@ -181,8 +181,8 @@ impl PyXlsxWriter {
             cols_decimal: parse_column_refs(cols_decimal)?,
             col_freeze,
             row_freeze,
-            if_merge_header,
-            if_keep_missing_values,
+            should_merge_header,
+            should_keep_missing_values,
             policy_autofit: parse_spec_autofit_cells_policy(policy_autofit)?
                 .unwrap_or_else(SpecAutofitCellsPolicy::default),
             policy_scientific: parse_spec_scientific_policy(policy_scientific)?
@@ -234,8 +234,8 @@ fn derive_dataframe_from_arrow_c_stream_capsule(
         .cast::<std::os::raw::c_char>();
 
     // Safety: We only pass pointers owned by the Python object for validation.
-    let if_valid_capsule = unsafe { pyffi::PyCapsule_IsValid(ptr_capsule, ptr_stream_name) };
-    if if_valid_capsule == 0 {
+    let is_capsule_valid = unsafe { pyffi::PyCapsule_IsValid(ptr_capsule, ptr_stream_name) };
+    if is_capsule_valid == 0 {
         return Err(PyValueError::new_err(
             "Expected a valid `arrow_array_stream` PyCapsule.",
         ));
