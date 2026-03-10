@@ -42,13 +42,13 @@ def _get_default_logger() -> ProtocolRunLogger:
         return cast(ProtocolRunLogger, logging.getLogger("axiomkit.runner"))
 
 
-def _log_success(cls_logger: ProtocolRunLogger, message: str) -> None:
+def _log_success(logger: ProtocolRunLogger, message: str) -> None:
     """Use loguru success level when available, fallback to info."""
-    fn_success = getattr(cls_logger, "success", None)
-    if callable(fn_success):
-        fn_success(message)
+    success_logger = getattr(logger, "success", None)
+    if callable(success_logger):
+        success_logger(message)
         return
-    cls_logger.info(message)
+    logger.info(message)
 
 
 R = TypeVar("R", bound=ProtocolTimedReport)
@@ -58,27 +58,29 @@ def _run_with_logging(
     *,
     title: str,
     lines_tail: int,
-    if_write_tail_to_stderr: bool,
+    should_write_tail_to_stderr: bool,
     logger: ProtocolRunLogger,
     fn_execute: Callable[[], R],
 ) -> R:
     t0 = time.perf_counter()
     try:
-        cls_report = fn_execute()
+        report = fn_execute()
     except subprocess.CalledProcessError as e:
-        n_elapsed = time.perf_counter() - t0
-        logger.error(f"Fail: [{title}] (rc={e.returncode}) in {n_elapsed:.1f}s")
-        c_tail = str(e.output or "")
-        if if_write_tail_to_stderr and lines_tail > 0 and c_tail:
-            sys.stderr.write(f"--- output tail (last {lines_tail} lines) ---\n{c_tail}")
+        elapsed_seconds = time.perf_counter() - t0
+        logger.error(f"Fail: [{title}] (rc={e.returncode}) in {elapsed_seconds:.1f}s")
+        tail_output = str(e.output or "")
+        if should_write_tail_to_stderr and lines_tail > 0 and tail_output:
+            sys.stderr.write(
+                f"--- output tail (last {lines_tail} lines) ---\n{tail_output}"
+            )
             sys.stderr.flush()
         raise
     except KeyboardInterrupt:
         logger.warning(f"KeyboardInterrupt received during [{title}], terminating...")
         raise
     else:
-        _log_success(logger, f"Done: [{title}] in {cls_report.seconds:.1f}s")
-        return cls_report
+        _log_success(logger, f"Done: [{title}] in {report.seconds:.1f}s")
+        return report
 
 
 def _terminate_process(
@@ -114,8 +116,8 @@ def derive_worker_distribution(
     threads: int,
     title: str = "",
     *,
-    per_threads_min: int = 2,
-    per_threads_max: int = 16,
+    threads_per_worker_min: int = 2,
+    threads_per_worker_max: int = 16,
     logger: ProtocolRunLogger | None = None,
 ) -> ReportWorkerDistribution:
     """Derive worker/thread split under a total thread budget.
@@ -124,14 +126,14 @@ def derive_worker_distribution(
         - ``workers >= 1`` and ``threads_per_worker >= 1``.
         - ``workers * threads_per_worker <= threads``.
         - Prefer larger ``threads_per_worker`` first (then derive workers).
-        - When ``threads < per_threads_min``, uses one worker with all threads.
+        - When ``threads < threads_per_worker_min``, uses one worker with all threads.
 
     Args:
         threads: Total available thread budget. Must be >= 1.
         title: Optional label for debug logs.
-        per_threads_min: Preferred minimum threads per worker. Must be >= 1.
-        per_threads_max: Preferred maximum threads per worker.
-            Must satisfy ``per_threads_max >= per_threads_min``.
+        threads_per_worker_min: Preferred minimum threads per worker. Must be >= 1.
+        threads_per_worker_max: Preferred maximum threads per worker.
+            Must satisfy ``threads_per_worker_max >= threads_per_worker_min``.
         logger: Optional logger implementing ``ProtocolRunLogger``.
             If omitted, defaults to ``loguru.logger`` when available.
             If loguru is unavailable, falls back to stdlib logging.
@@ -143,33 +145,38 @@ def derive_worker_distribution(
         ValueError: If inputs are out of range.
 
     Examples:
-        >>> derive_worker_distribution(threads=32, per_threads_min=2, per_threads_max=16)
+        >>> derive_worker_distribution(threads=32, threads_per_worker_min=2, threads_per_worker_max=16)
         ReportWorkerDistribution(workers=2, threads_per_worker=16)
-        >>> derive_worker_distribution(threads=1, per_threads_min=2, per_threads_max=16)
+        >>> derive_worker_distribution(threads=1, threads_per_worker_min=2, threads_per_worker_max=16)
         ReportWorkerDistribution(workers=1, threads_per_worker=1)
     """
     if threads < 1:
         raise ValueError(f"threads must be >= 1, got {threads}")
-    if per_threads_min < 1:
-        raise ValueError(f"per_threads_min must be >= 1, got {per_threads_min}")
-    if per_threads_max < per_threads_min:
+    if threads_per_worker_min < 1:
         raise ValueError(
-            "per_threads_max must be >= per_threads_min, "
-            f"got {per_threads_max} < {per_threads_min}"
+            f"threads_per_worker_min must be >= 1, got {threads_per_worker_min}"
+        )
+    if threads_per_worker_max < threads_per_worker_min:
+        raise ValueError(
+            "threads_per_worker_max must be >= threads_per_worker_min, "
+            f"got {threads_per_worker_max} < {threads_per_worker_min}"
         )
 
-    if threads < per_threads_min:
-        n_threads = threads
-        n_workers = 1
+    if threads < threads_per_worker_min:
+        threads_per_worker = threads
+        workers = 1
     else:
-        n_threads = min(per_threads_max, threads)
-        n_workers = max(1, threads // n_threads)
+        threads_per_worker = min(threads_per_worker_max, threads)
+        workers = max(1, threads // threads_per_worker)
 
-    cls_logger = logger or _get_default_logger()
-    cls_logger.debug(
-        f"Workers for `{title}`: {n_workers}, threads per worker: {n_threads}"
+    logger = logger or _get_default_logger()
+    logger.debug(
+        f"Workers for `{title}`: {workers}, threads per worker: {threads_per_worker}"
     )
-    return ReportWorkerDistribution(workers=n_workers, threads_per_worker=n_threads)
+    return ReportWorkerDistribution(
+        workers=workers,
+        threads_per_worker=threads_per_worker,
+    )
 
 
 # #endregion
@@ -193,7 +200,7 @@ def run_cmd(
     lines_tail: int = 100,
     timeout: float | None = None,
     logger: ProtocolRunLogger | None = None,
-    if_write_tail_to_stderr: bool = True,
+    should_write_tail_to_stderr: bool = True,
 ) -> ReportCmd:
     """Run one shell command and return a structured execution report.
 
@@ -210,7 +217,7 @@ def run_cmd(
         logger: Optional logger implementing ``ProtocolRunLogger``.
             If omitted, defaults to ``loguru.logger`` when available.
             If loguru is unavailable, falls back to stdlib logging.
-        if_write_tail_to_stderr: Whether failure tail should be printed to
+        should_write_tail_to_stderr: Whether failure tail should be printed to
             ``stderr``. Disable in library-only integration scenarios.
 
     Returns:
@@ -253,20 +260,20 @@ def run_cmd(
         ...     _ = run_cmd(
         ...         ["python3", "-c", "import sys; sys.exit(1)"],
         ...         title="Fail without stderr tail",
-        ...         if_write_tail_to_stderr=False,
+        ...         should_write_tail_to_stderr=False,
         ...     )
         ... except subprocess.CalledProcessError:
         ...     pass
     """
-    cls_logger = logger or _get_default_logger()
-    l_cmd = _normalize_cmd(cmd, label="cmd")
-    cls_logger.debug(f"RUN [{title}]:: {shlex.join(l_cmd)}")
+    logger = logger or _get_default_logger()
+    command = _normalize_cmd(cmd, label="cmd")
+    logger.debug(f"RUN [{title}]:: {shlex.join(command)}")
 
     return _run_with_logging(
         title=title,
         lines_tail=lines_tail,
-        if_write_tail_to_stderr=if_write_tail_to_stderr,
-        logger=cls_logger,
+        should_write_tail_to_stderr=should_write_tail_to_stderr,
+        logger=logger,
         fn_execute=lambda: execute_cmd(
             cmd=cmd,
             title=title,
@@ -311,30 +318,30 @@ def execute_cmd(
         subprocess.TimeoutExpired: Timeout reached while waiting for process.
     """
     t0 = time.perf_counter()
-    l_cmd = _normalize_cmd(cmd, label="cmd")
+    command = _normalize_cmd(cmd, label="cmd")
 
     q: deque[str] | None = (
         deque(maxlen=lines_tail) if lines_tail and lines_tail > 0 else None
     )
     p = None
-    n_return_code: int | None = None
+    return_code: int | None = None
 
     if file_log and file_log.parent != Path("."):
         file_log.parent.mkdir(parents=True, exist_ok=True)
 
     file_ctx = open(file_log, "a", encoding="utf-8") if file_log else nullcontext()
-    c_title = title or shlex.join(l_cmd)
+    command_title = title or shlex.join(command)
 
     try:
         with file_ctx as fh:
             if fh:
                 time_start = time.strftime("%Y-%m-%d %H:%M:%S")
-                fh.write(f"--- [{c_title}] started at {time_start} ---\n")
-                fh.write(f"cmd: {shlex.join(l_cmd)}\n\n")
+                fh.write(f"--- [{command_title}] started at {time_start} ---\n")
+                fh.write(f"cmd: {shlex.join(command)}\n\n")
                 fh.flush()
 
             p = subprocess.Popen(
-                l_cmd,
+                command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -350,34 +357,34 @@ def execute_cmd(
                 q.append(line) if lines_tail > 0 and q else None
 
             try:
-                n_return_code = p.wait(timeout=timeout)
+                return_code = p.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 _terminate_process(p)
                 raise
 
-        c_tail = "".join(q) if q else ""
-        t1 = time.perf_counter() - t0
+        tail_output = "".join(q) if q else ""
+        elapsed_seconds = time.perf_counter() - t0
 
         if file_log:
             with open(file_log, "a", encoding="utf-8") as fh:
                 fh.write(
-                    f"\n--- [{c_title}] finished rc={n_return_code} elapsed={t1:.1f}s ({t1 / 3600:.2f}h) ---\n"
+                    f"\n--- [{command_title}] finished rc={return_code} elapsed={elapsed_seconds:.1f}s ({elapsed_seconds / 3600:.2f}h) ---\n"
                 )
 
-        if n_return_code != 0:
+        if return_code != 0:
             raise subprocess.CalledProcessError(
-                n_return_code,
-                l_cmd,
-                output=c_tail,
+                return_code,
+                command,
+                output=tail_output,
             )
 
         return ReportCmd(
-            return_code=n_return_code,
-            seconds=t1,
-            hours=t1 / 3600,
-            cmd=l_cmd,
+            return_code=return_code,
+            seconds=elapsed_seconds,
+            hours=elapsed_seconds / 3600,
+            cmd=command,
             file_log=file_log,
-            tail=c_tail,
+            tail=tail_output,
         )
 
     finally:
@@ -413,27 +420,27 @@ def run_pipe(
     lines_tail: int = 100,
     timeout: float | None = None,
     logger: ProtocolRunLogger | None = None,
-    if_write_tail_to_stderr: bool = True,
+    should_write_tail_to_stderr: bool = True,
 ) -> ReportPipe:
     """Run shell command pipeline(s): ``cmd1 | cmd2 | ...``.
 
     Supports one call shape:
         - ``run_pipe(cmd1, cmd2, cmd3, ...)``
     """
-    cls_logger = logger or _get_default_logger()
+    logger = logger or _get_default_logger()
     if not cmds:
         raise ValueError("At least one command is required.")
-    l_cmds = [_normalize_cmd(cmd, label=f"cmds[{i}]") for i, cmd in enumerate(cmds)]
-    c_show = " | ".join(shlex.join(cmd) for cmd in l_cmds)
-    cls_logger.debug(f"RUN [{title}]:: {c_show}")
+    commands = [_normalize_cmd(cmd, label=f"cmds[{i}]") for i, cmd in enumerate(cmds)]
+    command_show = " | ".join(shlex.join(cmd) for cmd in commands)
+    logger.debug(f"RUN [{title}]:: {command_show}")
 
     return _run_with_logging(
         title=title,
         lines_tail=lines_tail,
-        if_write_tail_to_stderr=if_write_tail_to_stderr,
-        logger=cls_logger,
+        should_write_tail_to_stderr=should_write_tail_to_stderr,
+        logger=logger,
         fn_execute=lambda: execute_pipe(
-            cmds=l_cmds,
+            cmds=commands,
             title=title,
             file_log=file_log,
             lines_tail=lines_tail,
@@ -451,14 +458,14 @@ def execute_pipe(
     timeout: float | None = None,
 ) -> ReportPipe:
     """Execute one command pipeline with pipefail-like failure behavior."""
-    l_cmds = [
+    commands = [
         _normalize_cmd(
             cmd,
             label=f"cmds[{i}]",
         )
         for i, cmd in enumerate(cmds)
     ]
-    if not l_cmds:
+    if not commands:
         raise ValueError("cmds must contain at least one command.")
 
     if file_log and file_log.parent != Path("."):
@@ -468,9 +475,9 @@ def execute_pipe(
         deque(maxlen=lines_tail) if lines_tail and lines_tail > 0 else None
     )
     t0 = time.perf_counter()
-    c_title = title or " | ".join(shlex.join(cmd) for cmd in l_cmds)
-    l_proc: list[subprocess.Popen[str]] = []
-    l_stderr_threads: list[Thread] = []
+    command_title = title or " | ".join(shlex.join(cmd) for cmd in commands)
+    processes: list[subprocess.Popen[str]] = []
+    stderr_threads: list[Thread] = []
 
     file_ctx = open(file_log, "a", encoding="utf-8") if file_log else nullcontext()
 
@@ -482,11 +489,11 @@ def execute_pipe(
     ) -> None:
         try:
             for line in stream:
-                c_line = f"{prefix}{line}" if prefix else line
+                line_with_prefix = f"{prefix}{line}" if prefix else line
                 if fh:
-                    fh.write(c_line)
+                    fh.write(line_with_prefix)
                 if q is not None:
-                    q.append(c_line)
+                    q.append(line_with_prefix)
         finally:
             with suppress(Exception):
                 stream.close()
@@ -494,15 +501,15 @@ def execute_pipe(
     try:
         with file_ctx as fh:
             if fh:
-                c_started = time.strftime("%Y-%m-%d %H:%M:%S")
-                fh.write(f"--- [{c_title}] started at {c_started} ---\n")
-                for i, cmd in enumerate(l_cmds, start=1):
+                time_started = time.strftime("%Y-%m-%d %H:%M:%S")
+                fh.write(f"--- [{command_title}] started at {time_started} ---\n")
+                for i, cmd in enumerate(commands, start=1):
                     fh.write(f"cmd[{i}]: {shlex.join(cmd)}\n")
                 fh.write("\n")
                 fh.flush()
 
             stream_prev_out = None
-            for i, cmd in enumerate(l_cmds):
+            for i, cmd in enumerate(commands):
                 p = subprocess.Popen(
                     cmd,
                     stdin=stream_prev_out,
@@ -514,7 +521,7 @@ def execute_pipe(
                     close_fds=True,
                     encoding="utf-8",
                 )
-                l_proc.append(p)
+                processes.append(p)
 
                 if stream_prev_out is not None:
                     stream_prev_out.close()
@@ -527,72 +534,74 @@ def execute_pipe(
                     daemon=True,
                 )
                 th_err.start()
-                l_stderr_threads.append(th_err)
+                stderr_threads.append(th_err)
 
                 stream_prev_out = p.stdout
 
             assert stream_prev_out is not None
             _consume_stream(stream_prev_out, fh=fh)
 
-            n_deadline = (time.monotonic() + timeout) if timeout is not None else None
-            l_rc: list[int] = []
-            for p in l_proc:
-                if n_deadline is None:
-                    l_rc.append(p.wait())
+            deadline = (time.monotonic() + timeout) if timeout is not None else None
+            return_codes: list[int] = []
+            for p in processes:
+                if deadline is None:
+                    return_codes.append(p.wait())
                     continue
 
                 assert timeout is not None
-                n_remain = n_deadline - time.monotonic()
-                if n_remain <= 0:
-                    raise subprocess.TimeoutExpired(cmd=l_cmds[0], timeout=timeout)
-                l_rc.append(p.wait(timeout=n_remain))
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    raise subprocess.TimeoutExpired(cmd=commands[0], timeout=timeout)
+                return_codes.append(p.wait(timeout=remaining_seconds))
 
-            for th in l_stderr_threads:
-                th.join(timeout=1.0)
+            for thread in stderr_threads:
+                thread.join(timeout=1.0)
 
-            l_steps = [
+            steps = [
                 ReportPipeCmd(
                     index=i + 1,
                     cmd=cmd,
                     return_code=rc,
                 )
-                for i, (cmd, rc) in enumerate(zip(l_cmds, l_rc, strict=True))
+                for i, (cmd, rc) in enumerate(zip(commands, return_codes, strict=True))
             ]
-            l_failed_indices = [i + 1 for i, rc in enumerate(l_rc) if rc != 0]
-            n_pipeline_rc = l_rc[l_failed_indices[-1] - 1] if l_failed_indices else 0
+            failed_indices = [i + 1 for i, rc in enumerate(return_codes) if rc != 0]
+            pipeline_return_code = (
+                return_codes[failed_indices[-1] - 1] if failed_indices else 0
+            )
 
-            c_tail = "".join(q) if q else ""
-            t1 = time.perf_counter() - t0
+            tail_output = "".join(q) if q else ""
+            elapsed_seconds = time.perf_counter() - t0
 
             if fh:
                 fh.write(
-                    f"\n--- [{c_title}] finished rc={n_pipeline_rc} elapsed={t1:.1f}s ({t1 / 3600:.2f}h) ---\n"
+                    f"\n--- [{command_title}] finished rc={pipeline_return_code} elapsed={elapsed_seconds:.1f}s ({elapsed_seconds / 3600:.2f}h) ---\n"
                 )
                 fh.flush()
 
-            if n_pipeline_rc != 0:
-                idx_failed = l_failed_indices[-1] - 1
+            if pipeline_return_code != 0:
+                failed_index = failed_indices[-1] - 1
                 raise subprocess.CalledProcessError(
-                    returncode=n_pipeline_rc,
-                    cmd=l_cmds[idx_failed],
-                    output=c_tail,
+                    returncode=pipeline_return_code,
+                    cmd=commands[failed_index],
+                    output=tail_output,
                 )
 
             return ReportPipe(
                 return_code=0,
                 failed_indices=[],
-                steps=l_steps,
-                seconds=t1,
-                hours=t1 / 3600,
+                steps=steps,
+                seconds=elapsed_seconds,
+                hours=elapsed_seconds / 3600,
                 file_log=file_log,
-                tail=c_tail,
+                tail=tail_output,
             )
     except subprocess.TimeoutExpired:
-        for p in l_proc:
+        for p in processes:
             _terminate_process(p)
         raise
     finally:
-        for p in l_proc:
+        for p in processes:
             if p.poll() is None:
                 _kill_process_if_running(p)
 
@@ -608,21 +617,21 @@ def _normalize_cmd(cmd: Sequence[Any], *, label: str) -> list[str]:
     if not _is_non_string_sequence(cmd):
         raise TypeError(f"{label} must be a command sequence, got {type(cmd)!r}.")
 
-    l_items = list(cmd)
-    if not l_items:
+    items = list(cmd)
+    if not items:
         raise ValueError(f"{label} must not be empty.")
 
-    if any(isinstance(item, (bytes, bytearray)) for item in l_items):
+    if any(isinstance(item, (bytes, bytearray)) for item in items):
         raise TypeError(
             f"{label} contains bytes-like token; decode to str explicitly before calling."
         )
 
-    if any(_is_non_string_sequence(item) for item in l_items):
+    if any(_is_non_string_sequence(item) for item in items):
         raise TypeError(
             f"{label} must be a flat command sequence; nested sequence token detected."
         )
 
-    return [str(item) for item in l_items]
+    return [str(item) for item in items]
 
 
 # #endregion
@@ -656,11 +665,11 @@ def run_jobs(
     jobs: Iterable[TJob],
     fn_worker: Callable[[TJob], TResult],
     *,
-    max_workers: int = 1,
+    workers_max: int = 1,
     title: str = "Job",
     id_getter: Callable[[TJob], str] | None = None,
-    if_raise_on_interrupt: bool = True,
-    if_raise_on_failure: bool = True,
+    should_raise_on_interrupt: bool = True,
+    should_raise_on_failure: bool = True,
     file_failed_log: Path | None = None,
     logger: ProtocolRunLogger | None = None,
 ) -> ReportJobs[TResult]:
@@ -670,14 +679,14 @@ def run_jobs(
         jobs: Iterable of job payloads.
         fn_worker: Worker function that processes one job. Raise exceptions to
             mark job failure.
-        max_workers: Thread pool size.
+        workers_max: Thread pool size.
         title: Label used in logs.
         id_getter: Optional callable to derive job ID string. If omitted,
             built-in rules are used: ``job.id`` -> ``job.ID`` -> ``job["id"]`` ->
             ``job["ID"]`` -> ``str(job)``.
-        if_raise_on_interrupt: Whether to re-raise ``KeyboardInterrupt`` after
+        should_raise_on_interrupt: Whether to re-raise ``KeyboardInterrupt`` after
             best-effort cancellation.
-        if_raise_on_failure: Whether to raise when any job fails.
+        should_raise_on_failure: Whether to raise when any job fails.
         file_failed_log: Optional path to write failed jobs as
             ``<job_id>\t<error_message>``.
         logger: Optional logger implementing ``ProtocolRunLogger``.
@@ -688,8 +697,8 @@ def run_jobs(
         Aggregated jobs report including successful job results.
 
     Raises:
-        RuntimeError: If failures exist and ``if_raise_on_failure`` is True.
-        KeyboardInterrupt: If interrupted and ``if_raise_on_interrupt`` is True.
+        RuntimeError: If failures exist and ``should_raise_on_failure`` is True.
+        KeyboardInterrupt: If interrupted and ``should_raise_on_interrupt`` is True.
 
     Examples:
         Basic usage:
@@ -697,7 +706,7 @@ def run_jobs(
         >>> run_jobs(
         ...     jobs=[1, 2, 3],
         ...     fn_worker=lambda n: n * n,
-        ...     max_workers=2,
+        ...     workers_max=2,
         ... )
         ReportJobs(cnt_done=3, cnt_failed=0, jobs_done=[...], jobs_failed=[])
 
@@ -708,8 +717,8 @@ def run_jobs(
         ...     jobs=jobs,
         ...     fn_worker=lambda cmd: run_cmd(cmd, title=f"Run: {' '.join(cmd)}"),
         ...     id_getter=lambda cmd: " ".join(cmd),
-        ...     max_workers=2,
-        ...     if_raise_on_failure=True,
+        ...     workers_max=2,
+        ...     should_raise_on_failure=True,
         ... )
 
         Structured jobs with composite IDs:
@@ -725,7 +734,7 @@ def run_jobs(
         ...         title=f"{j['sample']}::{j['stage']}",
         ...     ),
         ...     id_getter=lambda j: f"{j['sample']}/{j['stage']}",
-        ...     max_workers=2,
+        ...     workers_max=2,
         ... )
 
         Complex worker with per-job log files and richer IDs:
@@ -735,99 +744,99 @@ def run_jobs(
         ...     {"sample": "A01", "lane": "L002", "cmd": ["echo", "A01-L002"]},
         ... ]
         >>> def _worker(job):
-        ...     c_id = f"{job['sample']}_{job['lane']}"
+        ...     job_id = f"{job['sample']}_{job['lane']}"
         ...     return run_cmd(
         ...         job["cmd"],
-        ...         title=f"Process {c_id}",
-        ...         file_log=Path("logs") / f"{c_id}.log",
+        ...         title=f"Process {job_id}",
+        ...         file_log=Path("logs") / f"{job_id}.log",
         ...         lines_tail=200,
         ...     )
         >>> run_jobs(
         ...     jobs=jobs,
         ...     fn_worker=_worker,
         ...     id_getter=lambda j: f"{j['sample']}::{j['lane']}::{j['cmd'][0]}",
-        ...     max_workers=2,
-        ...     if_raise_on_failure=True,
+        ...     workers_max=2,
+        ...     should_raise_on_failure=True,
         ... )
     """
-    cls_logger = logger or _get_default_logger()
+    logger = logger or _get_default_logger()
 
-    if max_workers < 1:
-        raise ValueError(f"max_workers must be >= 1, got {max_workers}")
+    if workers_max < 1:
+        raise ValueError(f"max_workers must be >= 1, got {workers_max}")
 
-    l_jobs = list(jobs)
-    if not l_jobs:
+    jobs = list(jobs)
+    if not jobs:
         return ReportJobs(cnt_done=0, cnt_failed=0, jobs_done=[], jobs_failed=[])
 
-    l_failed: list[SpecReportJobFailed] = []
-    l_done: list[SpecReportJobDone[TResult]] = []
-    n_done = 0
-    n_total = len(l_jobs)
-    dict_futs: dict[Future[TResult], TJob] = {}
-    cls_executor: ThreadPoolExecutor | None = None
+    jobs_failed: list[SpecReportJobFailed] = []
+    jobs_done: list[SpecReportJobDone[TResult]] = []
+    cnt_jobs_done = 0
+    cnt_jobs_total = len(jobs)
+    futures_by_job: dict[Future[TResult], TJob] = {}
+    executor: ThreadPoolExecutor | None = None
 
     try:
-        cls_executor = ThreadPoolExecutor(max_workers=max_workers)
-        dict_futs = {cls_executor.submit(fn_worker, j): j for j in l_jobs}
-        for fut in as_completed(dict_futs):
-            j = dict_futs[fut]
-            sid = _resolve_job_id(job=j, id_getter=id_getter)
+        executor = ThreadPoolExecutor(max_workers=workers_max)
+        futures_by_job = {executor.submit(fn_worker, j): j for j in jobs}
+        for future in as_completed(futures_by_job):
+            job = futures_by_job[future]
+            job_id = _resolve_job_id(job=job, id_getter=id_getter)
             try:
-                v_result = fut.result()
-                n_done += 1
-                l_done.append(SpecReportJobDone(id=sid, payload=v_result))
-                if n_done % 10 == 0 or n_done == n_total:
-                    cls_logger.info(f"[{title}] Completed: {n_done}/{n_total}")
+                result = future.result()
+                cnt_jobs_done += 1
+                jobs_done.append(SpecReportJobDone(id=job_id, payload=result))
+                if cnt_jobs_done % 10 == 0 or cnt_jobs_done == cnt_jobs_total:
+                    logger.info(f"[{title}] Completed: {cnt_jobs_done}/{cnt_jobs_total}")
             except Exception as e:
-                l_failed.append(SpecReportJobFailed(id=sid, msg_error=str(e)))
-                cls_logger.error(f"[{title}] Failed {sid}: {e}")
+                jobs_failed.append(SpecReportJobFailed(id=job_id, msg_error=str(e)))
+                logger.error(f"[{title}] Failed {job_id}: {e}")
 
     except KeyboardInterrupt:
-        cls_logger.warning(
-            f"[{title}] KeyboardInterrupt. Completed: {len(l_jobs) - len(l_failed)}/{len(l_jobs)}"
+        logger.warning(
+            f"[{title}] KeyboardInterrupt. Completed: {len(jobs) - len(jobs_failed)}/{len(jobs)}"
         )
-        for fut in dict_futs.keys():
+        for future in futures_by_job.keys():
             with suppress(Exception):
-                fut.cancel()
-        if cls_executor is not None:
+                future.cancel()
+        if executor is not None:
             try:
-                cls_executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False, cancel_futures=True)
             except TypeError:
-                cls_executor.shutdown(wait=False)
-        if if_raise_on_interrupt:
+                executor.shutdown(wait=False)
+        if should_raise_on_interrupt:
             raise
 
     finally:
-        if cls_executor is not None:
+        if executor is not None:
             try:
-                cls_executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False, cancel_futures=True)
             except TypeError:
-                cls_executor.shutdown(wait=False)
+                executor.shutdown(wait=False)
 
-    cls_report = ReportJobs(
-        cnt_done=n_done,
-        cnt_failed=len(l_failed),
-        jobs_done=l_done,
-        jobs_failed=l_failed,
+    report = ReportJobs(
+        cnt_done=cnt_jobs_done,
+        cnt_failed=len(jobs_failed),
+        jobs_done=jobs_done,
+        jobs_failed=jobs_failed,
     )
 
-    if file_failed_log and l_failed:
+    if file_failed_log and jobs_failed:
         file_failed_log.parent.mkdir(parents=True, exist_ok=True)
         file_failed_log.write_text(
-            "\n".join(f"{job.id}\t{job.msg_error}" for job in l_failed),
+            "\n".join(f"{job.id}\t{job.msg_error}" for job in jobs_failed),
             encoding="utf-8",
         )
-        cls_logger.error(
-            f"[{title}] Fail: {cls_report.cnt_failed} tasks. See: {file_failed_log}"
+        logger.error(
+            f"[{title}] Fail: {report.cnt_failed} tasks. See: {file_failed_log}"
         )
 
-    if if_raise_on_failure and l_failed:
-        c_info_log = f" See {file_failed_log} for details." if file_failed_log else ""
+    if should_raise_on_failure and jobs_failed:
+        info_log = f" See {file_failed_log} for details." if file_failed_log else ""
         raise RuntimeError(
-            f"[{title}] {cls_report.cnt_failed}/{n_total} tasks failed.{c_info_log}"
+            f"[{title}] {report.cnt_failed}/{cnt_jobs_total} tasks failed.{info_log}"
         )
 
-    return cls_report
+    return report
 
 
 def _resolve_job_id(
@@ -855,23 +864,23 @@ def _default_job_id(job: object) -> str:
         4) ``job['ID']`` (if mapping-like)
         5) ``str(job)``
     """
-    c_attr_id = getattr(job, "id", None)
-    if c_attr_id is not None:
-        return str(c_attr_id)
+    attr_id = getattr(job, "id", None)
+    if attr_id is not None:
+        return str(attr_id)
 
-    c_attr_ID = getattr(job, "ID", None)
-    if c_attr_ID is not None:
-        return str(c_attr_ID)
+    attr_id_upper = getattr(job, "ID", None)
+    if attr_id_upper is not None:
+        return str(attr_id_upper)
 
     if isinstance(job, Mapping):
-        cls_job_map = cast(Mapping[str, object], job)
-        if (v_id := cls_job_map.get("id")) is not None:
-            return str(v_id)
-        if (v_ID := cls_job_map.get("ID")) is not None:
-            return str(v_ID)
+        job_map = cast(Mapping[str, object], job)
+        if (value_id := job_map.get("id")) is not None:
+            return str(value_id)
+        if (value_id_upper := job_map.get("ID")) is not None:
+            return str(value_id_upper)
 
-    cls_job_obj = cast(object, job)
-    return str(cls_job_obj)
+    job_object = cast(object, job)
+    return str(job_object)
 
 
 # #endregion

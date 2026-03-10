@@ -182,17 +182,17 @@ class ArgGroupRegistry:
         Returns:
             ArgumentGroupHandler: Cached or newly created group handler.
         """
-        if (c_key := EnumGroupKey(key)) not in self._groups:
-            title, desc = DICT_ARG_GROUP_META[c_key]
+        if (group_key := EnumGroupKey(key)) not in self._groups:
+            title, desc = DICT_ARG_GROUP_META[group_key]
             group = self.parser.add_argument_group(title, description=desc)
-            self._groups[c_key] = ArgumentGroupHandler(
-                key=c_key,
+            self._groups[group_key] = ArgumentGroupHandler(
+                key=group_key,
                 _adder=group,
                 _parser_reg=self,
                 _params=self.params,
             )
 
-        return self._groups[c_key]
+        return self._groups[group_key]
 
 
 class CommandBuilder:
@@ -252,10 +252,10 @@ class CommandBuilder:
         self._order = order
         self._param_keys = param_keys
         self.group_ops: list[Callable[[ArgGroupRegistry], None]] = []
-        self._if_closed = False
+        self.is_closed = False
 
     def assert_open(self) -> None:
-        if self._if_closed:
+        if self.is_closed:
             raise ValueError(
                 f"Command builder {self._id!r} is already closed; "
                 "do not mutate after done()."
@@ -280,21 +280,21 @@ class CommandBuilder:
             ParserBuilder: Parent builder for continued chaining.
         """
         self.assert_open()
-        self._if_closed = True
+        self.is_closed = True
 
-        l_group_ops = tuple(self.group_ops)
-        fn_base = self._arg_builder
-        cls_params = self._owner.params
+        group_ops = tuple(self.group_ops)
+        base_arg_builder = self._arg_builder
+        params = self._owner.params
 
         def _build_args(
             parser: argparse.ArgumentParser,
         ) -> argparse.ArgumentParser | None:
-            if fn_base is not None:
-                fn_base(parser)
+            if base_arg_builder is not None:
+                base_arg_builder(parser)
 
-            reg = ArgGroupRegistry(parser=parser, params=cls_params)
-            for op in l_group_ops:
-                op(reg)
+            group_registry = ArgGroupRegistry(parser=parser, params=params)
+            for operation in group_ops:
+                operation(group_registry)
             return parser
 
         self._owner.register_command(
@@ -335,12 +335,12 @@ class GroupBuilder:
             GroupBuilder: ``self`` for fluent chaining.
         """
         self._command_builder.assert_open()
-        tup_flags = tuple(name_or_flags)
-        dict_kwargs = dict(kwargs)
-        c_key = self._key
+        flags = tuple(name_or_flags)
+        keyword_args = dict(kwargs)
+        group_key = self._key
 
         def _op(reg: ArgGroupRegistry) -> None:
-            reg.select_group(c_key).add_argument(*tup_flags, **dict_kwargs)
+            reg.select_group(group_key).add_argument(*flags, **keyword_args)
 
         self._command_builder.group_ops.append(_op)
         return self
@@ -380,11 +380,11 @@ class GroupBuilder:
             previously registered ids.
         """
         self._command_builder.assert_open()
-        tup_keys = tuple(param_keys)
-        c_key = self._key
+        param_key_tuple = tuple(param_keys)
+        group_key = self._key
 
         def _op(reg: ArgGroupRegistry) -> None:
-            reg.select_group(c_key).extract_params(*tup_keys)
+            reg.select_group(group_key).extract_params(*param_key_tuple)
 
         self._command_builder.group_ops.append(_op)
         return self
@@ -656,10 +656,10 @@ class ParserBuilder:
         title: str = "Commands",
         dest: str = "command",
         kind_formatter: type[argparse.HelpFormatter] | None = SmartFormatter,
-        if_required: bool = True,
-        if_include_group_in_help: bool = True,
-        if_sort_specs: bool = True,
-        if_apply_param_keys: bool = True,
+        should_require_command: bool = True,
+        should_include_group_in_help: bool = True,
+        should_sort_specs: bool = True,
+        should_apply_param_keys: bool = True,
     ) -> argparse.ArgumentParser:
         """Materialize command specs into subparsers and return parser.
 
@@ -672,10 +672,10 @@ class ParserBuilder:
             title: Subparser section title shown in help.
             dest: Namespace field that stores selected command id.
             kind_formatter: Subparser help formatter class.
-            if_required: Whether command selection is mandatory.
-            if_include_group_in_help: Whether to prefix help by command group.
-            if_sort_specs: Whether command specs are sorted.
-            if_apply_param_keys: Whether ``SpecCommand.param_keys`` are materialized.
+            should_require_command: Whether command selection is mandatory.
+            should_include_group_in_help: Whether to prefix help by command group.
+            should_sort_specs: Whether command specs are sorted.
+            should_apply_param_keys: Whether ``SpecCommand.param_keys`` are materialized.
 
         Returns:
             argparse.ArgumentParser: The underlying parser.
@@ -690,14 +690,14 @@ class ParserBuilder:
             title=title,
             dest=dest,
             kind_formatter=kind_formatter,
-            if_required=if_required,
-            if_include_group_in_help=if_include_group_in_help,
-            if_sort_specs=if_sort_specs,
+            should_require_command=should_require_command,
+            should_include_group_in_help=should_include_group_in_help,
+            should_sort_specs=should_sort_specs,
             param_registry=self.params,
             group_registry_factory=lambda p: ArgGroupRegistry(
                 parser=p,
                 params=self.params,
             ),
-            if_apply_param_keys=if_apply_param_keys,
+            should_apply_param_keys=should_apply_param_keys,
         )
         return self.parser

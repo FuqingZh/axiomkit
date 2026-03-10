@@ -36,9 +36,9 @@ def _normalize_param_key(key: ParamKey) -> str:
 
 def default_reserved_param_dests(*, command_dest: str = "command") -> set[str]:
     """Return reserved destination names for parameter materialization."""
-    set_dests = set(_RESERVED_PARAM_DESTS)
-    set_dests.add(command_dest)
-    return set_dests
+    reserved_dests = set(_RESERVED_PARAM_DESTS)
+    reserved_dests.add(command_dest)
+    return reserved_dests
 
 
 def _iter_parser_actions(parser: argparse.ArgumentParser) -> Sequence[argparse.Action]:
@@ -51,18 +51,18 @@ def _iter_parser_actions(parser: argparse.ArgumentParser) -> Sequence[argparse.A
 
 def _collect_existing_dests(parser: argparse.ArgumentParser) -> set[str]:
     """Collect existing destination names from parser actions."""
-    set_dests: set[str] = set()
+    existing_dests: set[str] = set()
     for action in _iter_parser_actions(parser):
-        set_dests.add(action.dest)
-    return set_dests
+        existing_dests.add(action.dest)
+    return existing_dests
 
 
 def _collect_existing_flags(parser: argparse.ArgumentParser) -> set[str]:
     """Collect existing option flags from parser actions."""
-    set_flags: set[str] = set()
+    existing_flags: set[str] = set()
     for action in _iter_parser_actions(parser):
-        set_flags |= set(action.option_strings)
-    return set_flags
+        existing_flags |= set(action.option_strings)
+    return existing_flags
 
 
 class ParserRegistry(Protocol):
@@ -127,18 +127,18 @@ class CommandRegistry:
         """
         return self._core.get(key)
 
-    def list_commands(self, if_sort: bool = True) -> list[SpecCommand]:
+    def list_commands(self, should_sort: bool = True) -> list[SpecCommand]:
         """List registered command specs.
 
         Args:
-            if_sort:
+            should_sort:
                 Whether to sort by ``(group, order, id)``.
                 If ``False``, insertion order is preserved.
 
         Returns:
             list[SpecCommand]: Registered command specifications.
         """
-        if not if_sort:
+        if not should_sort:
             return self._core.list_specs(kind_sort="insertion")
         return self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
 
@@ -149,13 +149,13 @@ class CommandRegistry:
         title: str = "Commands",
         dest: str = "command",
         kind_formatter: type[argparse.HelpFormatter] | None = SmartFormatter,
-        if_required: bool = True,
-        if_include_group_in_help: bool = True,
-        if_sort_specs: bool = True,
+        should_require_command: bool = True,
+        should_include_group_in_help: bool = True,
+        should_sort_specs: bool = True,
         param_registry: "ParamRegistry | None" = None,
         group_registry_factory: Callable[[argparse.ArgumentParser], ParserRegistry]
         | None = None,
-        if_apply_param_keys: bool = True,
+        should_apply_param_keys: bool = True,
     ):
         """Build argparse subparsers from command specs.
 
@@ -164,16 +164,16 @@ class CommandRegistry:
             title: Subparser section title in help output.
             dest: Namespace field that stores selected command.
             kind_formatter: Formatter class for each command subparser.
-            if_required: Whether command selection is required.
-            if_include_group_in_help:
+            should_require_command: Whether command selection is required.
+            should_include_group_in_help:
                 Whether to prefix command help with group tag.
-            if_sort_specs: Whether to sort command specs before build.
+            should_sort_specs: Whether to sort command specs before build.
             param_registry:
                 Registry used to apply per-command ``param_keys``.
             group_registry_factory:
                 Factory that builds a ``ParserRegistry`` wrapper for each
                 command subparser.
-            if_apply_param_keys:
+            should_apply_param_keys:
                 Whether to materialize ``SpecCommand.param_keys``.
 
         Returns:
@@ -181,7 +181,7 @@ class CommandRegistry:
 
         Raises:
             ValueError:
-                If ``if_apply_param_keys=True`` and required dependencies are
+                If ``should_apply_param_keys=True`` and required dependencies are
                 missing for commands that contain ``param_keys``.
 
         Examples:
@@ -195,26 +195,30 @@ class CommandRegistry:
             >>> ns.command
             'run'
         """
-        cls_sub = parser.add_subparsers(title=title, dest=dest, required=if_required)
+        subparsers = parser.add_subparsers(
+            title=title,
+            dest=dest,
+            required=should_require_command,
+        )
 
-        cls_fmt = kind_formatter or parser.formatter_class
-        for spec in self.list_commands(if_sort=if_sort_specs):
-            c_help = spec.help
-            if if_include_group_in_help and spec.group:
-                c_help = f"\\[{spec.group}] {c_help}"
+        formatter_type = kind_formatter or parser.formatter_class
+        for spec in self.list_commands(should_sort=should_sort_specs):
+            help_text = spec.help
+            if should_include_group_in_help and spec.group:
+                help_text = f"\\[{spec.group}] {help_text}"
 
-            sub = cls_sub.add_parser(
+            subparser = subparsers.add_parser(
                 spec.id,
-                help=c_help,
-                formatter_class=cls_fmt,
+                help=help_text,
+                formatter_class=formatter_type,
             )
-            sub.set_defaults(_cmd_entry=spec.entry, _cmd_group=spec.group)
-            spec.arg_builder(sub)
+            subparser.set_defaults(_cmd_entry=spec.entry, _cmd_group=spec.group)
+            spec.arg_builder(subparser)
 
-            if if_apply_param_keys and spec.param_keys:
+            if should_apply_param_keys and spec.param_keys:
                 if param_registry is None:
                     raise ValueError(
-                        "`param_registry` is required when `if_apply_param_keys=True` "
+                        "`param_registry` is required when `should_apply_param_keys=True` "
                         "and command has `param_keys`."
                     )
                 if group_registry_factory is None:
@@ -223,12 +227,12 @@ class CommandRegistry:
                     )
 
                 param_registry.apply_param_specs(
-                    parser_reg=group_registry_factory(sub),
+                    parser_reg=group_registry_factory(subparser),
                     keys=spec.param_keys,
                     reserved_dests=default_reserved_param_dests(command_dest=dest),
                 )
 
-        return cls_sub
+        return subparsers
 
 
 class ParamRegistry:
@@ -291,17 +295,17 @@ class ParamRegistry:
         Raises:
             ValueError: If the key is unknown.
         """
-        c_key = _normalize_param_key(key)
+        param_key = _normalize_param_key(key)
         try:
-            return self._core.get(c_key)
+            return self._core.get(param_key)
         except ValueError as e:
-            l_ids = self._core.list_ids()
+            available_ids = self._core.list_ids()
             raise ValueError(
-                f"Unknown param id: {c_key!r}. "
+                f"Unknown param id: {param_key!r}. "
                 "This parameter is not registered in ParamRegistry. "
                 "Register it first via `register_params(...)`, then call "
                 "`extract_params(...)` / `apply_param_specs(...)`. "
-                f"Available ids: {l_ids}."
+                f"Available ids: {available_ids}."
             ) from e
 
     def contains_param(self, key: ParamKey) -> bool:
@@ -325,31 +329,31 @@ class ParamRegistry:
         *,
         scope: EnumScope | None = None,
         group: str | None = None,
-        if_sort: bool = True,
+        should_sort: bool = True,
     ) -> list[SpecParam]:
         """List registered parameter specs with optional filtering.
 
         Args:
             scope: Optional scope filter.
             group: Optional group filter.
-            if_sort:
+            should_sort:
                 Whether to sort by ``(group, order, id)``.
                 If ``False``, insertion order is preserved.
 
         Returns:
             list[SpecParam]: Filtered parameter specs.
         """
-        if not if_sort:
-            cls_specs = self._core.list_specs(kind_sort="insertion")
+        if not should_sort:
+            specs = self._core.list_specs(kind_sort="insertion")
         else:
-            cls_specs = self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
+            specs = self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
 
         if scope is not None:
-            cls_specs = [s for s in cls_specs if s.scope == scope]
+            specs = [spec for spec in specs if spec.scope == scope]
         if group is not None:
-            cls_specs = [s for s in cls_specs if s.group == group]
+            specs = [spec for spec in specs if spec.group == group]
 
-        return cls_specs
+        return specs
 
     def apply_param_specs(
         self,
@@ -379,58 +383,58 @@ class ParamRegistry:
 
         parser = parser_reg.parser
 
-        set_existing_dests = _collect_existing_dests(parser)
-        set_existing_flags = _collect_existing_flags(parser)
+        existing_dests = _collect_existing_dests(parser)
+        existing_flags = _collect_existing_flags(parser)
 
-        dict_seen_dests: dict[str, str] = {}
-        dict_seen_flags: dict[str, str] = {}
+        seen_dests: dict[str, str] = {}
+        seen_flags: dict[str, str] = {}
 
-        for k in keys:
-            cls_spec_ = self.select_param(k)
-            if cls_spec_.if_deprecated:
+        for key in keys:
+            spec = self.select_param(key)
+            if spec.is_deprecated:
                 warnings.warn(
                     (
-                        f"Deprecated param: {cls_spec_.id!r}; "
-                        f"use {cls_spec_.replace_by!r} instead."
+                        f"Deprecated param: {spec.id!r}; "
+                        f"use {spec.replace_by!r} instead."
                     ),
                     category=UserWarning,
                     stacklevel=2,
                 )
-            if cls_spec_.arg_builder is None:
-                raise ValueError(f"`SpecParam` missing `arg_builder`: {cls_spec_.id!r}")
+            if spec.arg_builder is None:
+                raise ValueError(f"`SpecParam` missing `arg_builder`: {spec.id!r}")
 
-            c_dest_ = cls_spec_.resolved_dest
-            tup_flags_ = cls_spec_.resolved_flags
+            dest = spec.resolved_dest
+            flags = spec.resolved_flags
 
-            if c_dest_ in reserved_dests:
+            if dest in reserved_dests:
                 raise ValueError(
-                    f"Param dest is reserved: {c_dest_!r} (spec id: {cls_spec_.id!r})"
+                    f"Param dest is reserved: {dest!r} (spec id: {spec.id!r})"
                 )
-            if c_dest_ in set_existing_dests:
+            if dest in existing_dests:
                 raise ValueError(
-                    f"Param dest already exists on parser: {c_dest_!r} (spec id: {cls_spec_.id!r})"
+                    f"Param dest already exists on parser: {dest!r} (spec id: {spec.id!r})"
                 )
-            if c_dest_ in dict_seen_dests:
+            if dest in seen_dests:
                 raise ValueError(
-                    f"Param dest collision: {c_dest_!r} "
-                    f"(spec ids: {dict_seen_dests[c_dest_]!r}, {cls_spec_.id!r})"
+                    f"Param dest collision: {dest!r} "
+                    f"(spec ids: {seen_dests[dest]!r}, {spec.id!r})"
                 )
-            dict_seen_dests[c_dest_] = cls_spec_.id
+            seen_dests[dest] = spec.id
 
-            for _f in tup_flags_:
-                if _f in set_existing_flags:
+            for flag in flags:
+                if flag in existing_flags:
                     raise ValueError(
-                        f"Param flag already exists on parser: {_f!r} (spec id: {cls_spec_.id!r})"
+                        f"Param flag already exists on parser: {flag!r} (spec id: {spec.id!r})"
                     )
-                if _f in dict_seen_flags:
+                if flag in seen_flags:
                     raise ValueError(
-                        f"Param flag collision: {_f!r} "
-                        f"(spec ids: {dict_seen_flags[_f]!r}, {cls_spec_.id!r})"
+                        f"Param flag collision: {flag!r} "
+                        f"(spec ids: {seen_flags[flag]!r}, {spec.id!r})"
                     )
-                dict_seen_flags[_f] = cls_spec_.id
+                seen_flags[flag] = spec.id
 
-            cls_group = parser_reg.select_group(cls_spec_.group)
-            cls_spec_.arg_builder(cls_group, cls_spec_)
+            group = parser_reg.select_group(spec.group)
+            spec.arg_builder(group, spec)
 
-            set_existing_dests.add(c_dest_)
-            set_existing_flags |= set(tup_flags_)
+            existing_dests.add(dest)
+            existing_flags |= set(flags)

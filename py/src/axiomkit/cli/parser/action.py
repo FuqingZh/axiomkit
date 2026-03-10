@@ -21,9 +21,9 @@ class SpecPath:
     Attributes:
         kind_entry: Expected entry type, one of {"dir", "file", "exe"}.
         allowed_file_exts: Allowed file extensions (lowercase, no leading dots).
-        if_must_exist: Whether the path must already exist.
-        if_readable: Whether the path must be readable (if it exists).
-        if_writable: Whether the path must be writable (mainly for outputs).
+        should_exist: Whether the path must already exist.
+        is_readable: Whether the path must be readable (if it exists).
+        is_writable: Whether the path must be writable (mainly for outputs).
 
     Examples:
         Explicit file rule with suffix constraints:
@@ -31,15 +31,15 @@ class SpecPath:
         >>> spec = SpecPath(
         ...     kind_entry="file",
         ...     allowed_file_exts=("tsv", "tsv.gz"),
-        ...     if_must_exist=True,
+        ...     should_exist=True,
         ... )
 
         Output directory that may not exist yet:
 
         >>> out_spec = SpecPath(
         ...     kind_entry="dir",
-        ...     if_must_exist=False,
-        ...     if_writable=True,
+        ...     should_exist=False,
+        ...     is_writable=True,
         ... )
     """
 
@@ -47,11 +47,11 @@ class SpecPath:
     # file-only: allowed extensions (case-insensitive, without leading dots)
     allowed_file_exts: tuple[str, ...] = ()
     # whether the target must already exist (useful for output paths if False)
-    if_must_exist: bool = True
-    # file/dir readability checks (only when if_must_exist=True)
-    if_readable: bool = True
+    should_exist: bool = True
+    # file/dir readability checks (only when should_exist=True)
+    is_readable: bool = True
     # file/dir writability checks (mostly for outputs; only enforced when True)
-    if_writable: bool = False
+    is_writable: bool = False
 
 
 class ActionPath(argparse.Action):
@@ -67,7 +67,7 @@ class ActionPath(argparse.Action):
         >>> parser.add_argument("--file_in", action=ActionPath.file(exts=("tsv",)))
         >>> parser.add_argument(
         ...     "--dir_out",
-        ...     action=ActionPath.dir(if_must_exist=False, if_writable=True),
+        ...     action=ActionPath.dir(should_exist=False, is_writable=True),
         ... )
         >>> parser.add_argument("--path_rscript", action=ActionPath.exe(), default="Rscript")
 
@@ -99,9 +99,9 @@ class ActionPath(argparse.Action):
         spec: SpecPath | None = None,
         kind_entry: Literal["dir", "file", "exe"] = "file",
         allowed_file_exts: Iterable[str] | None = None,
-        if_must_exist: bool = True,
-        if_readable: bool = True,
-        if_writable: bool = False,
+        should_exist: bool = True,
+        is_readable: bool = True,
+        is_writable: bool = False,
         **kwargs: Any,
     ) -> None:
         """Construct a ActionPath.
@@ -112,9 +112,9 @@ class ActionPath(argparse.Action):
             spec: Prebuilt ``SpecPath``; overrides other spec params when set.
             kind_entry: Expected entry type when ``spec`` is not provided.
             allowed_file_exts: Allowed file extensions for file inputs.
-            if_must_exist: Whether the path must already exist.
-            if_readable: Whether readability is enforced when the path exists.
-            if_writable: Whether writability is enforced (mainly outputs).
+            should_exist: Whether the path must already exist.
+            is_readable: Whether readability is enforced when the path exists.
+            is_writable: Whether writability is enforced (mainly outputs).
             **kwargs: Forwarded to ``argparse.Action``.
 
         Raises:
@@ -133,9 +133,9 @@ class ActionPath(argparse.Action):
                     for ext in (allowed_file_exts or ())
                     if ext and str(ext).strip()
                 ),
-                if_must_exist=if_must_exist,
-                if_readable=if_readable,
-                if_writable=if_writable,
+                should_exist=should_exist,
+                is_readable=is_readable,
+                is_writable=is_writable,
             )
 
         if spec.kind_entry not in ("dir", "file", "exe"):
@@ -178,90 +178,90 @@ class ActionPath(argparse.Action):
             argparse.ArgumentError: If the value is empty, invalid, missing,
                 not readable/writable, or violates extension rules.
         """
-        c_raw = os.fsdecode(value)
+        raw_value = os.fsdecode(value)
 
-        if not c_raw.strip():
+        if not raw_value.strip():
             raise argparse.ArgumentError(self, f"[{name}]: Value cannot be empty.")
 
         if self.kind_entry in {"file", "dir"}:
             try:
-                cls_path = Path(c_raw).expanduser().resolve()
+                path = Path(raw_value).expanduser().resolve()
             except Exception:
-                raise argparse.ArgumentError(self, f"[{name}]: Invalid path: {c_raw!r}")
+                raise argparse.ArgumentError(self, f"[{name}]: Invalid path: {raw_value!r}")
 
             if self.kind_entry == "file":
-                if self.spec.if_must_exist and not cls_path.is_file():
+                if self.spec.should_exist and not path.is_file():
                     raise argparse.ArgumentError(
-                        self, f"[{name}]: Not a file: {cls_path}"
+                        self, f"[{name}]: Not a file: {path}"
                     )
 
                 if self.allowed_file_exts:
-                    set_exts = set(self.allowed_file_exts)
-                    c_suffix = "".join(cls_path.suffixes).lower().lstrip(".")
-                    c_bare = cls_path.suffix.lower().lstrip(".")
-                    if (c_suffix not in set_exts) and (c_bare not in set_exts):
-                        c_expected = ", ".join(self.allowed_file_exts)
-                        c_got = "." + c_suffix if c_suffix else "(none)"
+                    allowed_exts = set(self.allowed_file_exts)
+                    suffix_compound = "".join(path.suffixes).lower().lstrip(".")
+                    suffix_single = path.suffix.lower().lstrip(".")
+                    if (suffix_compound not in allowed_exts) and (suffix_single not in allowed_exts):
+                        expected_exts = ", ".join(self.allowed_file_exts)
+                        actual_ext = "." + suffix_compound if suffix_compound else "(none)"
                         raise argparse.ArgumentError(
                             self,
-                            f"[{name}]: Expected extension(s) in ({c_expected}), got {c_got}: {cls_path}",
+                            f"[{name}]: Expected extension(s) in ({expected_exts}), got {actual_ext}: {path}",
                         )
 
                 if (
-                    self.spec.if_must_exist
-                    and self.spec.if_readable
-                    and not os.access(cls_path, os.R_OK)
+                    self.spec.should_exist
+                    and self.spec.is_readable
+                    and not os.access(path, os.R_OK)
                 ):
                     raise argparse.ArgumentError(
-                        self, f"[{name}]: File not readable: {cls_path}"
+                        self, f"[{name}]: File not readable: {path}"
                     )
 
             else:
-                if self.spec.if_must_exist and not cls_path.is_dir():
+                if self.spec.should_exist and not path.is_dir():
                     raise argparse.ArgumentError(
                         self,
-                        f"[{name}]: Not a directory: {cls_path}",
+                        f"[{name}]: Not a directory: {path}",
                     )
                 if (
-                    self.spec.if_must_exist
-                    and self.spec.if_readable
-                    and not os.access(cls_path, os.R_OK | os.X_OK)
+                    self.spec.should_exist
+                    and self.spec.is_readable
+                    and not os.access(path, os.R_OK | os.X_OK)
                 ):
                     raise argparse.ArgumentError(
                         self,
-                        f"[{name}]: Directory not accessible: {cls_path}",
+                        f"[{name}]: Directory not accessible: {path}",
                     )
 
-            return cls_path
+            return path
 
         # exe: path-ish vs command-ish
-        c_raw_str = str(c_raw)
-        b_has_sep = any(sep in c_raw_str for sep in (os.sep, os.altsep) if sep)
-        b_is_absish = c_raw_str.startswith(("~", ".")) or os.path.isabs(c_raw_str)
+        raw_text = str(raw_value)
+        has_separator = any(sep in raw_text for sep in (os.sep, os.altsep) if sep)
+        is_path_like = raw_text.startswith(("~", ".")) or os.path.isabs(raw_text)
 
-        if b_has_sep or b_is_absish:
-            cls_exe = Path(c_raw_str).expanduser()
-            if not cls_exe.exists():
+        if has_separator or is_path_like:
+            executable_path = Path(raw_text).expanduser()
+            if not executable_path.exists():
                 raise argparse.ArgumentError(
-                    self, f"[{name}]: Executable path not found: {cls_exe}"
+                    self, f"[{name}]: Executable path not found: {executable_path}"
                 )
-            if cls_exe.is_dir():
+            if executable_path.is_dir():
                 raise argparse.ArgumentError(
-                    self, f"[{name}]: Executable path is a directory: {cls_exe}"
+                    self, f"[{name}]: Executable path is a directory: {executable_path}"
                 )
-            if os.name != "nt" and not os.access(cls_exe, os.X_OK):
+            if os.name != "nt" and not os.access(executable_path, os.X_OK):
                 raise argparse.ArgumentError(
-                    self, f"[{name}]: Not executable: {cls_exe}"
+                    self, f"[{name}]: Not executable: {executable_path}"
                 )
-            return cls_exe.resolve()
+            return executable_path.resolve()
 
-        c_hit = shutil.which(c_raw_str)
-        if not c_hit:
+        resolved_hit = shutil.which(raw_text)
+        if not resolved_hit:
             raise argparse.ArgumentError(
                 self,
-                f"[{name}]: Executable not found in PATH: {c_raw_str!r} (consider passing an absolute path).",
+                f"[{name}]: Executable not found in PATH: {raw_text!r} (consider passing an absolute path).",
             )
-        return Path(c_hit).resolve()
+        return Path(resolved_hit).resolve()
 
     def __call__(
         self,
@@ -286,28 +286,28 @@ class ActionPath(argparse.Action):
             - ``namespace.<dest>`` is set to a normalized ``pathlib.Path``
               instance (resolved absolute path).
         """
-        c_name = option_string or self.dest
+        argument_name = option_string or self.dest
 
         if values is None:
-            raise argparse.ArgumentError(self, f"[{c_name}]: Value cannot be None.")
+            raise argparse.ArgumentError(self, f"[{argument_name}]: Value cannot be None.")
 
         if isinstance(values, (list, tuple)):
             seq = cast(list[object] | tuple[object, ...], values)
             if len(seq) != 1:
                 raise argparse.ArgumentError(
-                    self, f"[{c_name}]: Expected a single value, got {values!r}."
+                    self, f"[{argument_name}]: Expected a single value, got {values!r}."
                 )
             values = seq[0]
 
         if not isinstance(values, (str, os.PathLike, Path)):
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Expected a path-like value (str/Path), got {type(values).__name__}.",
+                f"[{argument_name}]: Expected a path-like value (str/Path), got {type(values).__name__}.",
             )
 
         values = cast(str | os.PathLike[str] | os.PathLike[bytes], values)
-        cls_path = self._normalize_one(value=values, name=c_name)
-        setattr(namespace, self.dest, cls_path)
+        path = self._normalize_one(value=values, name=argument_name)
+        setattr(namespace, self.dest, path)
 
     # -------- convenience factories (avoid importing SpecPath explicitly) --------
     @classmethod
@@ -341,9 +341,9 @@ class ActionPath(argparse.Action):
         kind_entry: Literal["dir", "file", "exe"] = "file",
         *,
         allowed_file_exts: Iterable[str] = (),
-        if_must_exist: bool = True,
-        if_readable: bool = True,
-        if_writable: bool = False,
+        should_exist: bool = True,
+        is_readable: bool = True,
+        is_writable: bool = False,
     ) -> type[argparse.Action]:
         """Convenience factory that builds ``SpecPath`` from keyword inputs.
 
@@ -355,9 +355,9 @@ class ActionPath(argparse.Action):
         Args:
             kind_entry: Expected entry type.
             allowed_file_exts: Allowed file extensions for ``file`` kind.
-            if_must_exist: Whether the target must already exist.
-            if_readable: Whether readability is required.
-            if_writable: Whether writability is required.
+            should_exist: Whether the target must already exist.
+            is_readable: Whether readability is required.
+            is_writable: Whether writability is required.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -379,9 +379,9 @@ class ActionPath(argparse.Action):
                     for ext in allowed_file_exts
                     if ext and str(ext).strip()
                 ),
-                if_must_exist=if_must_exist,
-                if_readable=if_readable,
-                if_writable=if_writable,
+                should_exist=should_exist,
+                is_readable=is_readable,
+                is_writable=is_writable,
             )
         )
 
@@ -390,9 +390,9 @@ class ActionPath(argparse.Action):
         cls,
         *,
         exts: Iterable[str] = (),
-        if_must_exist: bool = True,
-        if_readable: bool = True,
-        if_writable: bool = False,
+        should_exist: bool = True,
+        is_readable: bool = True,
+        is_writable: bool = False,
     ) -> type[argparse.Action]:
         """Factory for file path validation.
 
@@ -403,9 +403,9 @@ class ActionPath(argparse.Action):
 
         Args:
             exts: Allowed file extensions.
-            if_must_exist: Whether the file must already exist.
-            if_readable: Whether readability is required.
-            if_writable: Whether writability is required.
+            should_exist: Whether the file must already exist.
+            is_readable: Whether readability is required.
+            is_writable: Whether writability is required.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -419,18 +419,18 @@ class ActionPath(argparse.Action):
         return cls.make(
             kind_entry="file",
             allowed_file_exts=exts,
-            if_must_exist=if_must_exist,
-            if_readable=if_readable,
-            if_writable=if_writable,
+            should_exist=should_exist,
+            is_readable=is_readable,
+            is_writable=is_writable,
         )
 
     @classmethod
     def dir(
         cls,
         *,
-        if_must_exist: bool = True,
-        if_readable: bool = True,
-        if_writable: bool = False,
+        should_exist: bool = True,
+        is_readable: bool = True,
+        is_writable: bool = False,
     ) -> type[argparse.Action]:
         """Factory for directory path validation.
 
@@ -440,9 +440,9 @@ class ActionPath(argparse.Action):
               construction fails and ``--help`` may not render.
 
         Args:
-            if_must_exist: Whether the directory must already exist.
-            if_readable: Whether readability/execute permission is required.
-            if_writable: Whether writability is required.
+            should_exist: Whether the directory must already exist.
+            is_readable: Whether readability/execute permission is required.
+            is_writable: Whether writability is required.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -450,14 +450,14 @@ class ActionPath(argparse.Action):
         Examples:
             >>> parser.add_argument(
             ...     "--dir_out",
-            ...     action=ActionPath.dir(if_must_exist=False, if_writable=True),
+            ...     action=ActionPath.dir(should_exist=False, is_writable=True),
             ... )
         """
         return cls.make(
             kind_entry="dir",
-            if_must_exist=if_must_exist,
-            if_readable=if_readable,
-            if_writable=if_writable,
+            should_exist=should_exist,
+            is_readable=is_readable,
+            is_writable=is_writable,
         )
 
     @classmethod
@@ -521,16 +521,21 @@ class ActionCommandPrefix(argparse.Action):
             self.default = tuple(
                 self._tokenize_and_validate(
                     value=self.default,
-                    c_name=f"{dest} (default)",
+                    argument_name=f"{dest} (default)",
                 )
             )
 
-    def _tokenize_and_validate(self, *, value: object | None, c_name: str) -> list[str]:
+    def _tokenize_and_validate(
+        self,
+        *,
+        value: object | None,
+        argument_name: str,
+    ) -> list[str]:
         """Parse and validate a command prefix string.
 
         Args:
             value: Raw value from argparse.
-            c_name: Display name for error messages.
+            argument_name: Display name for error messages.
 
         Returns:
             Tokenized command prefix.
@@ -540,83 +545,90 @@ class ActionCommandPrefix(argparse.Action):
                 command, points to a missing executable, or misuses env flags.
         """
         if value is None:
-            raise argparse.ArgumentError(self, f"[{c_name}]: Value cannot be None.")
+            raise argparse.ArgumentError(
+                self,
+                f"[{argument_name}]: Value cannot be None.",
+            )
 
         if isinstance(value, str):
-            c_in = value
+            input_text = value
         elif isinstance(value, (list, tuple)):
             seq = cast(list[object] | tuple[object, ...], value)
-            c_in = " ".join(str(v) for v in seq)
+            input_text = " ".join(str(v) for v in seq)
         else:
-            c_in = str(value)
+            input_text = str(value)
 
-        c_in = c_in.strip()
-        if not c_in:
+        input_text = input_text.strip()
+        if not input_text:
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Cannot be empty/whitespace."
+                self,
+                f"[{argument_name}]: Cannot be empty/whitespace.",
             )
 
         try:
-            l_tokens = [t for t in shlex.split(c_in) if t.strip()]
+            tokens = [token for token in shlex.split(input_text) if token.strip()]
         except ValueError as e:
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Invalid shell string: {e}. Yours: {c_in!r}"
+                self,
+                f"[{argument_name}]: Invalid shell string: {e}. Yours: {input_text!r}",
             )
 
-        if not l_tokens:
+        if not tokens:
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Must contain at least one token. Yours: {c_in!r}"
+                self,
+                f"[{argument_name}]: Must contain at least one token. Yours: {input_text!r}",
             )
 
         # skip leading VAR=... assignments
-        n_env = 0
-        while n_env < len(l_tokens) and _RE_ENV_ASSIGN.match(l_tokens[n_env]):
-            n_env += 1
-        if n_env >= len(l_tokens):
+        env_assignment_count = 0
+        while env_assignment_count < len(tokens) and _RE_ENV_ASSIGN.match(tokens[env_assignment_count]):
+            env_assignment_count += 1
+        if env_assignment_count >= len(tokens):
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Must contain a command after env assignments. Yours: {c_in!r}",
+                f"[{argument_name}]: Must contain a command after env assignments. Yours: {input_text!r}",
             )
 
-        c_head = l_tokens[n_env]
-        if c_head in {"conda", "mamba", "micromamba"}:
+        command_head = tokens[env_assignment_count]
+        if command_head in {"conda", "mamba", "micromamba"}:
             # forbid activate
-            if n_env + 1 < len(l_tokens) and l_tokens[n_env + 1] == "activate":
+            if env_assignment_count + 1 < len(tokens) and tokens[env_assignment_count + 1] == "activate":
                 raise argparse.ArgumentError(
                     self,
-                    f"[{c_name}]: Do not use '... activate ...'. Use '... run -n <env>' style. Yours: {c_in!r}",
+                    f"[{argument_name}]: Do not use '... activate ...'. Use '... run -n <env>' style. Yours: {input_text!r}",
                 )
 
-        if shutil.which(c_head) is None:
+        if shutil.which(command_head) is None:
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Executable not in PATH: {c_head!r}"
+                self,
+                f"[{argument_name}]: Executable not in PATH: {command_head!r}",
             )
 
         # conda/mamba/micromamba run: require env
         if (
-            c_head in {"conda", "mamba", "micromamba"}
-            and n_env + 1 < len(l_tokens)
-            and l_tokens[n_env + 1] == "run"
+            command_head in {"conda", "mamba", "micromamba"}
+            and env_assignment_count + 1 < len(tokens)
+            and tokens[env_assignment_count + 1] == "run"
         ):
-            set_env_flags = {"-n", "--name", "-p", "--prefix"}
-            tail = l_tokens[n_env + 2 :]
-            if not any(f in tail for f in set_env_flags):
+            env_flags = {"-n", "--name", "-p", "--prefix"}
+            tail_tokens = tokens[env_assignment_count + 2 :]
+            if not any(flag in tail_tokens for flag in env_flags):
                 raise argparse.ArgumentError(
                     self,
-                    f"[{c_name}]: '{c_head} run' must include -n/--name <env> or -p/--prefix <path>. Yours: {c_in!r}",
+                    f"[{argument_name}]: '{command_head} run' must include -n/--name <env> or -p/--prefix <path>. Yours: {input_text!r}",
                 )
 
-            for f in set_env_flags:
-                if f in tail:
-                    idx = l_tokens.index(f, n_env + 2)
-                    if idx == len(l_tokens) - 1 or l_tokens[idx + 1].startswith("-"):
+            for flag in env_flags:
+                if flag in tail_tokens:
+                    index = tokens.index(flag, env_assignment_count + 2)
+                    if index == len(tokens) - 1 or tokens[index + 1].startswith("-"):
                         raise argparse.ArgumentError(
                             self,
-                            f"[{c_name}]: Missing env name/path after {f}. Yours: {c_in!r}",
+                            f"[{argument_name}]: Missing env name/path after {flag}. Yours: {input_text!r}",
                         )
                     break
 
-        return list(l_tokens)
+        return list(tokens)
 
     def __call__(
         self,
@@ -637,23 +649,26 @@ class ActionCommandPrefix(argparse.Action):
             argparse.ArgumentError: If validation fails or the namespace type
                 is unexpected.
         """
-        c_name = option_string or self.dest
-        l_tokens = self._tokenize_and_validate(value=values, c_name=c_name)
+        argument_name = option_string or self.dest
+        tokens = self._tokenize_and_validate(
+            value=values,
+            argument_name=argument_name,
+        )
 
         cur = getattr(namespace, self.dest, None)
         # If a default was supplied, argparse places it into the namespace
         # before parsing. On the first explicit user-specified occurrence we
         # should *replace* the default rather than append to it.
         if cur is None or isinstance(cur, tuple):
-            setattr(namespace, self.dest, list(l_tokens))
+            setattr(namespace, self.dest, list(tokens))
             return
 
         if not isinstance(cur, list):
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Internal type error, expected list."
+                self, f"[{argument_name}]: Internal type error, expected list."
             )
-        l_cur = cast(list[str], cur)
-        l_cur.extend(l_tokens)
+        current_tokens = cast(list[str], cur)
+        current_tokens.extend(tokens)
 
 
 _RE_HEX6 = re.compile(r"#[0-9A-Fa-f]{6}$")
@@ -689,15 +704,21 @@ class ActionHexColor(argparse.Action):
         # Normalize/validate default as well (argparse does not call Action for defaults).
         if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
             self.default = self._normalize_hex(
-                value=self.default, c_name=f"{dest} (default)"
+                value=self.default,
+                argument_name=f"{dest} (default)",
             )
 
-    def _normalize_hex(self, *, value: object | None, c_name: str) -> str:
+    def _normalize_hex(
+        self,
+        *,
+        value: object | None,
+        argument_name: str,
+    ) -> str:
         """Normalize a hex color string.
 
         Args:
             value: Raw value from argparse.
-            c_name: Display name for error messages.
+            argument_name: Display name for error messages.
 
         Returns:
             Normalized uppercase hex string.
@@ -707,35 +728,38 @@ class ActionHexColor(argparse.Action):
         """
         if value is None:
             raise argparse.ArgumentError(
-                self, f"[{c_name}]: Color hex string cannot be None."
+                self,
+                f"[{argument_name}]: Color hex string cannot be None.",
             )
 
         if isinstance(value, (list, tuple)):
             seq = cast(list[object] | tuple[object, ...], value)
             if len(seq) != 1:
                 raise argparse.ArgumentError(
-                    self, f"[{c_name}]: Expected a single value, got {value!r}."
+                    self,
+                    f"[{argument_name}]: Expected a single value, got {value!r}.",
                 )
             value = seq[0]
 
         if not isinstance(value, str):
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Expected a string in format '#RRGGBB', got {type(value).__name__}.",
+                f"[{argument_name}]: Expected a string in format '#RRGGBB', got {type(value).__name__}.",
             )
 
-        c_val = value.strip()
-        if not c_val:
-            raise argparse.ArgumentError(
-                self, f"[{c_name}]: Color hex string cannot be empty."
-            )
-        if not _RE_HEX6.fullmatch(c_val):
+        color_value = value.strip()
+        if not color_value:
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Color hex string must be in the format '#RRGGBB', got {c_val!r}.",
+                f"[{argument_name}]: Color hex string cannot be empty.",
+            )
+        if not _RE_HEX6.fullmatch(color_value):
+            raise argparse.ArgumentError(
+                self,
+                f"[{argument_name}]: Color hex string must be in the format '#RRGGBB', got {color_value!r}.",
             )
 
-        return f"#{c_val[1:].upper()}"
+        return f"#{color_value[1:].upper()}"
 
     def __call__(
         self,
@@ -745,8 +769,12 @@ class ActionHexColor(argparse.Action):
         option_string: str | None = None,
     ) -> None:
         """Parse and set a validated hex color on the namespace."""
-        c_name = option_string or self.dest
-        setattr(namespace, self.dest, self._normalize_hex(value=values, c_name=c_name))
+        argument_name = option_string or self.dest
+        setattr(
+            namespace,
+            self.dest,
+            self._normalize_hex(value=values, argument_name=argument_name),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -758,14 +786,14 @@ class SpecNumericRange:
         min_value: Minimum allowed value or ``None``.
         max_value: Maximum allowed value or ``None``.
         allowed_values: Explicitly whitelisted values.
-        if_inclusive_min: Whether the lower bound is inclusive.
-        if_inclusive_max: Whether the upper bound is inclusive.
-        if_finite: Whether floats must be finite.
+        should_include_min: Whether the lower bound is inclusive.
+        should_include_max: Whether the upper bound is inclusive.
+        is_finite: Whether floats must be finite.
 
     Examples:
         Strict positive integer:
 
-        >>> SpecNumericRange(kind_value="int", min_value=0, if_inclusive_min=False)
+        >>> SpecNumericRange(kind_value="int", min_value=0, should_include_min=False)
 
         Open-left, closed-right unit interval:
 
@@ -773,8 +801,8 @@ class SpecNumericRange:
         ...     kind_value="float",
         ...     min_value=0.0,
         ...     max_value=1.0,
-        ...     if_inclusive_min=False,
-        ...     if_inclusive_max=True,
+        ...     should_include_min=False,
+        ...     should_include_max=True,
         ... )
     """
 
@@ -785,11 +813,11 @@ class SpecNumericRange:
     # if provided, values in this set are accepted immediately (even if outside min/max)
     allowed_values: tuple[int | float, ...] = ()
 
-    if_inclusive_min: bool = True
-    if_inclusive_max: bool = True
+    should_include_min: bool = True
+    should_include_max: bool = True
 
     # float-only: reject NaN/Inf by default
-    if_finite: bool = True
+    is_finite: bool = True
 
 
 class ActionNumericRange(argparse.Action):
@@ -804,7 +832,7 @@ class ActionNumericRange(argparse.Action):
         >>> parser.add_argument(
         ...     "--learning_rate",
         ...     action=ActionNumericRange,
-        ...     spec=SpecNumericRange(kind_value="float", min_value=0, if_inclusive_min=False),
+        ...     spec=SpecNumericRange(kind_value="float", min_value=0, should_include_min=False),
         ... )
 
         Use convenience factories:
@@ -815,7 +843,7 @@ class ActionNumericRange(argparse.Action):
 
     Notes:
         - ``allowed_values`` are accepted even if outside min/max.
-        - When ``kind_value="float"`` and ``if_finite=True``, rejects NaN/Inf.
+        - When ``kind_value="float"`` and ``is_finite=True``, rejects NaN/Inf.
         - Defaults are validated eagerly; misconfigured defaults raise early.
     """
 
@@ -858,7 +886,8 @@ class ActionNumericRange(argparse.Action):
         # Normalize/validate default as well (argparse does not call Action for defaults).
         if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
             self.default = self._parse_and_validate(
-                value=self.default, c_name=f"{dest} (default)"
+                value=self.default,
+                argument_name=f"{dest} (default)",
             )
 
     # -------- convenience factories (avoid importing SpecNumericRange explicitly) --------
@@ -893,9 +922,9 @@ class ActionNumericRange(argparse.Action):
         min_value: int | float | None = None,
         max_value: int | float | None = None,
         allowed_values: Sequence[int | float] = (),
-        if_inclusive_min: bool = True,
-        if_inclusive_max: bool = True,
-        if_finite: bool = True,
+        should_include_min: bool = True,
+        should_include_max: bool = True,
+        is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Convenience factory for ``ActionNumericRange``.
 
@@ -904,9 +933,9 @@ class ActionNumericRange(argparse.Action):
             min_value: Minimum allowed value.
             max_value: Maximum allowed value.
             allowed_values: Explicitly whitelisted values.
-            if_inclusive_min: Whether ``min_value`` is inclusive.
-            if_inclusive_max: Whether ``max_value`` is inclusive.
-            if_finite: Whether floats must be finite.
+            should_include_min: Whether ``min_value`` is inclusive.
+            should_include_max: Whether ``max_value`` is inclusive.
+            is_finite: Whether floats must be finite.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -926,9 +955,9 @@ class ActionNumericRange(argparse.Action):
                 min_value=min_value,
                 max_value=max_value,
                 allowed_values=tuple(allowed_values),
-                if_inclusive_min=if_inclusive_min,
-                if_inclusive_max=if_inclusive_max,
-                if_finite=if_finite,
+                should_include_min=should_include_min,
+                should_include_max=should_include_max,
+                is_finite=is_finite,
             )
         )
 
@@ -937,13 +966,13 @@ class ActionNumericRange(argparse.Action):
         cls,
         kind_value: Literal["int", "float"] = "float",
         *,
-        if_finite: bool = True,
+        is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Factory for non-negative values ``[0, +inf)``.
 
         Args:
             kind_value: Numeric kind to parse.
-            if_finite: Whether floats must be finite.
+            is_finite: Whether floats must be finite.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -954,8 +983,8 @@ class ActionNumericRange(argparse.Action):
         return cls.make(
             kind_value=kind_value,
             min_value=0,
-            if_inclusive_min=True,
-            if_finite=if_finite,
+            should_include_min=True,
+            is_finite=is_finite,
         )
 
     @classmethod
@@ -963,13 +992,13 @@ class ActionNumericRange(argparse.Action):
         cls,
         kind_value: Literal["int", "float"] = "float",
         *,
-        if_finite: bool = True,
+        is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Factory for positive values ``(0, +inf)``.
 
         Args:
             kind_value: Numeric kind to parse.
-            if_finite: Whether floats must be finite.
+            is_finite: Whether floats must be finite.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -980,8 +1009,8 @@ class ActionNumericRange(argparse.Action):
         return cls.make(
             kind_value=kind_value,
             min_value=0,
-            if_inclusive_min=False,
-            if_finite=if_finite,
+            should_include_min=False,
+            is_finite=is_finite,
         )
 
     @classmethod
@@ -989,16 +1018,16 @@ class ActionNumericRange(argparse.Action):
         cls,
         kind_value: Literal["int", "float"] = "float",
         *,
-        if_inclusive_min: bool = True,
-        if_inclusive_max: bool = True,
-        if_finite: bool = True,
+        should_include_min: bool = True,
+        should_include_max: bool = True,
+        is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Factory for interval constraints around ``[0, 1]``.
 
         Args:
-            if_inclusive_min: Whether the left bound (0) is inclusive.
-            if_inclusive_max: Whether the right bound (1) is inclusive.
-            if_finite: Whether floats must be finite.
+            should_include_min: Whether the left bound (0) is inclusive.
+            should_include_max: Whether the right bound (1) is inclusive.
+            is_finite: Whether floats must be finite.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -1013,8 +1042,8 @@ class ActionNumericRange(argparse.Action):
             >>> parser.add_argument(
             ...     "--x",
             ...     action=ActionNumericRange.unit_interval(
-            ...         if_inclusive_min=False,
-            ...         if_inclusive_max=True,
+            ...         should_include_min=False,
+            ...         should_include_max=True,
             ...     ),
             ... )
         """
@@ -1022,17 +1051,22 @@ class ActionNumericRange(argparse.Action):
             kind_value=kind_value,
             min_value=0.0,
             max_value=1.0,
-            if_inclusive_min=if_inclusive_min,
-            if_inclusive_max=if_inclusive_max,
-            if_finite=if_finite,
+            should_include_min=should_include_min,
+            should_include_max=should_include_max,
+            is_finite=is_finite,
         )
 
-    def _parse_and_validate(self, *, value: Any, c_name: str) -> int | float:
+    def _parse_and_validate(
+        self,
+        *,
+        value: Any,
+        argument_name: str,
+    ) -> int | float:
         """Parse and validate a numeric argument against ``spec``.
 
         Args:
             value: Raw value from argparse.
-            c_name: Display name for error messages.
+            argument_name: Display name for error messages.
 
         Returns:
             Parsed integer or float.
@@ -1042,75 +1076,91 @@ class ActionNumericRange(argparse.Action):
                 is non-finite when disallowed, or violates bounds.
         """
         if value is None:
-            raise argparse.ArgumentError(self, f"[{c_name}]: Value cannot be None.")
+            raise argparse.ArgumentError(
+                self,
+                f"[{argument_name}]: Value cannot be None.",
+            )
 
         if isinstance(value, (list, tuple)):
             seq = cast(list[object] | tuple[object, ...], value)
             if len(seq) != 1:
                 raise argparse.ArgumentError(
-                    self, f"[{c_name}]: Expected a single value, got {value!r}."
+                    self,
+                    f"[{argument_name}]: Expected a single value, got {value!r}.",
                 )
             value = seq[0]
 
         if not isinstance(value, (str, int, float)):
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Expected a number (int/float) or numeric string, got {type(value).__name__}.",
+                f"[{argument_name}]: Expected a number (int/float) or numeric string, got {type(value).__name__}.",
             )
 
-        c_raw = str(value).strip()
-        if not c_raw:
-            raise argparse.ArgumentError(self, f"[{c_name}]: Value cannot be empty.")
+        raw_value = str(value).strip()
+        if not raw_value:
+            raise argparse.ArgumentError(
+                self,
+                f"[{argument_name}]: Value cannot be empty.",
+            )
 
         # fast path: allowed_values check by float membership
         try:
-            n_try = float(c_raw)
+            float_candidate = float(raw_value)
         except Exception:
-            n_try = None
+            float_candidate = None
 
-        if n_try is not None and n_try in self._allowed_float:
-            return int(c_raw) if self.spec.kind_value == "int" else float(c_raw)
+        if float_candidate is not None and float_candidate in self._allowed_float:
+            return int(raw_value) if self.spec.kind_value == "int" else float(raw_value)
 
         # parse
         try:
-            n_val: int | float = (
-                int(c_raw) if self.spec.kind_value == "int" else float(c_raw)
+            parsed_value: int | float = (
+                int(raw_value) if self.spec.kind_value == "int" else float(raw_value)
             )
         except Exception:
             raise argparse.ArgumentError(
                 self,
-                f"[{c_name}]: Cannot parse {c_raw!r} as {self.spec.kind_value}.",
+                f"[{argument_name}]: Cannot parse {raw_value!r} as {self.spec.kind_value}.",
             )
 
-        if self.spec.kind_value == "float" and self.spec.if_finite:
-            if not math.isfinite(float(n_val)):
-                raise argparse.ArgumentError(
-                    self, f"[{c_name}]: Must be finite, got {n_val!r}."
-                )
-
-        n_f = float(n_val)
-
-        if self.spec.min_value is not None:
-            n_min = float(self.spec.min_value)
-            ok = n_f >= n_min if self.spec.if_inclusive_min else n_f > n_min
-            if not ok:
-                op = ">=" if self.spec.if_inclusive_min else ">"
+        if self.spec.kind_value == "float" and self.spec.is_finite:
+            if not math.isfinite(float(parsed_value)):
                 raise argparse.ArgumentError(
                     self,
-                    f"[{c_name}]: Must be {op} {self.spec.min_value}, got {n_val!r}.",
+                    f"[{argument_name}]: Must be finite, got {parsed_value!r}.",
+                )
+
+        numeric_value = float(parsed_value)
+
+        if self.spec.min_value is not None:
+            min_value = float(self.spec.min_value)
+            is_valid = (
+                numeric_value >= min_value
+                if self.spec.should_include_min
+                else numeric_value > min_value
+            )
+            if not is_valid:
+                op = ">=" if self.spec.should_include_min else ">"
+                raise argparse.ArgumentError(
+                    self,
+                    f"[{argument_name}]: Must be {op} {self.spec.min_value}, got {parsed_value!r}.",
                 )
 
         if self.spec.max_value is not None:
-            n_max = float(self.spec.max_value)
-            ok = n_f <= n_max if self.spec.if_inclusive_max else n_f < n_max
-            if not ok:
-                op = "<=" if self.spec.if_inclusive_max else "<"
+            max_value = float(self.spec.max_value)
+            is_valid = (
+                numeric_value <= max_value
+                if self.spec.should_include_max
+                else numeric_value < max_value
+            )
+            if not is_valid:
+                op = "<=" if self.spec.should_include_max else "<"
                 raise argparse.ArgumentError(
                     self,
-                    f"[{c_name}]: Must be {op} {self.spec.max_value}, got {n_val!r}.",
+                    f"[{argument_name}]: Must be {op} {self.spec.max_value}, got {parsed_value!r}.",
                 )
 
-        return n_val
+        return parsed_value
 
     def __call__(
         self,
@@ -1120,7 +1170,9 @@ class ActionNumericRange(argparse.Action):
         option_string: str | None = None,
     ) -> None:
         """Parse, validate, and set a numeric value on the namespace."""
-        c_name = option_string or self.dest
+        argument_name = option_string or self.dest
         setattr(
-            namespace, self.dest, self._parse_and_validate(value=values, c_name=c_name)
+            namespace,
+            self.dest,
+            self._parse_and_validate(value=values, argument_name=argument_name),
         )

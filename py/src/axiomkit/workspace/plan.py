@@ -4,15 +4,15 @@ from pathlib import Path
 
 
 def _validate_relative_path(*, name: str, value: str, errors: list[str]) -> None:
-    c_clean = value.strip()
-    if not c_clean:
+    value_clean = value.strip()
+    if not value_clean:
         errors.append(f"`{name}` must not be empty.")
         return
 
-    cls_rel = Path(c_clean)
-    if cls_rel.is_absolute():
+    path_relative = Path(value_clean)
+    if path_relative.is_absolute():
         errors.append(f"`{name}` must be a relative path, got {value!r}.")
-    if ".." in cls_rel.parts:
+    if ".." in path_relative.parts:
         errors.append(f"`{name}` must not contain '..', got {value!r}.")
 
 
@@ -54,7 +54,7 @@ class SpecWorkspaceLayout:
 
     def validate(self) -> tuple[str, ...]:
         errors: list[str] = []
-        for c_name, c_value in (
+        for field_name, field_value in (
             ("name_dir_in", self.name_dir_in),
             ("name_dir_out", self.name_dir_out),
             ("name_dir_tmp", self.name_dir_tmp),
@@ -62,23 +62,23 @@ class SpecWorkspaceLayout:
             ("name_dir_configs", self.name_dir_configs),
             ("name_dir_meta", self.name_dir_meta),
         ):
-            _validate_relative_path(name=c_name, value=c_value, errors=errors)
+            _validate_relative_path(name=field_name, value=field_value, errors=errors)
 
-        l_used_keys: set[str] = set()
-        for c_key, c_rel in self.extra_dirs.items():
-            c_key_clean = c_key.strip()
-            if not c_key_clean:
+        used_keys: set[str] = set()
+        for extra_key, relative_dir in self.extra_dirs.items():
+            key_clean = extra_key.strip()
+            if not key_clean:
                 errors.append("`extra_dirs` keys must not be empty.")
                 continue
 
-            if c_key_clean in l_used_keys:
-                errors.append(f"`extra_dirs` duplicated key: {c_key!r}.")
+            if key_clean in used_keys:
+                errors.append(f"`extra_dirs` duplicated key: {extra_key!r}.")
                 continue
 
-            l_used_keys.add(c_key_clean)
+            used_keys.add(key_clean)
             _validate_relative_path(
-                name=f"extra_dirs[{c_key_clean!r}]",
-                value=c_rel,
+                name=f"extra_dirs[{key_clean!r}]",
+                value=relative_dir,
                 errors=errors,
             )
 
@@ -94,7 +94,8 @@ class SpecWorkspaceLayout:
             dir_configs=dir_root / self.name_dir_configs,
             dir_meta=dir_root / self.name_dir_meta,
             dirs_extra={
-                c_key: dir_root / c_rel for c_key, c_rel in self.extra_dirs.items()
+                key: dir_root / relative_dir
+                for key, relative_dir in self.extra_dirs.items()
             },
         )
 
@@ -129,11 +130,11 @@ class WorkspacePlan:
         spec: SpecWorkspaceLayout | None = None,
     ) -> None:
         self.spec = spec or SpecWorkspaceLayout()
-        l_errors = list(self.spec.validate())
+        errors = list(self.spec.validate())
         self.paths = self.spec.to_paths(dir_root=dir_root)
         self.report_check = ReportWorkspaceCheck(
-            ok=not l_errors,
-            errors=tuple(l_errors),
+            ok=not errors,
+            errors=tuple(errors),
         )
 
     def apply(self) -> ReportWorkspaceApply:
@@ -143,28 +144,28 @@ class WorkspacePlan:
                 + "\n".join(f"- {_err}" for _err in self.report_check.errors)
             )
 
-        l_created: list[Path] = []
-        l_existing: list[Path] = []
-        l_errors: list[str] = []
+        created_paths: list[Path] = []
+        existing_paths: list[Path] = []
+        errors: list[str] = []
 
-        for cls_path in self.paths.iter_all():
-            if cls_path.exists():
-                if cls_path.is_dir():
-                    l_existing.append(cls_path)
+        for path in self.paths.iter_all():
+            if path.exists():
+                if path.is_dir():
+                    existing_paths.append(path)
                 else:
-                    l_errors.append(f"{cls_path}: path exists but is not a directory.")
+                    errors.append(f"{path}: path exists but is not a directory.")
                 continue
 
             try:
-                cls_path.mkdir(parents=True, exist_ok=True)
-                l_created.append(cls_path)
+                path.mkdir(parents=True, exist_ok=True)
+                created_paths.append(path)
             except Exception as e:
-                l_errors.append(f"{cls_path}: {e}")
+                errors.append(f"{path}: {e}")
 
         return ReportWorkspaceApply(
-            ok=not l_errors,
+            ok=not errors,
             paths=self.paths,
-            created=tuple(l_created),
-            existing=tuple(l_existing),
-            errors=tuple(l_errors),
+            created=tuple(created_paths),
+            existing=tuple(existing_paths),
+            errors=tuple(errors),
         )

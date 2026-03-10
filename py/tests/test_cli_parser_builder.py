@@ -120,7 +120,7 @@ def test_deprecated_param_emits_warning() -> None:
         SpecParam(
             id="general.legacy_threads",
             group=EnumGroupKey.GENERAL,
-            if_deprecated=True,
+            is_deprecated=True,
             replace_by="data_table.threads_dt",
             arg_builder=lambda g, s: s.add_argument(g, type=int),
         )
@@ -199,3 +199,29 @@ def test_extract_params_supports_str_enum_keys() -> None:
     assert ns.command == "demo"
     assert ns.rscript == "Rscript"
     assert ns.threads_dt == 2
+
+
+def test_build_accepts_should_require_command_false() -> None:
+    app = ParserBuilder(prog="demo").add_command(
+        id="demo",
+        help="Demo command",
+        arg_builder=_build_demo_args,
+    )
+
+    parser = app.build(should_require_command=False)
+    ns = parser.parse_args([])
+
+    assert ns.command is None
+
+
+def test_registries_accept_should_sort_false() -> None:
+    app = ParserBuilder(prog="demo")
+    _register_demo_params(app)
+    app.add_command(id="b_cmd", help="B command", arg_builder=_build_demo_args, order=2)
+    app.add_command(id="a_cmd", help="A command", arg_builder=_build_demo_args, order=1)
+
+    command_ids = [spec.id for spec in app.commands.list_commands(should_sort=False)]
+    param_ids = [spec.id for spec in app.params.list_params(should_sort=False)]
+
+    assert command_ids == ["b_cmd", "a_cmd"]
+    assert param_ids == ["executables.rscript", "data_table.threads_dt"]

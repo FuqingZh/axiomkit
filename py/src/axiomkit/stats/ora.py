@@ -52,7 +52,7 @@ def _calculate_hypergeometric_right_tail_pvalue(
     fg_hits = np.asarray(fg_hits, dtype=np.int64)
     bg_hits = np.asarray(bg_hits, dtype=np.int64)
     nd_p_values = np.ones_like(fg_hits, dtype=np.float64)
-    b_valid_mask = (
+    is_valid_mask = (
         (fg_hits >= 0)
         & (bg_hits >= 0)
         & (fg_total > 0)
@@ -61,11 +61,11 @@ def _calculate_hypergeometric_right_tail_pvalue(
         & (bg_hits <= bg_total)
         & (fg_total <= bg_total)
     )
-    if np.any(b_valid_mask):
-        nd_p_values[b_valid_mask] = stats.hypergeom.sf(
-            fg_hits[b_valid_mask] - 1,
+    if np.any(is_valid_mask):
+        nd_p_values[is_valid_mask] = stats.hypergeom.sf(
+            fg_hits[is_valid_mask] - 1,
             bg_total,
-            bg_hits[b_valid_mask],
+            bg_hits[is_valid_mask],
             fg_total,
         )
     return nd_p_values
@@ -83,12 +83,14 @@ def _calculate_bh_fdr(p_values: np.ndarray):
             shape of the input.
     """
     p_values = np.asarray(p_values, dtype=np.float64)
-    if (n_size := p_values.size) == 0:
+    if (size_values := p_values.size) == 0:
         return p_values
 
     np_order = np.argsort(p_values, kind="mergesort")
     np_ranks = (
-        p_values[np_order] * n_size / (np.arange(1, n_size + 1, dtype=np.float64))
+        p_values[np_order]
+        * size_values
+        / (np.arange(1, size_values + 1, dtype=np.float64))
     )
     np_adjusted = np.minimum.accumulate(np_ranks[::-1])[::-1]
     np_adjusted = np.clip(np_adjusted, 0.0, 1.0)
@@ -112,8 +114,8 @@ def calculate_ora(
     thr_fg_hits_max: int | None = None,
     thr_p_value: float = 0.05,
     thr_p_adjust: float = 1.0,
-    if_keep_fg_members: bool = True,
-    if_keep_bg_members: bool = False,
+    should_keep_fg_members: bool = True,
+    should_keep_bg_members: bool = False,
 ) -> pl.DataFrame:
     """
     Over-representation analysis (ORA) using hypergeometric test.
@@ -158,8 +160,8 @@ def calculate_ora(
             Defaults to None.
         thr_p_value (float, optional): P-value threshold for significance. Defaults to 0.05.
         thr_p_adjust (float, optional): Adjusted p-value threshold for significance. Defaults to 1.0.
-        if_keep_fg_members (bool, optional): Whether to keep foreground members in the result. Defaults to True.
-        if_keep_bg_members (bool, optional): Whether to keep background members in the result. Defaults to False.
+        should_keep_fg_members (bool, optional): Whether to keep foreground members in the result. Defaults to True.
+        should_keep_bg_members (bool, optional): Whether to keep background members in the result. Defaults to False.
 
     Returns:
         pl.DataFrame: DataFrame with ORA results and columns:
@@ -182,12 +184,12 @@ def calculate_ora(
         ...         "TermId": ["t1", "t2", "t2", "t2"],
         ...     }
         ... )
-        >>> set_foreground = {"g1", "g2"}
+        >>> foreground_ids = {"g1", "g2"}
         >>> df_result = calculate_ora(
         ...     df,
         ...     col_elements="ElementId",
         ...     col_terms="TermId",
-        ...     foreground_elements=set_foreground,
+        ...     foreground_elements=foreground_ids,
         ... )
     """
 
@@ -222,9 +224,9 @@ def calculate_ora(
             "BgMembers": pl.List(pl.Utf8),
         },
     )
-    if not if_keep_bg_members:
+    if not should_keep_bg_members:
         df_empty = df_empty.drop("BgMembers")
-    if not if_keep_fg_members:
+    if not should_keep_fg_members:
         df_empty = df_empty.drop("FgMembers")
 
     # #endregion
@@ -267,10 +269,10 @@ def calculate_ora(
         .join(lf_fg_in_bg.select(pl.len().alias("FgTotal")), how="cross")
         .collect(engine="streaming")
     )
-    n_bg_total = int(df_total_counts["BgTotal"][0])
-    n_fg_total = int(df_total_counts["FgTotal"][0])
+    bg_total = int(df_total_counts["BgTotal"][0])
+    fg_total = int(df_total_counts["FgTotal"][0])
 
-    if n_fg_total == 0:
+    if fg_total == 0:
         logger.warning(
             "No foreground elements found in background elements, I will return an empty DataFrame with schema."
         )
@@ -292,7 +294,7 @@ def calculate_ora(
             BgHits=pl.col(col_elements).n_unique(),
             FgHits=pl.col(col_elements).filter(pl.col("IsFg")).n_unique(),
         )
-        .with_columns(FgTotal=pl.lit(n_fg_total), BgTotal=pl.lit(n_bg_total))
+        .with_columns(FgTotal=pl.lit(fg_total), BgTotal=pl.lit(bg_total))
         .filter(
             pl.col("BgHits").ge(thr_bg_hits_min),
             pl.col("BgHits").le(thr_bg_hits_max)
@@ -319,7 +321,7 @@ def calculate_ora(
         logger.warning(
             f"""
             No terms pass filters.
-            BgTotal={n_bg_total}, FgTotal={n_fg_total};
+            BgTotal={bg_total}, FgTotal={fg_total};
             thr_bg_hits_min={thr_bg_hits_min}, thr_fg_hits_min={thr_fg_hits_min},
             thr_bg_hits_max={thr_bg_hits_max}, thr_fg_hits_max={thr_fg_hits_max}.
             Possible causes:
@@ -337,8 +339,8 @@ def calculate_ora(
     nd_p_vals = _calculate_hypergeometric_right_tail_pvalue(
         fg_hits=df_ora["FgHits"].to_numpy(),
         bg_hits=df_ora["BgHits"].to_numpy(),
-        bg_total=n_bg_total,
-        fg_total=n_fg_total,
+        bg_total=bg_total,
+        fg_total=fg_total,
     )
 
     match rule_p_adjust:
@@ -379,16 +381,16 @@ def calculate_ora(
     # #endregion
     ############################################################
     # #region calculateMembers
-    if df_ora.height > 0 and (if_keep_bg_members or if_keep_fg_members):
-        set_sign_terms = set(df_ora[col_terms].to_list())
+    if df_ora.height > 0 and (should_keep_bg_members or should_keep_fg_members):
+        significant_terms = set(df_ora[col_terms].to_list())
 
         df_members = (
-            lf_mappings_marked.filter(pl.col(col_terms).is_in(set_sign_terms))
+            lf_mappings_marked.filter(pl.col(col_terms).is_in(significant_terms))
             .group_by(col_terms)
             .agg(
                 *(
                     [pl.col(col_elements).unique().alias("BgMembers")]
-                    if if_keep_bg_members
+                    if should_keep_bg_members
                     else []
                 ),
                 *(
@@ -398,7 +400,7 @@ def calculate_ora(
                         .unique()
                         .alias("FgMembers")
                     ]
-                    if if_keep_fg_members
+                    if should_keep_fg_members
                     else []
                 ),
             )

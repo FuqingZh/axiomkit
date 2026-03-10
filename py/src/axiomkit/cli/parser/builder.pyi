@@ -163,8 +163,8 @@ class ParserBuilder:
         title: str = "Commands",
         dest: str = "command",
         kind_formatter: type[argparse.HelpFormatter] | None = ...,
-        if_required: bool = True,
-        if_include_group_in_help: bool = True,
-        if_sort_specs: bool = True,
-        if_apply_param_keys: bool = True,
+        should_require_command: bool = True,
+        should_include_group_in_help: bool = True,
+        should_sort_specs: bool = True,
+        should_apply_param_keys: bool = True,
     ) -> argparse.ArgumentParser: ...

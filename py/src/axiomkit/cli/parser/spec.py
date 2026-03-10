@@ -94,13 +94,13 @@ def _infer_dest_from_id(base_id: str) -> str:
         >>> _infer_dest_from_id("thr-p.value")
         'thr_p_value'
     """
-    c_base = base_id.replace("-", "_")
-    c_base = _RE_DEST.sub("_", c_base).strip("_")
-    if not c_base:
+    base_name = base_id.replace("-", "_")
+    base_name = _RE_DEST.sub("_", base_name).strip("_")
+    if not base_name:
         raise ValueError(f"Cannot infer dest from id: {base_id!r}")
-    if keyword.iskeyword(c_base):
-        c_base = f"{c_base}_"
-    return c_base
+    if keyword.iskeyword(base_name):
+        base_name = f"{base_name}_"
+    return base_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +115,7 @@ class SpecParam:
         group: Logical argument group.
         scope: Visibility scope.
         order: Sorting key inside group.
-        if_deprecated: Whether this parameter is deprecated.
+        is_deprecated: Whether this parameter is deprecated.
         replace_by: Suggested replacement id when deprecated.
         arg_builder:
             Callback that writes this parameter into a target ``ArgAdder``.
@@ -141,7 +141,7 @@ class SpecParam:
     group: EnumGroupKey = EnumGroupKey.GENERAL
     scope: EnumScope = EnumScope.INTERNAL
     order: int = 0
-    if_deprecated: bool = False
+    is_deprecated: bool = False
     replace_by: str | None = None
 
     arg_builder: Callable[[ArgAdder, "SpecParam"], None] | None = None

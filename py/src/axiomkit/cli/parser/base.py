@@ -162,11 +162,11 @@ class CanonicalRegistry(Generic[T]):
             ``kind_sort`` and, if provided, further sorted using ``rule_sort``.
         """
         if kind_sort == "id":
-            l_specs = [self._items[k] for k in sorted(self._items.keys())]
+            specs = [self._items[key] for key in sorted(self._items.keys())]
         elif kind_sort == "insertion":
-            l_specs = list(self._items.values())
+            specs = list(self._items.values())
 
         if rule_sort is not None:
-            l_specs = sorted(l_specs, key=rule_sort)
+            specs = sorted(specs, key=rule_sort)
 
-        return l_specs
+        return specs

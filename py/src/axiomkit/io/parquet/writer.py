@@ -151,7 +151,7 @@ def _estimate_compressed_bytes_per_row(
     """
     # 采样并实际压缩到内存，得到“磁盘上压缩后”的字节/行
     lf_sample = lf.limit(sample_rows)
-    n_rows = lf_sample.select(pl.len()).collect().item()
+    row_count = lf_sample.select(pl.len()).collect().item()
     buf = io.BytesIO()
     lf_sample.sink_parquet(
         buf,
@@ -159,9 +159,9 @@ def _estimate_compressed_bytes_per_row(
         compression_level=compression_level,
         data_page_size=1 << 20,
         # 让行组不至于太小，避免被极端页/组开销误导
-        row_group_size=max(50_000, n_rows // 8 or 10_000),
+        row_group_size=max(50_000, row_count // 8 or 10_000),
     )
-    return max(1.0, buf.tell() / max(1, n_rows))  # 至少 1B/row，避免除0/极端值
+    return max(1.0, buf.tell() / max(1, row_count))  # 至少 1B/row，避免除0/极端值
 
 
 def sink_parquet_dataset(
@@ -173,7 +173,7 @@ def sink_parquet_dataset(
     size_mib_per_file_max: int = 8 * 16,
     size_mib_per_row_group_max: int = 8 * 4,
     size_bytes_hash: int = N_SIZE_BYTES_HASH_DEFAULT,
-    if_overwrite: bool = False,
+    should_overwrite: bool = False,
     dir_allowed: Path | None = None,
 ) -> None:
     """
@@ -187,7 +187,7 @@ def sink_parquet_dataset(
         size_mib_per_file_max: Maximum file size in MiB (rounded up to 8 MiB).
         size_mib_per_row_group_max: Maximum row group size in MiB (rounded up to 8 MiB).
         size_bytes_hash: Hash suffix size in bytes for truncating long partition values.
-        if_overwrite: If True, overwrite existing output directory.
+        should_overwrite: If True, overwrite existing output directory.
         dir_allowed: Optional base directory that bounds overwrite permissions.
 
     Raises:
@@ -203,22 +203,22 @@ def sink_parquet_dataset(
     if not (1 <= (lvl_compression := int(lvl_compression)) <= 22):
         raise ValueError("Compression level must be between 1 and 22.")
 
-    if (n_size_mib_per_file_max := max(32, int(size_mib_per_file_max))) % 8 != 0:
-        n_size_mib_per_file_max += 8 - (n_size_mib_per_file_max % 8)
+    if (size_mib_per_file_limit := max(32, int(size_mib_per_file_max))) % 8 != 0:
+        size_mib_per_file_limit += 8 - (size_mib_per_file_limit % 8)
     if (
-        n_size_mib_per_row_group_max := min(
-            n_size_mib_per_file_max, int(size_mib_per_row_group_max)
+        size_mib_per_row_group_limit := min(
+            size_mib_per_file_limit, int(size_mib_per_row_group_max)
         )
     ) % 8 != 0:
-        n_size_mib_per_row_group_max += 8 - (n_size_mib_per_row_group_max % 8)
-    n_size_bytes_per_file_max = n_size_mib_per_file_max * (1 << 20)
+        size_mib_per_row_group_limit += 8 - (size_mib_per_row_group_limit % 8)
+    size_bytes_per_file_limit = size_mib_per_file_limit * (1 << 20)
 
-    if (not if_overwrite) and dir_out.exists() and any(dir_out.iterdir()):
+    if (not should_overwrite) and dir_out.exists() and any(dir_out.iterdir()):
         raise FileExistsError(
-            f"Arg `if_overwrite` is False, but output directory `{dir_out}` is not empty."
+            f"Arg `should_overwrite` is False, but output directory `{dir_out}` is not empty."
         )
 
-    if if_overwrite and dir_out.exists():
+    if should_overwrite and dir_out.exists():
         _validate_overwrite_permissions(dir_out=dir_out, dir_allowed=dir_allowed)
         shutil.rmtree(dir_out, ignore_errors=True)
     dir_out.mkdir(parents=True, exist_ok=True)
@@ -234,8 +234,8 @@ def sink_parquet_dataset(
     )
 
     df = df.lazy() if isinstance(df, pl.DataFrame) else df
-    b_is_empty = df.limit(1).collect().height == 0
-    if b_is_empty:
+    is_empty = df.limit(1).collect().height == 0
+    if is_empty:
         pl.LazyFrame(schema=df.collect_schema()).sink_parquet(
             path=dir_out / "__EMPTY__.parquet",
             compression="zstd",
@@ -247,51 +247,51 @@ def sink_parquet_dataset(
         return
 
     if cols_partitioning:
-        l_cols_miss = [
-            _c for _c in cols_partitioning if _c not in df.collect_schema().names()
+        missing_cols = [
+            column for column in cols_partitioning if column not in df.collect_schema().names()
         ]
-        if l_cols_miss:
+        if missing_cols:
             raise ValueError(
-                f"Partition column(s) not found in DataFrame columns: `{l_cols_miss}`."
+                f"Partition column(s) not found in DataFrame columns: `{missing_cols}`."
             )
 
         df = df.with_columns(
             [
                 _sanitize_partition_cols(
-                    pl.col(_c), size_bytes_hash=size_bytes_hash
-                ).alias(_c)
-                for _c in cols_partitioning
+                    pl.col(column), size_bytes_hash=size_bytes_hash
+                ).alias(column)
+                for column in cols_partitioning
             ]
         )
 
-    n_size_bytes_per_row = _estimate_compressed_bytes_per_row(
+    size_bytes_per_row = _estimate_compressed_bytes_per_row(
         lf=df,
         compression_level=lvl_compression,
     )
-    n_rows_per_file_max = max(
-        50_000, int(n_size_bytes_per_file_max / n_size_bytes_per_row)
+    rows_per_file_max = max(
+        50_000, int(size_bytes_per_file_limit / size_bytes_per_row)
     )
-    n_rows_per_row_group_max = max(
+    rows_per_row_group_max = max(
         10_000,
         int(
-            min(n_size_mib_per_row_group_max, n_size_mib_per_file_max // 8)
-            / n_size_bytes_per_row
+            min(size_mib_per_row_group_limit, size_mib_per_file_limit // 8)
+            / size_bytes_per_row
         ),
     )
     # 保障每文件至少有2个 row groups；且行组不超过文件行数的一半
-    n_rows_per_row_group_max = min(
-        n_rows_per_row_group_max, max(10_000, n_rows_per_file_max // 2)
+    rows_per_row_group_max = min(
+        rows_per_row_group_max, max(10_000, rows_per_file_max // 2)
     )
 
     df.sink_parquet(
         pl.PartitionBy(
             base_path=dir_out,
             key=cols_partitioning,
-            max_rows_per_file=n_rows_per_file_max,
+            max_rows_per_file=rows_per_file_max,
         ),
         compression="zstd",
         compression_level=lvl_compression,
         data_page_size=1 << 20,
-        row_group_size=n_rows_per_row_group_max,
+        row_group_size=rows_per_row_group_max,
         mkdir=True,  # ! unstable API but needed
     )

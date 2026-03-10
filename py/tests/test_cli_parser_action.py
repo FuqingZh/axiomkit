@@ -4,7 +4,7 @@ import argparse
 
 import pytest
 
-from axiomkit.cli.parser import ActionNumericRange  # noqa: E402
+from axiomkit.cli.parser import ActionNumericRange, ActionPath  # noqa: E402
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -58,7 +58,7 @@ def test_unit_interval_supports_open_left_closed_right() -> None:
     parser.add_argument(
         "--x",
         action=ActionNumericRange.unit_interval(
-            if_inclusive_min=False, if_inclusive_max=True
+            should_include_min=False, should_include_max=True
         ),
     )
 
@@ -67,3 +67,14 @@ def test_unit_interval_supports_open_left_closed_right() -> None:
 
     ns = parser.parse_args(["--x", "1"])
     assert ns.x == 1.0
+
+
+def test_action_path_dir_accepts_missing_writable_output_dir() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--dir_out",
+        action=ActionPath.dir(should_exist=False, is_writable=True),
+    )
+
+    ns = parser.parse_args(["--dir_out", "out"])
+    assert ns.dir_out.name == "out"
