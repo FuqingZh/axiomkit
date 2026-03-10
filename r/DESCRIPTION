@@ -10,6 +10,8 @@ LazyData: true
 Imports:
     cli,
     data.table,
+    ggh4x,
+    ggplot2,
     matrixStats,
     S7
 Suggests:
