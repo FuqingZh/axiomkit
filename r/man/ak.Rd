@@ -9,6 +9,7 @@ ak
 }
 \description{
 \code{ak} is a lightweight facade that groups package exports by domain.
-Use \code{ak$stats$...} for statistics-related APIs.
+Use \code{ak$stats$...} for statistics-related APIs and \code{ak$plot$...} for
+plotting helpers.
 }
 \keyword{datasets}
