@@ -1,30 +1,30 @@
 # OS
 .DS_Store
 
-# Python
+# Python (`py/`)
 *.egg-info/
 *.py[cod]
-.dist/
-.mypy_cache/
-.pdm-build/
-.pdm-python
-.pytest_cache/
-.ruff_cache/
-.venv/
-__pycache__/
-__pypackages__/
-build/
-dist/
+py/.mypy_cache/
+py/.pdm-build/
+py/.pdm-python
+py/.pytest_cache/
+py/.ruff_cache/
+py/.venv/
+py/__pycache__/
+py/__pypackages__/
+py/build/
+py/dist/
 
-# R
+# R (`r/`)
 .Rhistory
 .Rproj.user/
-renv/library/
-renv/staging/
+r/renv/library/
+r/renv/staging/
+r/tests/artifacts/
 
-# Rust
+# Rust (`rs/`)
 target/
 
-# Rust extension artifacts (built during packaging/tests, never committed)
-py/src/axiomkit/io/fs/_axiomkit_io_fs_rs.so
-py/src/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.so
+# In-place Rust extension artifacts built under `py/src/`
+py/src/axiomkit/io/fs/_axiomkit_io_fs_rs*.so
+py/src/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs*.so
