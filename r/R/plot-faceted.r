@@ -397,6 +397,9 @@
 #' through `geom_layer`, while this helper focuses on input normalization,
 #' optional y-ordering, and facet construction.
 #'
+#' @import data.table
+#' @import ggplot2
+#' @importFrom ggh4x elem_list_rect facet_grid2 facet_wrap2 strip_themed
 #' @param df A tabular object coercible to `data.table`.
 #' @param col_x Column name used for x-axis values.
 #' @param col_y Column name used for y-axis values.
