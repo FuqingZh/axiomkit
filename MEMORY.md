@@ -10,6 +10,10 @@
     - Give a clear preferred option first, then alternatives and trade-offs.
     - Use auditable reasoning: definitions, assumptions, steps, boundaries, examples.
     - Provide corrective feedback when needed; do not optimize for agreement.
+- Delegation boundary:
+    - If a task is better suited for cloud delegation than local interactive work, say so first.
+    - Explain why delegation is a better fit for that task shape.
+    - Do not switch into delegated-style execution implicitly; wait for user confirmation.
 
 ## Project North Star
 
