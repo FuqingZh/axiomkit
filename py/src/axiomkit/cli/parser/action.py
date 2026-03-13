@@ -19,7 +19,7 @@ class SpecPath:
     filesystem entry to accept and which validation rules to enforce.
 
     Attributes:
-        kind_entry: Expected entry type, one of {"dir", "file", "exe"}.
+        entry_kind: Expected entry type, one of {"dir", "file", "exe"}.
         allowed_file_exts: Allowed file extensions (lowercase, no leading dots).
         should_exist: Whether the path must already exist.
         is_readable: Whether the path must be readable (if it exists).
@@ -29,7 +29,7 @@ class SpecPath:
         Explicit file rule with suffix constraints:
 
         >>> spec = SpecPath(
-        ...     kind_entry="file",
+        ...     entry_kind="file",
         ...     allowed_file_exts=("tsv", "tsv.gz"),
         ...     should_exist=True,
         ... )
@@ -37,13 +37,13 @@ class SpecPath:
         Output directory that may not exist yet:
 
         >>> out_spec = SpecPath(
-        ...     kind_entry="dir",
+        ...     entry_kind="dir",
         ...     should_exist=False,
         ...     is_writable=True,
         ... )
     """
 
-    kind_entry: Literal["dir", "file", "exe"] = "file"
+    entry_kind: Literal["dir", "file", "exe"] = "file"
     # file-only: allowed extensions (case-insensitive, without leading dots)
     allowed_file_exts: tuple[str, ...] = ()
     # whether the target must already exist (useful for output paths if False)
@@ -76,7 +76,7 @@ class ActionPath(argparse.Action):
         >>> parser.add_argument(
         ...     "--report",
         ...     action=ActionPath.from_spec(
-        ...         spec=SpecPath(kind_entry="file", allowed_file_exts=("xlsx",))
+        ...         spec=SpecPath(entry_kind="file", allowed_file_exts=("xlsx",))
         ...     ),
         ... )
 
@@ -97,7 +97,7 @@ class ActionPath(argparse.Action):
         dest: str,
         *,
         spec: SpecPath | None = None,
-        kind_entry: Literal["dir", "file", "exe"] = "file",
+        entry_kind: Literal["dir", "file", "exe"] = "file",
         allowed_file_exts: Iterable[str] | None = None,
         should_exist: bool = True,
         is_readable: bool = True,
@@ -110,7 +110,7 @@ class ActionPath(argparse.Action):
             option_strings: Option strings received from argparse.
             dest: Namespace attribute name.
             spec: Prebuilt ``SpecPath``; overrides other spec params when set.
-            kind_entry: Expected entry type when ``spec`` is not provided.
+            entry_kind: Expected entry type when ``spec`` is not provided.
             allowed_file_exts: Allowed file extensions for file inputs.
             should_exist: Whether the path must already exist.
             is_readable: Whether readability is enforced when the path exists.
@@ -118,7 +118,7 @@ class ActionPath(argparse.Action):
             **kwargs: Forwarded to ``argparse.Action``.
 
         Raises:
-            ValueError: If an invalid ``kind_entry`` is provided.
+            ValueError: If an invalid ``entry_kind`` is provided.
             argparse.ArgumentError:
                 If a non-``None`` default value fails validation. This happens
                 at parser construction time (before parsing argv).
@@ -127,7 +127,7 @@ class ActionPath(argparse.Action):
 
         if spec is None:
             spec = SpecPath(
-                kind_entry=kind_entry,
+                entry_kind=entry_kind,
                 allowed_file_exts=tuple(
                     str(ext).lower().lstrip(".")
                     for ext in (allowed_file_exts or ())
@@ -138,15 +138,15 @@ class ActionPath(argparse.Action):
                 is_writable=is_writable,
             )
 
-        if spec.kind_entry not in ("dir", "file", "exe"):
+        if spec.entry_kind not in ("dir", "file", "exe"):
             raise ValueError(
-                f"[{dest}]: `kind_entry` must be 'dir'|'file'|'exe', got {spec.kind_entry!r}"
+                f"[{dest}]: `entry_kind` must be 'dir'|'file'|'exe', got {spec.entry_kind!r}"
             )
 
         self.spec = spec
-        self.kind_entry = spec.kind_entry
+        self.entry_kind = spec.entry_kind
 
-        if spec.kind_entry == "file" and spec.allowed_file_exts:
+        if spec.entry_kind == "file" and spec.allowed_file_exts:
             self.allowed_file_exts = tuple(
                 str(ext).lower().lstrip(".")
                 for ext in spec.allowed_file_exts
@@ -183,25 +183,29 @@ class ActionPath(argparse.Action):
         if not raw_value.strip():
             raise argparse.ArgumentError(self, f"[{name}]: Value cannot be empty.")
 
-        if self.kind_entry in {"file", "dir"}:
+        if self.entry_kind in {"file", "dir"}:
             try:
                 path = Path(raw_value).expanduser().resolve()
             except Exception:
-                raise argparse.ArgumentError(self, f"[{name}]: Invalid path: {raw_value!r}")
+                raise argparse.ArgumentError(
+                    self, f"[{name}]: Invalid path: {raw_value!r}"
+                )
 
-            if self.kind_entry == "file":
+            if self.entry_kind == "file":
                 if self.spec.should_exist and not path.is_file():
-                    raise argparse.ArgumentError(
-                        self, f"[{name}]: Not a file: {path}"
-                    )
+                    raise argparse.ArgumentError(self, f"[{name}]: Not a file: {path}")
 
                 if self.allowed_file_exts:
                     allowed_exts = set(self.allowed_file_exts)
                     suffix_compound = "".join(path.suffixes).lower().lstrip(".")
                     suffix_single = path.suffix.lower().lstrip(".")
-                    if (suffix_compound not in allowed_exts) and (suffix_single not in allowed_exts):
+                    if (suffix_compound not in allowed_exts) and (
+                        suffix_single not in allowed_exts
+                    ):
                         expected_exts = ", ".join(self.allowed_file_exts)
-                        actual_ext = "." + suffix_compound if suffix_compound else "(none)"
+                        actual_ext = (
+                            "." + suffix_compound if suffix_compound else "(none)"
+                        )
                         raise argparse.ArgumentError(
                             self,
                             f"[{name}]: Expected extension(s) in ({expected_exts}), got {actual_ext}: {path}",
@@ -289,7 +293,9 @@ class ActionPath(argparse.Action):
         argument_name = option_string or self.dest
 
         if values is None:
-            raise argparse.ArgumentError(self, f"[{argument_name}]: Value cannot be None.")
+            raise argparse.ArgumentError(
+                self, f"[{argument_name}]: Value cannot be None."
+            )
 
         if isinstance(values, (list, tuple)):
             seq = cast(list[object] | tuple[object, ...], values)
@@ -338,7 +344,7 @@ class ActionPath(argparse.Action):
     @classmethod
     def make(
         cls,
-        kind_entry: Literal["dir", "file", "exe"] = "file",
+        entry_kind: Literal["dir", "file", "exe"] = "file",
         *,
         allowed_file_exts: Iterable[str] = (),
         should_exist: bool = True,
@@ -353,7 +359,7 @@ class ActionPath(argparse.Action):
               construction.
 
         Args:
-            kind_entry: Expected entry type.
+            entry_kind: Expected entry type.
             allowed_file_exts: Allowed file extensions for ``file`` kind.
             should_exist: Whether the target must already exist.
             is_readable: Whether readability is required.
@@ -366,14 +372,14 @@ class ActionPath(argparse.Action):
             >>> parser.add_argument(
             ...     "--file_in",
             ...     action=ActionPath.make(
-            ...         kind_entry="file",
+            ...         entry_kind="file",
             ...         allowed_file_exts=("csv",),
             ...     ),
             ... )
         """
         return cls.from_spec(
             spec=SpecPath(
-                kind_entry=kind_entry,
+                entry_kind=entry_kind,
                 allowed_file_exts=tuple(
                     str(ext).lower().lstrip(".")
                     for ext in allowed_file_exts
@@ -388,8 +394,8 @@ class ActionPath(argparse.Action):
     @classmethod
     def file(
         cls,
-        *,
         exts: Iterable[str] = (),
+        *,
         should_exist: bool = True,
         is_readable: bool = True,
         is_writable: bool = False,
@@ -417,7 +423,7 @@ class ActionPath(argparse.Action):
             ... )
         """
         return cls.make(
-            kind_entry="file",
+            entry_kind="file",
             allowed_file_exts=exts,
             should_exist=should_exist,
             is_readable=is_readable,
@@ -454,7 +460,7 @@ class ActionPath(argparse.Action):
             ... )
         """
         return cls.make(
-            kind_entry="dir",
+            entry_kind="dir",
             should_exist=should_exist,
             is_readable=is_readable,
             is_writable=is_writable,
@@ -476,7 +482,7 @@ class ActionPath(argparse.Action):
         Examples:
             >>> parser.add_argument("--exe_rscript", action=ActionPath.exe(), default="Rscript")
         """
-        return cls.make(kind_entry="exe")
+        return cls.make(entry_kind="exe")
 
 
 _RE_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
@@ -581,7 +587,9 @@ class ActionCommandPrefix(argparse.Action):
 
         # skip leading VAR=... assignments
         env_assignment_count = 0
-        while env_assignment_count < len(tokens) and _RE_ENV_ASSIGN.match(tokens[env_assignment_count]):
+        while env_assignment_count < len(tokens) and _RE_ENV_ASSIGN.match(
+            tokens[env_assignment_count]
+        ):
             env_assignment_count += 1
         if env_assignment_count >= len(tokens):
             raise argparse.ArgumentError(
@@ -592,7 +600,10 @@ class ActionCommandPrefix(argparse.Action):
         command_head = tokens[env_assignment_count]
         if command_head in {"conda", "mamba", "micromamba"}:
             # forbid activate
-            if env_assignment_count + 1 < len(tokens) and tokens[env_assignment_count + 1] == "activate":
+            if (
+                env_assignment_count + 1 < len(tokens)
+                and tokens[env_assignment_count + 1] == "activate"
+            ):
                 raise argparse.ArgumentError(
                     self,
                     f"[{argument_name}]: Do not use '... activate ...'. Use '... run -n <env>' style. Yours: {input_text!r}",
@@ -782,9 +793,9 @@ class SpecNumericRange:
     """Specification describing allowed numeric inputs.
 
     Attributes:
-        kind_value: Numeric kind, either "int" or "float".
-        min_value: Minimum allowed value or ``None``.
-        max_value: Maximum allowed value or ``None``.
+        value_kind: Numeric kind, either "int" or "float".
+        value_min: Minimum allowed value or ``None``.
+        value_max: Maximum allowed value or ``None``.
         allowed_values: Explicitly whitelisted values.
         should_include_min: Whether the lower bound is inclusive.
         should_include_max: Whether the upper bound is inclusive.
@@ -793,22 +804,22 @@ class SpecNumericRange:
     Examples:
         Strict positive integer:
 
-        >>> SpecNumericRange(kind_value="int", min_value=0, should_include_min=False)
+        >>> SpecNumericRange(value_kind="int", value_min=0, should_include_min=False)
 
         Open-left, closed-right unit interval:
 
         >>> SpecNumericRange(
-        ...     kind_value="float",
-        ...     min_value=0.0,
-        ...     max_value=1.0,
+        ...     value_kind="float",
+        ...     value_min=0.0,
+        ...     value_max=1.0,
         ...     should_include_min=False,
         ...     should_include_max=True,
         ... )
     """
 
-    kind_value: Literal["int", "float"] = "float"
-    min_value: int | float | None = None
-    max_value: int | float | None = None
+    value_kind: Literal["int", "float"] = "float"
+    value_min: int | float | None = None
+    value_max: int | float | None = None
 
     # if provided, values in this set are accepted immediately (even if outside min/max)
     allowed_values: tuple[int | float, ...] = ()
@@ -832,18 +843,18 @@ class ActionNumericRange(argparse.Action):
         >>> parser.add_argument(
         ...     "--learning_rate",
         ...     action=ActionNumericRange,
-        ...     spec=SpecNumericRange(kind_value="float", min_value=0, should_include_min=False),
+        ...     spec=SpecNumericRange(value_kind="float", value_min=0, should_include_min=False),
         ... )
 
         Use convenience factories:
 
-        >>> parser.add_argument("--epochs", action=ActionNumericRange.non_negative(kind_value="int"))
-        >>> parser.add_argument("--lr", action=ActionNumericRange.positive(kind_value="float"))
+        >>> parser.add_argument("--epochs", action=ActionNumericRange.non_negative(value_kind="int"))
+        >>> parser.add_argument("--lr", action=ActionNumericRange.positive(value_kind="float"))
         >>> parser.add_argument("--p", action=ActionNumericRange.unit_interval())
 
     Notes:
         - ``allowed_values`` are accepted even if outside min/max.
-        - When ``kind_value="float"`` and ``is_finite=True``, rejects NaN/Inf.
+        - When ``value_kind="float"`` and ``is_finite=True``, rejects NaN/Inf.
         - Defaults are validated eagerly; misconfigured defaults raise early.
     """
 
@@ -869,15 +880,15 @@ class ActionNumericRange(argparse.Action):
         """
         super().__init__(option_strings, dest, **kwargs)
 
-        if spec.kind_value not in ("int", "float"):
+        if spec.value_kind not in ("int", "float"):
             raise ValueError(
-                f"[{dest}]: spec.kind_value must be 'int'|'float', got {spec.kind_value!r}"
+                f"[{dest}]: spec.value_kind must be 'int'|'float', got {spec.value_kind!r}"
             )
 
-        if spec.min_value is not None and spec.max_value is not None:
-            if float(spec.min_value) > float(spec.max_value):
+        if spec.value_min is not None and spec.value_max is not None:
+            if float(spec.value_min) > float(spec.value_max):
                 raise ValueError(
-                    f"[{dest}]: spec.min_value ({spec.min_value}) must be <= spec.max_value ({spec.max_value})"
+                    f"[{dest}]: spec.value_min ({spec.value_min}) must be <= spec.value_max ({spec.value_max})"
                 )
 
         self.spec = spec
@@ -908,7 +919,7 @@ class ActionNumericRange(argparse.Action):
             >>> parser.add_argument(
             ...     "--threads",
             ...     action=ActionNumericRange.from_spec(
-            ...         spec=SpecNumericRange(kind_value="int", min_value=1)
+            ...         spec=SpecNumericRange(value_kind="int", value_min=1)
             ...     ),
             ... )
         """
@@ -917,10 +928,10 @@ class ActionNumericRange(argparse.Action):
     @classmethod
     def make(
         cls,
-        kind_value: Literal["int", "float"] = "float",
+        value_kind: Literal["int", "float"] = "float",
         *,
-        min_value: int | float | None = None,
-        max_value: int | float | None = None,
+        value_min: int | float | None = None,
+        value_max: int | float | None = None,
         allowed_values: Sequence[int | float] = (),
         should_include_min: bool = True,
         should_include_max: bool = True,
@@ -929,12 +940,12 @@ class ActionNumericRange(argparse.Action):
         """Convenience factory for ``ActionNumericRange``.
 
         Args:
-            kind_value: Numeric kind to parse.
-            min_value: Minimum allowed value.
-            max_value: Maximum allowed value.
+            value_kind: Numeric kind to parse.
+            value_min: Minimum allowed value.
+            value_max: Maximum allowed value.
             allowed_values: Explicitly whitelisted values.
-            should_include_min: Whether ``min_value`` is inclusive.
-            should_include_max: Whether ``max_value`` is inclusive.
+            should_include_min: Whether ``value_min`` is inclusive.
+            should_include_max: Whether ``value_max`` is inclusive.
             is_finite: Whether floats must be finite.
 
         Returns:
@@ -944,16 +955,16 @@ class ActionNumericRange(argparse.Action):
             >>> parser.add_argument(
             ...     "--fold_change",
             ...     action=ActionNumericRange.make(
-            ...         kind_value="float",
-            ...         min_value=0.0,
+            ...         value_kind="float",
+            ...         value_min=0.0,
             ...     ),
             ... )
         """
         return cls.from_spec(
             spec=SpecNumericRange(
-                kind_value=kind_value,
-                min_value=min_value,
-                max_value=max_value,
+                value_kind=value_kind,
+                value_min=value_min,
+                value_max=value_max,
                 allowed_values=tuple(allowed_values),
                 should_include_min=should_include_min,
                 should_include_max=should_include_max,
@@ -964,25 +975,25 @@ class ActionNumericRange(argparse.Action):
     @classmethod
     def non_negative(
         cls,
-        kind_value: Literal["int", "float"] = "float",
+        value_kind: Literal["int", "float"] = "float",
         *,
         is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Factory for non-negative values ``[0, +inf)``.
 
         Args:
-            kind_value: Numeric kind to parse.
+            value_kind: Numeric kind to parse.
             is_finite: Whether floats must be finite.
 
         Returns:
             A callable suitable for argparse ``action``.
 
         Examples:
-            >>> parser.add_argument("--thr_count", action=ActionNumericRange.non_negative(kind_value="int"))
+            >>> parser.add_argument("--thr_count", action=ActionNumericRange.non_negative(value_kind="int"))
         """
         return cls.make(
-            kind_value=kind_value,
-            min_value=0,
+            value_kind=value_kind,
+            value_min=0,
             should_include_min=True,
             is_finite=is_finite,
         )
@@ -990,14 +1001,14 @@ class ActionNumericRange(argparse.Action):
     @classmethod
     def positive(
         cls,
-        kind_value: Literal["int", "float"] = "float",
+        value_kind: Literal["int", "float"] = "float",
         *,
         is_finite: bool = True,
     ) -> type[argparse.Action]:
         """Factory for positive values ``(0, +inf)``.
 
         Args:
-            kind_value: Numeric kind to parse.
+            value_kind: Numeric kind to parse.
             is_finite: Whether floats must be finite.
 
         Returns:
@@ -1007,8 +1018,8 @@ class ActionNumericRange(argparse.Action):
             >>> parser.add_argument("--learning_rate", action=ActionNumericRange.positive())
         """
         return cls.make(
-            kind_value=kind_value,
-            min_value=0,
+            value_kind=value_kind,
+            value_min=0,
             should_include_min=False,
             is_finite=is_finite,
         )
@@ -1016,7 +1027,7 @@ class ActionNumericRange(argparse.Action):
     @classmethod
     def unit_interval(
         cls,
-        kind_value: Literal["int", "float"] = "float",
+        value_kind: Literal["int", "float"] = "float",
         *,
         should_include_min: bool = True,
         should_include_max: bool = True,
@@ -1048,9 +1059,9 @@ class ActionNumericRange(argparse.Action):
             ... )
         """
         return cls.make(
-            kind_value=kind_value,
-            min_value=0.0,
-            max_value=1.0,
+            value_kind=value_kind,
+            value_min=0.0,
+            value_max=1.0,
             should_include_min=should_include_min,
             should_include_max=should_include_max,
             is_finite=is_finite,
@@ -1110,20 +1121,20 @@ class ActionNumericRange(argparse.Action):
             float_candidate = None
 
         if float_candidate is not None and float_candidate in self._allowed_float:
-            return int(raw_value) if self.spec.kind_value == "int" else float(raw_value)
+            return int(raw_value) if self.spec.value_kind == "int" else float(raw_value)
 
         # parse
         try:
             parsed_value: int | float = (
-                int(raw_value) if self.spec.kind_value == "int" else float(raw_value)
+                int(raw_value) if self.spec.value_kind == "int" else float(raw_value)
             )
         except Exception:
             raise argparse.ArgumentError(
                 self,
-                f"[{argument_name}]: Cannot parse {raw_value!r} as {self.spec.kind_value}.",
+                f"[{argument_name}]: Cannot parse {raw_value!r} as {self.spec.value_kind}.",
             )
 
-        if self.spec.kind_value == "float" and self.spec.is_finite:
+        if self.spec.value_kind == "float" and self.spec.is_finite:
             if not math.isfinite(float(parsed_value)):
                 raise argparse.ArgumentError(
                     self,
@@ -1132,32 +1143,32 @@ class ActionNumericRange(argparse.Action):
 
         numeric_value = float(parsed_value)
 
-        if self.spec.min_value is not None:
-            min_value = float(self.spec.min_value)
+        if self.spec.value_min is not None:
+            value_min = float(self.spec.value_min)
             is_valid = (
-                numeric_value >= min_value
+                numeric_value >= value_min
                 if self.spec.should_include_min
-                else numeric_value > min_value
+                else numeric_value > value_min
             )
             if not is_valid:
                 op = ">=" if self.spec.should_include_min else ">"
                 raise argparse.ArgumentError(
                     self,
-                    f"[{argument_name}]: Must be {op} {self.spec.min_value}, got {parsed_value!r}.",
+                    f"[{argument_name}]: Must be {op} {self.spec.value_min}, got {parsed_value!r}.",
                 )
 
-        if self.spec.max_value is not None:
-            max_value = float(self.spec.max_value)
+        if self.spec.value_max is not None:
+            value_max = float(self.spec.value_max)
             is_valid = (
-                numeric_value <= max_value
+                numeric_value <= value_max
                 if self.spec.should_include_max
-                else numeric_value < max_value
+                else numeric_value < value_max
             )
             if not is_valid:
                 op = "<=" if self.spec.should_include_max else "<"
                 raise argparse.ArgumentError(
                     self,
-                    f"[{argument_name}]: Must be {op} {self.spec.max_value}, got {parsed_value!r}.",
+                    f"[{argument_name}]: Must be {op} {self.spec.value_max}, got {parsed_value!r}.",
                 )
 
         return parsed_value

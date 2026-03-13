@@ -15,7 +15,7 @@ def test_non_negative_accepts_zero_and_rejects_negative() -> None:
     parser = _build_parser()
     parser.add_argument(
         "--thr",
-        action=ActionNumericRange.non_negative(kind_value="float"),
+        action=ActionNumericRange.non_negative(value_kind="float"),
     )
 
     ns = parser.parse_args(["--thr", "0"])
@@ -29,7 +29,7 @@ def test_positive_rejects_zero() -> None:
     parser = _build_parser()
     parser.add_argument(
         "--lr",
-        action=ActionNumericRange.positive(kind_value="float"),
+        action=ActionNumericRange.positive(value_kind="float"),
     )
 
     ns = parser.parse_args(["--lr", "0.01"])
