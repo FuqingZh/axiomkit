@@ -15,13 +15,12 @@ from enum import StrEnum
 from typing import Protocol, Self, cast
 
 from .base import ArgAdder, CanonicalRegistry, SmartFormatter
-from .spec import EnumGroupKey, EnumScope, SpecCommand, SpecParam
+from .spec import EnumGroupKey, SpecCommand, SpecParam
 
 _RESERVED_PARAM_DESTS: frozenset[str] = frozenset(
     {
         "command",
         "_handler",
-        "_cmd_entry",
         "_cmd_group",
     }
 )
@@ -90,8 +89,8 @@ class CommandRegistry:
         >>> _ = reg.register_command(
         ...     SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
         ... )
-        >>> reg.select_command("run").id
-        'run'
+        >>> [spec.id for spec in reg.list_commands()]
+        ['run']
     """
 
     def __init__(self) -> None:
@@ -112,20 +111,6 @@ class CommandRegistry:
         """
         self._core.register(spec)
         return self
-
-    def select_command(self, key: str) -> SpecCommand:
-        """Select a command by canonical id.
-
-        Args:
-            key: Canonical command id.
-
-        Returns:
-            SpecCommand: Resolved command specification.
-
-        Raises:
-            ValueError: If the key is unknown.
-        """
-        return self._core.get(key)
 
     def list_commands(self, should_sort: bool = True) -> list[SpecCommand]:
         """List registered command specs.
@@ -212,7 +197,7 @@ class CommandRegistry:
                 help=help_text,
                 formatter_class=formatter_type,
             )
-            subparser.set_defaults(_cmd_entry=spec.entry, _cmd_group=spec.group)
+            subparser.set_defaults(_cmd_group=spec.group)
             spec.arg_builder(subparser)
 
             if should_apply_param_keys and spec.param_keys:
@@ -246,10 +231,8 @@ class ParamRegistry:
         >>> _ = reg.register_params(
         ...     SpecParam(id="general.flag", arg_builder=lambda g, s: s.add_argument(g))
         ... )
-        >>> reg.contains_param("general.flag")
-        True
-        >>> reg.contains_param("missing")
-        False
+        >>> reg.select_param("general.flag").id
+        'general.flag'
     """
 
     def __init__(self) -> None:
@@ -308,33 +291,15 @@ class ParamRegistry:
                 f"Available ids: {available_ids}."
             ) from e
 
-    def contains_param(self, key: ParamKey) -> bool:
-        """Check whether a canonical parameter id exists.
-
-        Args:
-            key:
-                Canonical parameter id. Supports ``str`` and ``StrEnum``.
-
-        Returns:
-            bool: ``True`` if resolvable; otherwise ``False``.
-        """
-        try:
-            self.select_param(key)
-            return True
-        except ValueError:
-            return False
-
     def list_params(
         self,
         *,
-        scope: EnumScope | None = None,
         group: str | None = None,
         should_sort: bool = True,
     ) -> list[SpecParam]:
         """List registered parameter specs with optional filtering.
 
         Args:
-            scope: Optional scope filter.
             group: Optional group filter.
             should_sort:
                 Whether to sort by ``(group, order, id)``.
@@ -348,8 +313,6 @@ class ParamRegistry:
         else:
             specs = self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
 
-        if scope is not None:
-            specs = [spec for spec in specs if spec.scope == scope]
         if group is not None:
             specs = [spec for spec in specs if spec.group == group]
 
@@ -371,7 +334,8 @@ class ParamRegistry:
                 Supports ``str`` and ``StrEnum``.
             reserved_dests:
                 Dest names that are forbidden for parameter materialization.
-                Defaults to ``{"command", "_handler"}``.
+                Defaults to the parser metadata dest set from
+                ``default_reserved_param_dests()``.
 
         Raises:
             ValueError:

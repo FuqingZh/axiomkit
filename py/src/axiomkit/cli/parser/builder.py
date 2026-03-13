@@ -29,24 +29,10 @@ from enum import StrEnum
 from typing import Any, Self
 
 from .base import SmartFormatter
-from .registry import CommandRegistry, ParamRegistry, default_reserved_param_dests
+from .registry import CommandRegistry, ParamRegistry
 from .spec import DICT_ARG_GROUP_META, ArgAdder, EnumGroupKey, SpecCommand, SpecParam
 
 type ParamKey = str | StrEnum
-
-
-def create_param_registry() -> ParamRegistry:
-    """Create an empty parameter registry.
-
-    Returns:
-        ParamRegistry: Empty registry ready for parameter spec registration.
-
-    Examples:
-        >>> registry = create_param_registry()
-        >>> registry.contains_param("demo.flag")
-        False
-    """
-    return ParamRegistry()
 
 
 @dataclass(slots=True)
@@ -68,7 +54,7 @@ class ArgumentGroupHandler:
     key: EnumGroupKey
     _adder: ArgAdder
     _parser_reg: "ArgGroupRegistry"
-    _params: "ParamRegistry | None" = None
+    _params: "ParamRegistry"
 
     def add_argument(self, *name_or_flags: str, **kwargs: Any) -> Any:
         """Add an argparse argument to this group.
@@ -92,8 +78,6 @@ class ArgumentGroupHandler:
                 Supports ``str`` and ``StrEnum``.
 
         Raises:
-            ValueError:
-                If this handler has no ``ParamRegistry`` binding.
             ValueError:
                 If a selected param belongs to a different group.
 
@@ -119,12 +103,6 @@ class ArgumentGroupHandler:
             Parameters must be registered before extraction. If a key is
             unknown, register it first via ``register_params``.
         """
-        if self._params is None:
-            raise ValueError(
-                "ArgGroupRegistry was created without ParamRegistry; "
-                "pass params=... to enable extract_params()."
-            )
-
         for k in param_keys:
             spec = self._params.select_param(k)
             if spec.group != self.key:
@@ -149,7 +127,7 @@ class ArgGroupRegistry:
 
     Examples:
         >>> parser = argparse.ArgumentParser(prog="demo")
-        >>> reg = ArgGroupRegistry(parser)
+        >>> reg = ArgGroupRegistry(parser, params=ParamRegistry())
         >>> grp = reg.select_group("inputs")
         >>> grp.add_argument("--file-in", type=str)
         _StoreAction(...)
@@ -159,18 +137,16 @@ class ArgGroupRegistry:
         self,
         parser: argparse.ArgumentParser,
         *,
-        params: "ParamRegistry | None" = None,
+        params: "ParamRegistry",
     ) -> None:
         """Initialize a group registry.
 
         Args:
             parser: Target parser that owns all generated argument groups.
-            params:
-                Optional parameter registry used by ``extract_params``.
-                If omitted, an empty registry is created.
+            params: Parameter registry used by ``extract_params``.
         """
         self.parser = parser
-        self.params = params or create_param_registry()
+        self.params = params
         self._groups: dict[EnumGroupKey, ArgumentGroupHandler] = {}
 
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler:
@@ -223,7 +199,6 @@ class CommandBuilder:
         help: str,
         arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
         | None = None,
-        entry: str | None = None,
         group: str = "default",
         order: int = 0,
         param_keys: tuple[ParamKey, ...] = (),
@@ -236,7 +211,6 @@ class CommandBuilder:
             help: Command help text.
             arg_builder:
                 Optional raw parser callback executed before grouped ops.
-            entry: Optional command entry id/path for downstream dispatch.
             group: Logical command group used for help sorting.
             order: Sort key inside command group.
             param_keys:
@@ -247,7 +221,6 @@ class CommandBuilder:
         self._id = id
         self._help = help
         self._arg_builder = arg_builder
-        self._entry = entry
         self._group = group
         self._order = order
         self._param_keys = param_keys
@@ -302,7 +275,6 @@ class CommandBuilder:
                 id=self._id,
                 help=self._help,
                 arg_builder=_build_args,
-                entry=self._entry,
                 group=self._group,
                 order=self._order,
                 param_keys=self._param_keys,
@@ -369,6 +341,7 @@ class GroupBuilder:
             ...     app.command("run", help="Run")
             ...     .group(EnumGroupKey.EXECUTABLES)
             ...     .extract_params("executables.rscript")
+            ...     .end()
             ...     .done()
             ... )
             >>> parser = app.build()
@@ -397,14 +370,6 @@ class GroupBuilder:
         """
         return self._command_builder
 
-    def done(self) -> "ParserBuilder":
-        """Shortcut for ``end().done()``.
-
-        Returns:
-            ParserBuilder: Parent parser builder.
-        """
-        return self.end().done()
-
 
 class ParserBuilder:
     """Fluent builder for command-style CLI parsers.
@@ -419,11 +384,11 @@ class ParserBuilder:
     Examples:
         Minimal command without grouped specs:
             >>> app = ParserBuilder(prog="demo")
-            >>> _ = app.add_command(
-            ...     id="ping",
+            >>> _ = app.command(
+            ...     "ping",
             ...     help="Ping command",
             ...     arg_builder=lambda p: p.add_argument("--name", required=True) or p,
-            ... )
+            ... ).done()
             >>> parser = app.build()
             >>> ns = parser.parse_args(["ping", "--name", "alice"])
             >>> (ns.command, ns.name)
@@ -459,7 +424,7 @@ class ParserBuilder:
         *,
         prog: str | None = None,
         description: str | None = None,
-        kind_formatter: type[argparse.HelpFormatter] | None = SmartFormatter,
+        formatter_kind: type[argparse.HelpFormatter] | None = SmartFormatter,
         params: ParamRegistry | None = None,
         commands: CommandRegistry | None = None,
     ) -> None:
@@ -471,7 +436,7 @@ class ParserBuilder:
                 ``description`` are ignored.
             prog: Program name used when a new parser is created.
             description: Top-level parser description.
-            kind_formatter: Help formatter type for new parser creation.
+            formatter_kind: Help formatter type for new parser creation.
             params: Optional parameter registry.
             commands: Optional command registry.
         """
@@ -479,14 +444,13 @@ class ParserBuilder:
             parser = argparse.ArgumentParser(
                 prog=prog,
                 description=description,
-                formatter_class=kind_formatter or SmartFormatter,
+                formatter_class=formatter_kind or SmartFormatter,
             )
 
         self.parser = parser
-        self.params = params or create_param_registry()
+        self.params = params or ParamRegistry()
         self.commands = commands or CommandRegistry()
         self._groups = ArgGroupRegistry(parser=self.parser, params=self.params)
-        self._command_dest = "command"
 
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler:
         """Select a logical argument group from the underlying registry.
@@ -515,24 +479,6 @@ class ParserBuilder:
         self.params.register_params(*specs)
         return self
 
-    def apply_param_specs(self, *keys: ParamKey) -> Self:
-        """Apply selected param specs directly to the root parser groups.
-
-        Args:
-            *keys:
-                Canonical param ids known by ``self.params``.
-                Supports ``str`` and ``StrEnum``.
-
-        Returns:
-            Self: ``self`` for fluent chaining.
-        """
-        self.params.apply_param_specs(
-            parser_reg=self._groups,
-            keys=keys,
-            reserved_dests=default_reserved_param_dests(command_dest=self._command_dest),
-        )
-        return self
-
     def register_command(self, spec: SpecCommand) -> Self:
         """Register one command specification.
 
@@ -545,56 +491,6 @@ class ParserBuilder:
         self.commands.register_command(spec)
         return self
 
-    def add_command(
-        self,
-        *,
-        id: str,
-        help: str,
-        arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None],
-        entry: str | None = None,
-        group: str = "default",
-        order: int = 0,
-        param_keys: tuple[ParamKey, ...] = (),
-    ) -> Self:
-        """Create and register a command specification inline.
-
-        Args:
-            id: Canonical command id.
-            help: Short help text used in subcommand listing.
-            arg_builder:
-                Callback that receives command subparser and adds arguments.
-            entry: Optional command entry id/path for downstream dispatch.
-            group: Logical command group used for help sorting.
-            order: Sort key inside the command group.
-            param_keys:
-                Param ids to auto-apply onto this command.
-                Supports ``str`` and ``StrEnum``.
-
-        Returns:
-            Self: ``self`` for fluent chaining.
-
-        Examples:
-            >>> app = ParserBuilder(prog="demo")
-            >>> _ = app.add_command(
-            ...     id="run",
-            ...     help="Run",
-            ...     arg_builder=lambda p: p,
-            ... )
-            >>> True
-            True
-        """
-        return self.register_command(
-            SpecCommand(
-                id=id,
-                help=help,
-                arg_builder=arg_builder,
-                entry=entry,
-                group=group,
-                order=order,
-                param_keys=param_keys,
-            )
-        )
-
     def command(
         self,
         id: str,
@@ -602,7 +498,6 @@ class ParserBuilder:
         help: str,
         arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
         | None = None,
-        entry: str | None = None,
         group: str = "default",
         order: int = 0,
         param_keys: tuple[ParamKey, ...] = (),
@@ -617,7 +512,6 @@ class ParserBuilder:
             help: Short help text used in subcommand listing.
             arg_builder:
                 Optional raw parser callback executed before grouped operations.
-            entry: Optional command entry id/path for downstream dispatch.
             group: Logical command group used for help sorting.
             order: Sort key inside the command group.
             param_keys:
@@ -633,6 +527,7 @@ class ParserBuilder:
             ...     app.command("run", help="Run")
             ...     .group(EnumGroupKey.GENERAL)
             ...     .add_argument("--dry-run", action="store_true")
+            ...     .end()
             ...     .done()
             ... )
             >>> parser = app.build()
@@ -644,7 +539,6 @@ class ParserBuilder:
             id=id,
             help=help,
             arg_builder=arg_builder,
-            entry=entry,
             group=group,
             order=order,
             param_keys=param_keys,
@@ -684,7 +578,6 @@ class ParserBuilder:
             ValueError: When command ``param_keys`` are requested but required
                 registries/factories are not provided.
         """
-        self._command_dest = dest
         self.commands.build_subparsers(
             parser=self.parser,
             title=title,

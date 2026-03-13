@@ -15,22 +15,9 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 from .base import ArgAdder
-
-
-class EnumScope(StrEnum):
-    """Parameter visibility scope.
-
-    Attributes:
-        FRONT: Exposed to front-facing users.
-        INTERNAL: Internal-facing parameter.
-    """
-
-    FRONT = "front"
-    INTERNAL = "internal"
 
 
 class EnumGroupKey(StrEnum):
@@ -113,7 +100,6 @@ class SpecParam:
         flags: CLI option flags. Inferred as ``("--<base_id>",)`` when omitted.
         help: Help message shown in argparse output.
         group: Logical argument group.
-        scope: Visibility scope.
         order: Sorting key inside group.
         is_deprecated: Whether this parameter is deprecated.
         replace_by: Suggested replacement id when deprecated.
@@ -139,7 +125,6 @@ class SpecParam:
     flags: tuple[str, ...] | None = None
     help: str | None = None
     group: EnumGroupKey = EnumGroupKey.GENERAL
-    scope: EnumScope = EnumScope.INTERNAL
     order: int = 0
     is_deprecated: bool = False
     replace_by: str | None = None
@@ -187,7 +172,6 @@ class SpecCommand:
         id: Canonical command id.
         help: Short help message.
         arg_builder: Callback used to add command-specific arguments.
-        entry: Optional command entry label/path for downstream dispatch.
         group: Logical command group.
         order: Sorting key inside group.
         param_keys:
@@ -205,7 +189,6 @@ class SpecCommand:
     id: str
     help: str
     arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
-    entry: str | Path | None = None
     group: str = "default"
     order: int = 0
     param_keys: tuple[str | StrEnum, ...] = ()

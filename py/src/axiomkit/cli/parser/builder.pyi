@@ -13,14 +13,11 @@ type ParamKey = str | StrEnum
 type ArgumentValueParser = Callable[[str], Any]
 
 
-def create_param_registry() -> ParamRegistry: ...
-
-
 class ArgumentGroupHandler:
     key: EnumGroupKey
     _adder: ArgAdder
     _parser_reg: ArgGroupRegistry
-    _params: ParamRegistry | None
+    _params: ParamRegistry
 
     def __init__(
         self,
@@ -28,7 +25,7 @@ class ArgumentGroupHandler:
         key: EnumGroupKey,
         _adder: ArgAdder,
         _parser_reg: ArgGroupRegistry,
-        _params: ParamRegistry | None = None,
+        _params: ParamRegistry,
     ) -> None: ...
 
     def add_argument(
@@ -60,7 +57,7 @@ class ArgGroupRegistry:
         self,
         parser: argparse.ArgumentParser,
         *,
-        params: ParamRegistry | None = None,
+        params: ParamRegistry,
     ) -> None: ...
 
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler: ...
@@ -75,7 +72,6 @@ class CommandBuilder:
         help: str,
         arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
         | None = None,
-        entry: str | None = None,
         group: str = "default",
         order: int = 0,
         param_keys: tuple[ParamKey, ...] = (),
@@ -108,7 +104,6 @@ class GroupBuilder:
 
     def extract_params(self, *param_keys: ParamKey) -> GroupBuilder: ...
     def end(self) -> CommandBuilder: ...
-    def done(self) -> ParserBuilder: ...
 
 
 class ParserBuilder:
@@ -129,20 +124,7 @@ class ParserBuilder:
 
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler: ...
     def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self: ...
-    def apply_param_specs(self, *keys: ParamKey) -> Self: ...
     def register_command(self, spec: SpecCommand) -> Self: ...
-
-    def add_command(
-        self,
-        *,
-        id: str,
-        help: str,
-        arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None],
-        entry: str | None = None,
-        group: str = "default",
-        order: int = 0,
-        param_keys: tuple[ParamKey, ...] = (),
-    ) -> Self: ...
 
     def command(
         self,
@@ -151,7 +133,6 @@ class ParserBuilder:
         help: str,
         arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
         | None = None,
-        entry: str | None = None,
         group: str = "default",
         order: int = 0,
         param_keys: tuple[ParamKey, ...] = (),
