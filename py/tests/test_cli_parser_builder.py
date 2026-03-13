@@ -38,15 +38,15 @@ def _register_demo_params(app: ParserBuilder) -> None:
 def test_parser_builder_applies_param_keys() -> None:
     app = ParserBuilder(prog="demo")
     _register_demo_params(app)
-    app = app.add_command(
-        id="demo",
+    app = app.command(
+        "demo",
         help="Demo command",
         arg_builder=_build_demo_args,
         param_keys=(
             "executables.rscript",
             "data_table.threads_dt",
         ),
-    )
+    ).done()
 
     parser = app.build()
     ns = parser.parse_args(["demo", "--rscript", "Rscript", "--threads_dt", "4"])
@@ -57,12 +57,12 @@ def test_parser_builder_applies_param_keys() -> None:
 
 
 def test_parser_builder_requires_param_registry_entries_for_param_keys() -> None:
-    app = ParserBuilder(prog="demo").add_command(
-        id="demo",
+    app = ParserBuilder(prog="demo").command(
+        "demo",
         help="Demo command",
         arg_builder=_build_demo_args,
         param_keys=("executables.rscript",),
-    )
+    ).done()
 
     with pytest.raises(ValueError, match="Register it first"):
         app.build()
@@ -73,17 +73,17 @@ def test_param_dest_must_not_shadow_command_metadata_fields() -> None:
     app.register_params(
         SpecParam(
             id="general.cmd_meta",
-            dest="_cmd_entry",
+            dest="_cmd_group",
             group=EnumGroupKey.GENERAL,
             arg_builder=lambda g, s: s.add_argument(g, type=str),
         )
     )
-    app.add_command(
-        id="demo",
+    app.command(
+        "demo",
         help="Demo command",
         arg_builder=_build_demo_args,
         param_keys=("general.cmd_meta",),
-    )
+    ).done()
 
     with pytest.raises(ValueError, match="reserved"):
         app.build()
@@ -103,7 +103,7 @@ def test_param_flag_collision_is_rejected() -> None:
     )
 
     with pytest.raises(ValueError, match="flag already exists on parser"):
-        app.apply_param_specs("data_table.worker_threads")
+        app.select_group(EnumGroupKey.GENERAL).extract_params("data_table.worker_threads")
 
 
 def test_extract_params_rejects_cross_group_param_keys() -> None:
@@ -127,7 +127,7 @@ def test_deprecated_param_emits_warning() -> None:
     )
 
     with pytest.warns(UserWarning, match="Deprecated param"):
-        app.apply_param_specs("general.legacy_threads")
+        app.select_group(EnumGroupKey.GENERAL).extract_params("general.legacy_threads")
 
 
 def test_fluent_dsl_supports_multi_command_grouped_build() -> None:
@@ -141,12 +141,14 @@ def test_fluent_dsl_supports_multi_command_grouped_build() -> None:
         .end()
         .group(EnumGroupKey.INPUTS)
         .add_argument("--file-in", type=str, required=True)
+        .end()
         .done()
     )
     (
         app.command("anova", help="ANOVA command")
         .group(EnumGroupKey.PERFORMANCE)
         .extract_params("data_table.threads_dt")
+        .end()
         .done()
     )
 
@@ -172,6 +174,7 @@ def test_fluent_dsl_extract_params_rejects_cross_group_param_keys() -> None:
         app.command("demo", help="Demo command")
         .group(EnumGroupKey.INPUTS)
         .extract_params("executables.rscript")
+        .end()
         .done()
     )
 
@@ -190,6 +193,7 @@ def test_extract_params_supports_str_enum_keys() -> None:
         .end()
         .group(EnumGroupKey.PERFORMANCE)
         .extract_params(EnumParamKey.THR_THREADS)
+        .end()
         .done()
     )
 
@@ -202,11 +206,11 @@ def test_extract_params_supports_str_enum_keys() -> None:
 
 
 def test_build_accepts_should_require_command_false() -> None:
-    app = ParserBuilder(prog="demo").add_command(
-        id="demo",
+    app = ParserBuilder(prog="demo").command(
+        "demo",
         help="Demo command",
         arg_builder=_build_demo_args,
-    )
+    ).done()
 
     parser = app.build(should_require_command=False)
     ns = parser.parse_args([])
@@ -217,8 +221,8 @@ def test_build_accepts_should_require_command_false() -> None:
 def test_registries_accept_should_sort_false() -> None:
     app = ParserBuilder(prog="demo")
     _register_demo_params(app)
-    app.add_command(id="b_cmd", help="B command", arg_builder=_build_demo_args, order=2)
-    app.add_command(id="a_cmd", help="A command", arg_builder=_build_demo_args, order=1)
+    app.command("b_cmd", help="B command", arg_builder=_build_demo_args, order=2).done()
+    app.command("a_cmd", help="A command", arg_builder=_build_demo_args, order=1).done()
 
     command_ids = [spec.id for spec in app.commands.list_commands(should_sort=False)]
     param_ids = [spec.id for spec in app.params.list_params(should_sort=False)]
