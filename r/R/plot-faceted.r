@@ -407,23 +407,31 @@
 #' @param col_fill Optional column name mapped to the fill aesthetic.
 #' @param col_group Optional column name mapped to the group aesthetic.
 #' @param geom_layer A ggplot layer object such as `ggplot2::geom_col()`.
-#' @param rule_facet_mode Facet mode:
+#' @param rule_facet_mode Facet mode.
 #'   - `"none"`: No faceting.
 #'   - `"wrap"`: Wrap facets.
 #'   - `"grid"`: Grid facets.
-#' @param rule_facet_direction Facet layout direction:
+#' @param rule_facet_direction Facet layout direction.
 #'   - `"cols"`: Facet by columns.
 #'   - `"rows"`: Facet by rows.
 #' @param rule_facet_scales Facet scale rule.
+#'   - `"fixed"`: Fixed scales across facets.
+#'   - `"free_x"`: Free x scales across facets.
+#'   - `"free_y"`: Free y scales across facets.
+#'   - `"free"`: Free scales across both x and y axes.
 #' @param rule_facet_space Facet panel space rule.
-#' @param rule_y_order Y ordering rule:
+#'   - `"fixed"`: Fixed space for all facets.
+#'   - `"free_x"`: Space free to vary with x scales.
+#'   - `"free_y"`: Space free to vary with y scales.
+#'   - `"free"`: Space free to vary with both x and y scales.
+#' @param rule_y_order Y ordering rule.
 #'   - `"none"`: No ordering.
 #'   - `"global"`: Order y values globally.
 #'   - `"within_facet"`: Order y values within each facet.
-#' @param should_order_y_descending Y ordering direction:
+#' @param should_order_y_descending Y ordering direction.
 #'   - `TRUE`: Order y values in descending order.
 #'   - `FALSE`: Order y values in ascending order.
-#' @param should_use_facet_strip_palette Facet strip styling:
+#' @param should_use_facet_strip_palette Facet strip styling.
 #'   - `TRUE`: Use `colors_facet_strip` for facet strip styling.
 #'   - `FALSE`: Use default facet strip styling.
 #' @param colors_facet_strip Optional character vector of strip fill colors.

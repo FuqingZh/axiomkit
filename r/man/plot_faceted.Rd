@@ -37,37 +37,49 @@ plot_faceted(
 
 \item{geom_layer}{A ggplot layer object such as \code{ggplot2::geom_col()}.}
 
-\item{rule_facet_mode}{Facet mode:
+\item{rule_facet_mode}{Facet mode.
 \itemize{
 \item \code{"none"}: No faceting.
 \item \code{"wrap"}: Wrap facets.
 \item \code{"grid"}: Grid facets.
 }}
 
-\item{rule_facet_direction}{Facet layout direction:
+\item{rule_facet_direction}{Facet layout direction.
 \itemize{
 \item \code{"cols"}: Facet by columns.
 \item \code{"rows"}: Facet by rows.
 }}
 
-\item{rule_facet_scales}{Facet scale rule.}
+\item{rule_facet_scales}{Facet scale rule.
+\itemize{
+\item \code{"fixed"}: Fixed scales across facets.
+\item \code{"free_x"}: Free x scales across facets.
+\item \code{"free_y"}: Free y scales across facets.
+\item \code{"free"}: Free scales across both x and y axes.
+}}
 
-\item{rule_facet_space}{Facet panel space rule.}
+\item{rule_facet_space}{Facet panel space rule.
+\itemize{
+\item \code{"fixed"}: Fixed space for all facets.
+\item \code{"free_x"}: Space free to vary with x scales.
+\item \code{"free_y"}: Space free to vary with y scales.
+\item \code{"free"}: Space free to vary with both x and y scales.
+}}
 
-\item{rule_y_order}{Y ordering rule:
+\item{rule_y_order}{Y ordering rule.
 \itemize{
 \item \code{"none"}: No ordering.
 \item \code{"global"}: Order y values globally.
 \item \code{"within_facet"}: Order y values within each facet.
 }}
 
-\item{should_order_y_descending}{Y ordering direction:
+\item{should_order_y_descending}{Y ordering direction.
 \itemize{
 \item \code{TRUE}: Order y values in descending order.
 \item \code{FALSE}: Order y values in ascending order.
 }}
 
-\item{should_use_facet_strip_palette}{Facet strip styling:
+\item{should_use_facet_strip_palette}{Facet strip styling.
 \itemize{
 \item \code{TRUE}: Use \code{colors_facet_strip} for facet strip styling.
 \item \code{FALSE}: Use default facet strip styling.
