@@ -6,8 +6,8 @@ use crate::constant::{
     N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
 };
 use crate::spec::{
-    EnumCellValue, EnumIntegerCoerceMode, SpecCellBorder, SpecSheetHorizontalMerge, SpecSheetSlice,
-    ReportXlsx, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
+    EnumCellValue, EnumIntegerCoerceMode, ReportXlsx, SpecCellBorder, SpecSheetHorizontalMerge,
+    SpecSheetSlice, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
