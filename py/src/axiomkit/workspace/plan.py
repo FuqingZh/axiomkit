@@ -1,6 +1,15 @@
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+
+DEFAULT_WORKSPACE_DIRS: tuple[str, ...] = (
+    "in",
+    "out",
+    "tmp",
+    "logs",
+    "configs",
+    "meta",
+)
 
 
 def _validate_relative_path(*, name: str, value: str, errors: list[str]) -> None:
@@ -16,68 +25,63 @@ def _validate_relative_path(*, name: str, value: str, errors: list[str]) -> None
         errors.append(f"`{name}` must not contain '..', got {value!r}.")
 
 
+def _normalize_workspace_dirs(
+    dirs: Sequence[str] | Mapping[str, str],
+) -> dict[str, str]:
+    if isinstance(dirs, str):
+        raise TypeError("`dirs` must not be a plain string; pass a sequence or mapping.")
+
+    if isinstance(dirs, Mapping):
+        return {str(key): str(value) for key, value in dirs.items()}
+
+    return {str(name): str(name) for name in dirs}
+
+
 @dataclass(frozen=True, slots=True)
 class WorkspacePaths:
     dir_root: Path
-    dir_in: Path
-    dir_out: Path
-    dir_tmp: Path
-    dir_logs: Path
-    dir_configs: Path
-    dir_meta: Path
-    dirs_extra: Mapping[str, Path] = field(default_factory=lambda: {})
+    dirs: Mapping[str, Path]
+
+    def __getitem__(self, key: str) -> Path:
+        return self.dirs[key]
 
     def iter_all(self) -> tuple[Path, ...]:
-        return (
-            self.dir_root,
-            self.dir_in,
-            self.dir_out,
-            self.dir_tmp,
-            self.dir_logs,
-            self.dir_configs,
-            self.dir_meta,
-            *self.dirs_extra.values(),
-        )
+        return (self.dir_root, *self.dirs.values())
 
 
 @dataclass(frozen=True, slots=True)
 class SpecWorkspaceLayout:
-    """Workspace layout contract with fixed and extension directories."""
+    """Workspace layout contract with normalized directory mappings."""
 
-    name_dir_in: str = "in"
-    name_dir_out: str = "out"
-    name_dir_tmp: str = "tmp"
-    name_dir_logs: str = "logs"
-    name_dir_configs: str = "configs"
-    name_dir_meta: str = "meta"
-    extra_dirs: Mapping[str, str] = field(default_factory=lambda: {})
+    dirs: Sequence[str] | Mapping[str, str] = DEFAULT_WORKSPACE_DIRS
 
     def validate(self) -> tuple[str, ...]:
         errors: list[str] = []
-        for field_name, field_value in (
-            ("name_dir_in", self.name_dir_in),
-            ("name_dir_out", self.name_dir_out),
-            ("name_dir_tmp", self.name_dir_tmp),
-            ("name_dir_logs", self.name_dir_logs),
-            ("name_dir_configs", self.name_dir_configs),
-            ("name_dir_meta", self.name_dir_meta),
-        ):
-            _validate_relative_path(name=field_name, value=field_value, errors=errors)
+        map_dirs = _normalize_workspace_dirs(self.dirs)
+        if not map_dirs:
+            errors.append("`dirs` must not be empty.")
+            return tuple(errors)
 
         used_keys: set[str] = set()
-        for extra_key, relative_dir in self.extra_dirs.items():
-            key_clean = extra_key.strip()
+        used_paths: set[str] = set()
+        for key, relative_dir in map_dirs.items():
+            key_clean = key.strip()
             if not key_clean:
-                errors.append("`extra_dirs` keys must not be empty.")
+                errors.append("`dirs` keys must not be empty.")
                 continue
-
             if key_clean in used_keys:
-                errors.append(f"`extra_dirs` duplicated key: {extra_key!r}.")
+                errors.append(f"`dirs` duplicated key: {key!r}.")
                 continue
-
             used_keys.add(key_clean)
+
+            path_clean = relative_dir.strip()
+            if path_clean in used_paths:
+                errors.append(f"`dirs` duplicated path: {relative_dir!r}.")
+            else:
+                used_paths.add(path_clean)
+
             _validate_relative_path(
-                name=f"extra_dirs[{key_clean!r}]",
+                name=f"dirs[{key_clean!r}]",
                 value=relative_dir,
                 errors=errors,
             )
@@ -85,18 +89,10 @@ class SpecWorkspaceLayout:
         return tuple(errors)
 
     def to_paths(self, dir_root: Path) -> WorkspacePaths:
+        map_dirs = _normalize_workspace_dirs(self.dirs)
         return WorkspacePaths(
             dir_root=dir_root,
-            dir_in=dir_root / self.name_dir_in,
-            dir_out=dir_root / self.name_dir_out,
-            dir_tmp=dir_root / self.name_dir_tmp,
-            dir_logs=dir_root / self.name_dir_logs,
-            dir_configs=dir_root / self.name_dir_configs,
-            dir_meta=dir_root / self.name_dir_meta,
-            dirs_extra={
-                key: dir_root / relative_dir
-                for key, relative_dir in self.extra_dirs.items()
-            },
+            dirs={key: dir_root / relative_dir for key, relative_dir in map_dirs.items()},
         )
 
 
@@ -159,8 +155,8 @@ class WorkspacePlan:
             try:
                 path.mkdir(parents=True, exist_ok=True)
                 created_paths.append(path)
-            except Exception as e:
-                errors.append(f"{path}: {e}")
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
 
         return ReportWorkspaceApply(
             ok=not errors,
