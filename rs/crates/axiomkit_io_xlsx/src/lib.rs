@@ -6,18 +6,18 @@
 //! - `spec`   : specs/models/options
 //! - `util`   : pure helper functions
 //! - `writer` : pure-Rust writer kernel
-pub mod conf;
+pub mod constant;
 pub mod spec;
 pub mod util;
 pub mod writer;
 
-pub use conf::{
+pub use constant::{
     N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
 };
 pub use spec::{
-    EnumAutofitColumnsRule, EnumIntegerCoerceMode, EnumScientificScope, SpecAutofitCellsPolicy,
-    SpecCellBorder, SpecCellFormat, SpecColumnFormatPlan, SpecScientificPolicy,
-    SpecSheetHorizontalMerge, SpecSheetSlice, SpecXlsxReport, SpecXlsxRowChunkPolicy,
+    EnumAutofitColumnsRule, EnumIntegerCoerceMode, EnumScientificScope, ReportXlsx,
+    SpecAutofitCellsPolicy, SpecCellBorder, SpecCellFormat, SpecColumnFormatPlan,
+    SpecScientificPolicy, SpecSheetHorizontalMerge, SpecSheetSlice, SpecXlsxRowChunkPolicy,
     SpecXlsxValuePolicy, SpecXlsxWriteOptions,
 };
 pub use util::{

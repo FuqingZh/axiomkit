@@ -4,7 +4,7 @@ use std::sync::Arc;
 use arrow::array::{StructArray, TryExtend};
 use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
 use arrow::record_batch::RecordBatchT;
-use axiomkit_io_xlsx::conf::{derive_default_xlsx_formats, derive_default_xlsx_write_options};
+use axiomkit_io_xlsx::constant::{derive_default_xlsx_formats, derive_default_xlsx_write_options};
 use axiomkit_io_xlsx::spec::{
     EnumAutofitColumnsRule, EnumIntegerCoerceMode, EnumScientificScope, SpecAutofitCellsPolicy,
     SpecCellFormat, SpecScientificPolicy, SpecSheetSlice, SpecXlsxValuePolicy,
@@ -120,7 +120,7 @@ impl PyXlsxWriter {
 
         let module_spec = py.import("axiomkit.io.xlsx.spec")?;
         let cls_spec_sheet_slice = module_spec.getattr("SpecSheetSlice")?;
-        let cls_spec_xlsx_report = module_spec.getattr("SpecXlsxReport")?;
+        let cls_spec_xlsx_report = module_spec.getattr("ReportXlsx")?;
 
         let mut l_report_obj = Vec::with_capacity(l_reports.len());
         for report in l_reports {

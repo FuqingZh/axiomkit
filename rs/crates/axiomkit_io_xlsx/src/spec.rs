@@ -418,14 +418,14 @@ pub struct SpecSheetHorizontalMerge {
 
 /// Per-write call report.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SpecXlsxReport {
+pub struct ReportXlsx {
     /// Sheet slices produced by the write call.
     pub sheets: Vec<SpecSheetSlice>,
     /// Non-fatal warnings.
     pub warnings: Vec<String>,
 }
 
-impl SpecXlsxReport {
+impl ReportXlsx {
     /// Add a warning message.
     pub fn warn(&mut self, msg: impl AsRef<str>) {
         self.warnings.push(msg.as_ref().to_string());

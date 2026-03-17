@@ -149,7 +149,7 @@ class SpecSheetHorizontalMerge:
 ################################################################################
 # #region ReportSpecification
 @dataclass(slots=True)
-class SpecXlsxReport:
+class ReportXlsx:
     sheets: list[SpecSheetSlice]
     warnings: list[str]
 

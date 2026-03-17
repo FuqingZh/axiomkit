@@ -2,12 +2,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::conf::{
+use crate::constant::{
     N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
 };
 use crate::spec::{
     EnumCellValue, EnumIntegerCoerceMode, SpecCellBorder, SpecSheetHorizontalMerge, SpecSheetSlice,
-    SpecXlsxReport, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
+    ReportXlsx, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -249,7 +249,7 @@ pub fn plan_sheet_slices(
     width_df: usize,
     height_header: usize,
     sheet_name: &str,
-    report: &mut SpecXlsxReport,
+    report: &mut ReportXlsx,
 ) -> Result<Vec<SpecSheetSlice>, String> {
     if height_header == 0 {
         return Err("height_header must be >= 1.".to_string());

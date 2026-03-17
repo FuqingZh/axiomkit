@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use polars::prelude::{AnyValue, DataFrame, IpcReader, SerReader};
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet, XlsxError};
 
-use crate::conf::N_LEN_EXCEL_SHEET_NAME_MAX;
+use crate::constant::N_LEN_EXCEL_SHEET_NAME_MAX;
 use crate::spec::{
-    EnumAutofitColumnsRule, EnumCellValue, EnumScientificScope, SpecAutofitCellsPolicy,
-    SpecCellFormat, SpecColumnFormatPlan, SpecScientificPolicy, SpecSheetSlice, SpecXlsxReport,
+    EnumAutofitColumnsRule, EnumCellValue, EnumScientificScope, ReportXlsx, SpecAutofitCellsPolicy,
+    SpecCellFormat, SpecColumnFormatPlan, SpecScientificPolicy, SpecSheetSlice,
     SpecXlsxValuePolicy, SpecXlsxWriteOptions,
 };
 use crate::util::{
@@ -77,7 +77,7 @@ pub struct XlsxWriter {
     fmt_header: SpecCellFormat,
     write_options: SpecXlsxWriteOptions,
     set_sheet_names_existing: BTreeSet<String>,
-    l_reports: Vec<SpecXlsxReport>,
+    l_reports: Vec<ReportXlsx>,
     is_closed: bool,
 }
 
@@ -116,7 +116,7 @@ impl XlsxWriter {
     }
 
     /// Return immutable snapshot of per-sheet write reports.
-    pub fn report(&self) -> Vec<SpecXlsxReport> {
+    pub fn report(&self) -> Vec<ReportXlsx> {
         self.l_reports.clone()
     }
 
@@ -248,7 +248,7 @@ impl XlsxWriter {
 
         let n_rows_header = l_header_grid.len();
 
-        let mut report = SpecXlsxReport {
+        let mut report = ReportXlsx {
             sheets: vec![],
             warnings: vec![],
         };

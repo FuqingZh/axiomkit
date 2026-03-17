@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Literal, Protocol, Self, cast
 
 from ._rs_bridge import create_xlsx_writer_via_rs, is_rs_backend_available
-from .conf import (
+from .constant import (
     DEFAULT_XLSX_FORMATS,
     DEFAULT_XLSX_WRITE_OPTIONS,
     ColumnIdentifier,
@@ -17,7 +17,7 @@ from .spec import (
     SpecAutofitCellsPolicy,
     SpecCellFormat,
     SpecScientificPolicy,
-    SpecXlsxReport,
+    ReportXlsx,
     SpecXlsxWriteOptions,
 )
 
@@ -25,7 +25,7 @@ from .spec import (
 class ProtocolXlsxWriterBackend(Protocol):
     def close(self) -> None: ...
 
-    def report(self) -> tuple[SpecXlsxReport, ...]: ...
+    def report(self) -> tuple[ReportXlsx, ...]: ...
 
     def write_sheet(
         self,
@@ -100,7 +100,7 @@ class XlsxWriter:
     def close(self) -> None:
         self._writer.close()
 
-    def report(self) -> tuple[SpecXlsxReport, ...]:
+    def report(self) -> tuple[ReportXlsx, ...]:
         return self._writer.report()
 
     def write_sheet(

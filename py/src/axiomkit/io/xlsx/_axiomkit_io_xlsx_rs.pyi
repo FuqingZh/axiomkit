@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from .spec import SpecAutofitCellsPolicy, SpecScientificPolicy, SpecXlsxReport
+from .spec import SpecAutofitCellsPolicy, SpecScientificPolicy, ReportXlsx
 
 __bridge_abi__: int
 __bridge_contract__: str
@@ -35,7 +35,7 @@ class XlsxWriter:
 
     def close(self) -> None: ...
 
-    def report(self) -> tuple[SpecXlsxReport, ...]: ...
+    def report(self) -> tuple[ReportXlsx, ...]: ...
 
     def write_sheet(
         self,
