@@ -82,7 +82,8 @@ class ParserRegistry(Protocol):
 class CommandRegistry:
     """Registry for command specifications.
 
-    This class stores ``SpecCommand`` objects by canonical id.
+    This class stores root ``SpecCommand`` objects and indexes nested command
+    trees by canonical id.
 
     Examples:
         >>> reg = CommandRegistry()
@@ -96,6 +97,7 @@ class CommandRegistry:
     def __init__(self) -> None:
         """Initialize an empty command registry."""
         self._core: CanonicalRegistry[SpecCommand] = CanonicalRegistry.new()
+        self._roots: list[SpecCommand] = []
 
     def register_command(self, spec: SpecCommand) -> Self:
         """Register one command specification.
@@ -109,7 +111,8 @@ class CommandRegistry:
         Raises:
             ValueError: If id conflicts with existing registrations.
         """
-        self._core.register(spec)
+        self._register_recursive(spec)
+        self._roots.append(spec)
         return self
 
     def list_commands(self, should_sort: bool = True) -> list[SpecCommand]:
@@ -123,9 +126,39 @@ class CommandRegistry:
         Returns:
             list[SpecCommand]: Registered command specifications.
         """
-        if not should_sort:
-            return self._core.list_specs(kind_sort="insertion")
-        return self._core.list_specs(rule_sort=lambda s: (s.group, s.order, s.id))
+        return list(self._iter_specs(self._roots, should_sort=should_sort))
+
+    def _register_recursive(self, spec: SpecCommand) -> None:
+        """Register one command node and all descendants."""
+        self._core.register(spec)
+        for child in spec.children:
+            self._register_recursive(child)
+
+    def _iter_specs(
+        self,
+        specs: Sequence[SpecCommand],
+        *,
+        should_sort: bool,
+    ) -> Iterable[SpecCommand]:
+        """Yield command specs depth-first."""
+        items = list(specs)
+        if should_sort:
+            items.sort(key=lambda s: (s.group, s.order, s.id))
+        for spec in items:
+            yield spec
+            yield from self._iter_specs(spec.children, should_sort=should_sort)
+
+    def _iter_level_specs(
+        self,
+        specs: Sequence[SpecCommand],
+        *,
+        should_sort: bool,
+    ) -> list[SpecCommand]:
+        """Return sibling command specs for one tree level."""
+        items = list(specs)
+        if should_sort:
+            items.sort(key=lambda s: (s.group, s.order, s.id))
+        return items
 
     def build_subparsers(
         self,
@@ -180,20 +213,54 @@ class CommandRegistry:
             >>> ns.command
             'run'
         """
-        subparsers = parser.add_subparsers(
+        parser.set_defaults(**{dest: None})
+        return self._build_subparsers_recursive(
+            parser=parser,
+            specs=self._roots,
             title=title,
-            dest=dest,
+            public_dest=dest,
+            kind_formatter=kind_formatter,
+            should_require_command=should_require_command,
+            should_include_group_in_help=should_include_group_in_help,
+            should_sort_specs=should_sort_specs,
+            param_registry=param_registry,
+            group_registry_factory=group_registry_factory,
+            should_apply_param_keys=should_apply_param_keys,
+            depth=0,
+        )
+
+    def _build_subparsers_recursive(
+        self,
+        *,
+        parser: argparse.ArgumentParser,
+        specs: Sequence[SpecCommand],
+        title: str,
+        public_dest: str,
+        kind_formatter: type[argparse.HelpFormatter] | None,
+        should_require_command: bool,
+        should_include_group_in_help: bool,
+        should_sort_specs: bool,
+        param_registry: "ParamRegistry | None",
+        group_registry_factory: Callable[[argparse.ArgumentParser], ParserRegistry]
+        | None,
+        should_apply_param_keys: bool,
+        depth: int,
+    ):
+        """Build nested subparsers recursively."""
+        subparsers = parser.add_subparsers(
+            title=title if depth == 0 else "Commands",
+            dest=f"_{public_dest}_level_{depth}",
             required=should_require_command,
         )
 
         formatter_type = kind_formatter or parser.formatter_class
-        for spec in self.list_commands(should_sort=should_sort_specs):
+        for spec in self._iter_level_specs(specs, should_sort=should_sort_specs):
             help_text = spec.help
             if should_include_group_in_help and spec.group:
                 help_text = f"\\[{spec.group}] {help_text}"
 
             subparser = subparsers.add_parser(
-                spec.id,
+                spec.token,
                 help=help_text,
                 formatter_class=formatter_type,
             )
@@ -214,8 +281,28 @@ class CommandRegistry:
                 param_registry.apply_param_specs(
                     parser_reg=group_registry_factory(subparser),
                     keys=spec.param_keys,
-                    reserved_dests=default_reserved_param_dests(command_dest=dest),
+                    reserved_dests=default_reserved_param_dests(
+                        command_dest=public_dest
+                    ),
                 )
+
+            if spec.children:
+                self._build_subparsers_recursive(
+                    parser=subparser,
+                    specs=spec.children,
+                    title="Commands",
+                    public_dest=public_dest,
+                    kind_formatter=kind_formatter,
+                    should_require_command=True,
+                    should_include_group_in_help=should_include_group_in_help,
+                    should_sort_specs=should_sort_specs,
+                    param_registry=param_registry,
+                    group_registry_factory=group_registry_factory,
+                    should_apply_param_keys=should_apply_param_keys,
+                    depth=depth + 1,
+                )
+            else:
+                subparser.set_defaults(**{public_dest: spec.id})
 
         return subparsers
 

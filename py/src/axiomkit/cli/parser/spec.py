@@ -169,7 +169,7 @@ class SpecCommand:
     """Immutable command specification for subparser generation.
 
     Attributes:
-        id: Canonical command id.
+        id: Canonical command id. Nested commands use dot-joined paths.
         help: Short help message.
         arg_builder: Callback used to add command-specific arguments.
         group: Logical command group.
@@ -177,6 +177,9 @@ class SpecCommand:
         param_keys:
             Parameter ids auto-applied during build.
             Supports ``str`` and ``StrEnum``.
+        children:
+            Nested child command specifications. Each child id must extend the
+            current command path.
 
     Examples:
         >>> spec = SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
@@ -192,3 +195,9 @@ class SpecCommand:
     group: str = "default"
     order: int = 0
     param_keys: tuple[str | StrEnum, ...] = ()
+    children: tuple["SpecCommand", ...] = ()
+
+    @property
+    def token(self) -> str:
+        """Return the argv token for this command node."""
+        return self.id.split(".")[-1]

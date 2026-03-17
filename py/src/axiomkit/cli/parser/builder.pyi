@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Iterable
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Generic, Self, TypeVar
 
 from .base import ArgAdder
 from .registry import CommandRegistry, ParamRegistry
@@ -11,6 +11,8 @@ from .spec import EnumGroupKey, SpecCommand, SpecParam
 
 type ParamKey = str | StrEnum
 type ArgumentValueParser = Callable[[str], Any]
+
+OwnerT = TypeVar("OwnerT")
 
 
 class ArgumentGroupHandler:
@@ -63,10 +65,10 @@ class ArgGroupRegistry:
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler: ...
 
 
-class CommandBuilder:
+class CommandBuilder(Generic[OwnerT]):
     def __init__(
         self,
-        owner: ParserBuilder,
+        owner: OwnerT,
         *,
         id: str,
         help: str,
@@ -77,13 +79,33 @@ class CommandBuilder:
         param_keys: tuple[ParamKey, ...] = (),
     ) -> None: ...
 
+    @property
+    def params(self) -> ParamRegistry: ...
     def assert_open(self) -> None: ...
-    def group(self, key: EnumGroupKey | str) -> GroupBuilder: ...
-    def done(self) -> ParserBuilder: ...
+    def register_command(self, spec: SpecCommand) -> None: ...
+    def group(self, key: EnumGroupKey | str) -> GroupBuilder[OwnerT]: ...
+    def command(
+        self,
+        id: str,
+        *,
+        help: str,
+        arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
+        | None = None,
+        group: str = "default",
+        order: int = 0,
+        param_keys: tuple[ParamKey, ...] = (),
+    ) -> CommandBuilder[CommandBuilder[OwnerT]]: ...
+    def done(self) -> OwnerT: ...
+    def done_all(self) -> ParserBuilder: ...
 
 
-class GroupBuilder:
-    def __init__(self, *, command_builder: CommandBuilder, key: EnumGroupKey) -> None: ...
+class GroupBuilder(Generic[OwnerT]):
+    def __init__(
+        self,
+        *,
+        command_builder: CommandBuilder[OwnerT],
+        key: EnumGroupKey,
+    ) -> None: ...
 
     def add_argument(
         self,
@@ -100,10 +122,10 @@ class GroupBuilder:
         dest: str | None = ...,
         version: str = ...,
         **kwargs: Any,
-    ) -> GroupBuilder: ...
+    ) -> GroupBuilder[OwnerT]: ...
 
-    def extract_params(self, *param_keys: ParamKey) -> GroupBuilder: ...
-    def end(self) -> CommandBuilder: ...
+    def extract_params(self, *param_keys: ParamKey) -> GroupBuilder[OwnerT]: ...
+    def end(self) -> CommandBuilder[OwnerT]: ...
 
 
 class ParserBuilder:
@@ -136,7 +158,7 @@ class ParserBuilder:
         group: str = "default",
         order: int = 0,
         param_keys: tuple[ParamKey, ...] = (),
-    ) -> CommandBuilder: ...
+    ) -> CommandBuilder[ParserBuilder]: ...
 
     def build(
         self,

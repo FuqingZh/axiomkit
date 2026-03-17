@@ -229,3 +229,119 @@ def test_registries_accept_should_sort_false() -> None:
 
     assert command_ids == ["b_cmd", "a_cmd"]
     assert param_ids == ["executables.rscript", "data_table.threads_dt"]
+
+
+def test_fluent_dsl_supports_nested_subcommands() -> None:
+    app = ParserBuilder(prog="demo")
+
+    (
+        app.command("go", help="Gene Ontology")
+        .command("ontology", help="Ontology assets")
+        .command("tidy", help="Build tidy outputs")
+        .group(EnumGroupKey.INPUTS)
+        .add_argument("--file-in", type=str, required=True)
+        .end()
+        .done()
+        .done()
+        .done()
+    )
+
+    parser = app.build()
+    ns = parser.parse_args(["go", "ontology", "tidy", "--file-in", "go.obo"])
+
+    assert ns.command == "go.ontology.tidy"
+    assert ns.file_in == "go.obo"
+
+
+def test_nested_subcommands_require_leaf_selection() -> None:
+    app = ParserBuilder(prog="demo")
+    (
+        app.command("go", help="Gene Ontology")
+        .command("ontology", help="Ontology assets")
+        .command("tidy", help="Build tidy outputs")
+        .done()
+        .done()
+        .done()
+    )
+
+    parser = app.build()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["go", "ontology"])
+
+
+def test_nested_subcommands_support_extract_params() -> None:
+    app = ParserBuilder(prog="demo")
+    _register_demo_params(app)
+
+    (
+        app.command("go", help="Gene Ontology")
+        .command("ontology", help="Ontology assets")
+        .command("tidy", help="Build tidy outputs")
+        .group(EnumGroupKey.EXECUTABLES)
+        .extract_params("executables.rscript")
+        .end()
+        .done()
+        .done()
+        .done()
+    )
+
+    parser = app.build()
+    ns = parser.parse_args(["go", "ontology", "tidy", "--rscript", "Rscript"])
+
+    assert ns.command == "go.ontology.tidy"
+    assert ns.rscript == "Rscript"
+
+
+def test_list_commands_includes_nested_paths() -> None:
+    app = ParserBuilder(prog="demo")
+    (
+        app.command("go", help="Gene Ontology")
+        .command("ontology", help="Ontology assets")
+        .command("tidy", help="Build tidy outputs")
+        .done()
+        .done()
+        .done()
+    )
+
+    command_ids = [spec.id for spec in app.commands.list_commands(should_sort=False)]
+
+    assert command_ids == ["go", "go.ontology", "go.ontology.tidy"]
+
+
+def test_build_rejects_unclosed_nested_command_builders() -> None:
+    app = ParserBuilder(prog="demo")
+    app.command("go", help="Gene Ontology").command(
+        "ontology",
+        help="Ontology assets",
+    )
+
+    with pytest.raises(ValueError, match="missing done\\(\\)"):
+        app.build()
+
+
+def test_done_all_returns_root_parser_builder_for_nested_chain() -> None:
+    app = ParserBuilder(prog="demo")
+
+    app = (
+        app.command("go", help="Gene Ontology")
+        .command("ontology", help="Ontology assets")
+        .command("tidy", help="Build tidy outputs")
+        .done_all()
+    )
+
+    assert isinstance(app, ParserBuilder)
+    parser = app.build()
+    ns = parser.parse_args(["go", "ontology", "tidy"])
+    assert ns.command == "go.ontology.tidy"
+
+
+def test_done_all_matches_done_for_single_command() -> None:
+    app = ParserBuilder(prog="demo")
+
+    app = app.command("demo", help="Demo command").done_all()
+
+    assert isinstance(app, ParserBuilder)
+    parser = app.build()
+    ns = parser.parse_args(["demo"])
+    assert ns.command == "demo"

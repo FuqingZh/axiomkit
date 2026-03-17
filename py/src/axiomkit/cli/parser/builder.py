@@ -26,13 +26,16 @@ import argparse
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from .base import SmartFormatter
 from .registry import CommandRegistry, ParamRegistry
 from .spec import DICT_ARG_GROUP_META, ArgAdder, EnumGroupKey, SpecCommand, SpecParam
 
 type ParamKey = str | StrEnum
+
+if TYPE_CHECKING:
+    type CommandOwner = ParserBuilder | CommandBuilder
 
 
 @dataclass(slots=True)
@@ -193,7 +196,7 @@ class CommandBuilder:
 
     def __init__(
         self,
-        owner: "ParserBuilder",
+        owner: "CommandOwner",
         *,
         id: str,
         help: str,
@@ -206,7 +209,7 @@ class CommandBuilder:
         """Initialize a command builder.
 
         Args:
-            owner: Parent parser builder.
+            owner: Parent parser or command builder.
             id: Canonical command id.
             help: Command help text.
             arg_builder:
@@ -218,14 +221,17 @@ class CommandBuilder:
                 Supports ``str`` and ``StrEnum``.
         """
         self._owner = owner
-        self._id = id
+        self._root = owner if isinstance(owner, ParserBuilder) else owner._root
+        self._id = id if isinstance(owner, ParserBuilder) else f"{owner._id}.{id}"
         self._help = help
         self._arg_builder = arg_builder
         self._group = group
         self._order = order
         self._param_keys = param_keys
         self.group_ops: list[Callable[[ArgGroupRegistry], None]] = []
+        self._children: list[SpecCommand] = []
         self.is_closed = False
+        self._root._open_command_builders.append(self)
 
     def assert_open(self) -> None:
         if self.is_closed:
@@ -233,6 +239,11 @@ class CommandBuilder:
                 f"Command builder {self._id!r} is already closed; "
                 "do not mutate after done()."
             )
+
+    @property
+    def params(self) -> ParamRegistry:
+        """Expose the shared parameter registry from the parent scope."""
+        return self._owner.params
 
     def group(self, key: EnumGroupKey | str) -> "GroupBuilder":
         """Enter a logical argument group context.
@@ -246,14 +257,43 @@ class CommandBuilder:
         self.assert_open()
         return GroupBuilder(command_builder=self, key=EnumGroupKey(key))
 
-    def done(self) -> "ParserBuilder":
+    def register_command(self, spec: SpecCommand) -> None:
+        """Register one nested child command spec."""
+        self.assert_open()
+        self._children.append(spec)
+
+    def command(
+        self,
+        id: str,
+        *,
+        help: str,
+        arg_builder: Callable[[argparse.ArgumentParser], argparse.ArgumentParser | None]
+        | None = None,
+        group: str = "default",
+        order: int = 0,
+        param_keys: tuple[ParamKey, ...] = (),
+    ) -> "CommandBuilder":
+        """Create a nested command builder under the current command."""
+        self.assert_open()
+        return CommandBuilder(
+            self,
+            id=id,
+            help=help,
+            arg_builder=arg_builder,
+            group=group,
+            order=order,
+            param_keys=param_keys,
+        )
+
+    def done(self) -> "CommandOwner":
         """Finalize this command and register it into parent builder.
 
         Returns:
-            ParserBuilder: Parent builder for continued chaining.
+            CommandOwner: Parent builder for continued chaining.
         """
         self.assert_open()
         self.is_closed = True
+        self._root._open_command_builders.remove(self)
 
         group_ops = tuple(self.group_ops)
         base_arg_builder = self._arg_builder
@@ -278,9 +318,24 @@ class CommandBuilder:
                 group=self._group,
                 order=self._order,
                 param_keys=self._param_keys,
+                children=tuple(self._children),
             )
         )
         return self._owner
+
+    def done_all(self) -> "ParserBuilder":
+        """Finalize the current command chain and return the root parser.
+
+        This is equivalent to repeatedly calling :meth:`done` until the root
+        ``ParserBuilder`` is reached.
+
+        Returns:
+            ParserBuilder: Root parser builder.
+        """
+        scope: CommandOwner = self
+        while isinstance(scope, CommandBuilder):
+            scope = scope.done()
+        return scope
 
 
 class GroupBuilder:
@@ -451,6 +506,7 @@ class ParserBuilder:
         self.params = params or ParamRegistry()
         self.commands = commands or CommandRegistry()
         self._groups = ArgGroupRegistry(parser=self.parser, params=self.params)
+        self._open_command_builders: list[CommandBuilder] = []
 
     def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler:
         """Select a logical argument group from the underlying registry.
@@ -578,6 +634,13 @@ class ParserBuilder:
             ValueError: When command ``param_keys`` are requested but required
                 registries/factories are not provided.
         """
+        if self._open_command_builders:
+            ids_open = ", ".join(builder._id for builder in self._open_command_builders)
+            raise ValueError(
+                "Unclosed command builders detected before build(); "
+                f"missing done() for: {ids_open}"
+            )
+
         self.commands.build_subparsers(
             parser=self.parser,
             title=title,
