@@ -11,6 +11,37 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 
+def _normalize_allowed_file_exts(
+    exts: str | Iterable[str] = (),
+    *more_exts: str,
+) -> tuple[str, ...]:
+    """Normalize mixed extension inputs into a canonical tuple.
+
+    Accepted forms:
+
+    - ``"obo"``
+    - ``("tsv", "tsv.gz")``
+    - ``"tsv", "tsv.gz"``
+    """
+    values: list[str] = []
+
+    def _append_one(value: str) -> None:
+        text = str(value).lower().lstrip(".").strip()
+        if text:
+            values.append(text)
+
+    if isinstance(exts, str):
+        _append_one(exts)
+    else:
+        for ext in exts:
+            _append_one(ext)
+
+    for ext in more_exts:
+        _append_one(ext)
+
+    return tuple(values)
+
+
 @dataclass(frozen=True, slots=True)
 class SpecPath:
     """Specification for validating path-like CLI inputs.
@@ -128,10 +159,8 @@ class ActionPath(argparse.Action):
         if spec is None:
             spec = SpecPath(
                 entry_kind=entry_kind,
-                allowed_file_exts=tuple(
-                    str(ext).lower().lstrip(".")
-                    for ext in (allowed_file_exts or ())
-                    if ext and str(ext).strip()
+                allowed_file_exts=_normalize_allowed_file_exts(
+                    allowed_file_exts or ()
                 ),
                 should_exist=should_exist,
                 is_readable=is_readable,
@@ -147,10 +176,8 @@ class ActionPath(argparse.Action):
         self.entry_kind = spec.entry_kind
 
         if spec.entry_kind == "file" and spec.allowed_file_exts:
-            self.allowed_file_exts = tuple(
-                str(ext).lower().lstrip(".")
-                for ext in spec.allowed_file_exts
-                if ext and str(ext).strip()
+            self.allowed_file_exts = _normalize_allowed_file_exts(
+                spec.allowed_file_exts
             )
         else:
             self.allowed_file_exts = None
@@ -394,8 +421,8 @@ class ActionPath(argparse.Action):
     @classmethod
     def file(
         cls,
-        exts: Iterable[str] = (),
-        *,
+        exts: str | Iterable[str] = (),
+        *more_exts: str,
         should_exist: bool = True,
         is_readable: bool = True,
         is_writable: bool = False,
@@ -408,7 +435,12 @@ class ActionPath(argparse.Action):
               parser construction fails and ``--help`` may not render.
 
         Args:
-            exts: Allowed file extensions.
+            exts:
+                Allowed file extensions. Accepts a single string or an iterable
+                of strings.
+            *more_exts:
+                Additional allowed file extensions for the variadic call style,
+                for example ``ActionPath.file("tsv", "tsv.gz")``.
             should_exist: Whether the file must already exist.
             is_readable: Whether readability is required.
             is_writable: Whether writability is required.
@@ -424,7 +456,7 @@ class ActionPath(argparse.Action):
         """
         return cls.make(
             entry_kind="file",
-            allowed_file_exts=exts,
+            allowed_file_exts=_normalize_allowed_file_exts(exts, *more_exts),
             should_exist=should_exist,
             is_readable=is_readable,
             is_writable=is_writable,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -78,3 +79,25 @@ def test_action_path_dir_accepts_missing_writable_output_dir() -> None:
 
     ns = parser.parse_args(["--dir_out", "out"])
     assert ns.dir_out.name == "out"
+
+
+def test_action_path_file_accepts_single_string_extension(tmp_path: Path) -> None:
+    file_in = tmp_path / "go.obo"
+    file_in.write_text("[Term]\n", encoding="utf-8")
+
+    parser = _build_parser()
+    parser.add_argument("--file_in", action=ActionPath.file("obo"))
+
+    ns = parser.parse_args(["--file_in", str(file_in)])
+    assert ns.file_in == file_in.resolve()
+
+
+def test_action_path_file_accepts_variadic_extensions(tmp_path: Path) -> None:
+    file_in = tmp_path / "table.tsv.gz"
+    file_in.write_text("x\n", encoding="utf-8")
+
+    parser = _build_parser()
+    parser.add_argument("--file_in", action=ActionPath.file("tsv", "tsv.gz"))
+
+    ns = parser.parse_args(["--file_in", str(file_in)])
+    assert ns.file_in == file_in.resolve()
