@@ -16,9 +16,9 @@ pub use constant::{
 };
 pub use spec::{
     EnumAutofitColumnsRule, EnumIntegerCoerceMode, EnumScientificScope, ReportXlsx,
-    SpecAutofitCellsPolicy, SpecCellBorder, SpecCellFormat, SpecColumnFormatPlan,
-    SpecScientificPolicy, SpecSheetHorizontalMerge, SpecSheetSlice, SpecXlsxRowChunkPolicy,
-    SpecXlsxValuePolicy, SpecXlsxWriteOptions,
+    SpecAutofitCellsPolicy, SpecCellBorder, SpecCellFormat, SpecScientificPolicy,
+    SpecSheetHorizontalMerge, SpecSheetSlice, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
+    SpecXlsxWriteOptions,
 };
 pub use util::{
     apply_vertical_run_text_blankout, calculate_row_chunk_size, convert_nan_inf_to_str,

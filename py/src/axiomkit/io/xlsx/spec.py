@@ -59,17 +59,6 @@ class SpecCellBorder:
 
 # #endregion
 ################################################################################
-# #region ColumnFormatSpecification
-
-
-@dataclass(slots=True)
-class SpecColumnFormatPlan:
-    fmts_by_col: list["SpecCellFormat"]
-    fmts_base_by_col: list["SpecCellFormat"]
-
-
-# #endregion
-################################################################################
 # #region WriteOptions
 
 
