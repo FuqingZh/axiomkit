@@ -8,11 +8,11 @@ import pytest
 from axiomkit.io.fs._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.fs.copy import copy_tree  # noqa: E402
 from axiomkit.io.fs.spec import (  # noqa: E402
-    EnumCopyDepthLimitMode,
-    EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy,
-    EnumCopyPatternMode,
-    EnumCopySymlinkStrategy,
+    CopyDepthLimitMode,
+    CopyDirectoryConflictStrategy,
+    CopyFileConflictStrategy,
+    CopyPatternMode,
+    CopySymlinkStrategy,
 )
 
 
@@ -64,7 +64,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         dst2,
         should_keep_tree=False,
         patterns_include_files=["*.txt"],
-        rule_pattern=EnumCopyPatternMode.GLOB,
+        rule_pattern=CopyPatternMode.GLOB,
     )
     assert report2.error_count == 0
     _assert_exists(dst2 / "root.txt")
@@ -78,7 +78,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         src,
         dst3,
         depth_limit=1,
-        rule_depth_limit=EnumCopyDepthLimitMode.EXACT,
+        rule_depth_limit=CopyDepthLimitMode.EXACT,
         should_keep_tree=True,
     )
     assert report3.error_count == 0
@@ -91,7 +91,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         src,
         dst4,
         patterns_exclude_dirs=["skipme"],
-        rule_pattern=EnumCopyPatternMode.GLOB,
+        rule_pattern=CopyPatternMode.GLOB,
     )
     assert report4.error_count == 0
     assert not (dst4 / "skipme" / "file3.txt").exists()
@@ -101,7 +101,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report5 = copy_tree(
         src,
         dst5,
-        rule_symlink=EnumCopySymlinkStrategy.COPY_SYMLINKS,
+        rule_symlink=CopySymlinkStrategy.COPY_SYMLINKS,
     )
     assert report5.error_count == 0
     _assert_symlink(dst5 / "link_root.txt")
@@ -112,7 +112,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report6 = copy_tree(
         src,
         dst6,
-        rule_symlink=EnumCopySymlinkStrategy.DEREFERENCE,
+        rule_symlink=CopySymlinkStrategy.DEREFERENCE,
     )
     assert report6.error_count >= 1
 
@@ -123,8 +123,8 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report7 = copy_tree(
         src,
         dst7,
-        rule_conflict_file=EnumCopyFileConflictStrategy.ERROR,
-        rule_conflict_dir=EnumCopyDirectoryConflictStrategy.SKIP,
+        rule_conflict_file=CopyFileConflictStrategy.ERROR,
+        rule_conflict_dir=CopyDirectoryConflictStrategy.SKIP,
     )
     assert report7.error_count >= 1
 

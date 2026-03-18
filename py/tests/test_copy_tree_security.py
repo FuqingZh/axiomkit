@@ -7,7 +7,7 @@ import pytest
 
 from axiomkit.io.fs._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.fs.copy import copy_tree  # noqa: E402
-from axiomkit.io.fs.spec import EnumCopyDirectoryConflictStrategy  # noqa: E402
+from axiomkit.io.fs.spec import CopyDirectoryConflictStrategy  # noqa: E402
 
 
 def _write_text(path: Path, text: str = "x") -> None:
@@ -46,7 +46,7 @@ def test_copy_tree_blocks_destination_symlink_escape_in_merge_mode(tmp_path: Pat
     report = copy_tree(
         src,
         dst,
-        rule_conflict_dir=EnumCopyDirectoryConflictStrategy.MERGE,
+        rule_conflict_dir=CopyDirectoryConflictStrategy.MERGE,
     )
 
     assert report.error_count >= 1

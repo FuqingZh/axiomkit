@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::spec::SpecCopyError;
+use crate::spec::CopyErrorRecord;
 
 /// Aggregate counters and diagnostics for one `copy_tree` run.
 #[derive(Debug, Default, Clone)]
-pub struct ReportCopy {
+pub struct CopyReport {
     /// Number of scanned entries that matched filters.
     pub cnt_matched: u64,
     /// Total scanned directory/file entries.
@@ -19,10 +19,10 @@ pub struct ReportCopy {
     /// Non-fatal warnings collected during traversal/copy.
     pub warnings: Vec<String>,
     /// Per-entry failures.
-    pub errors: Vec<SpecCopyError>,
+    pub errors: Vec<CopyErrorRecord>,
 }
 
-impl ReportCopy {
+impl CopyReport {
     /// Number of collected hard errors.
     pub fn error_count(&self) -> usize {
         self.errors.len()
@@ -60,7 +60,7 @@ impl ReportCopy {
     }
 }
 
-impl fmt::Display for ReportCopy {
+impl fmt::Display for CopyReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.format("[COPY]"))
     }
@@ -68,22 +68,22 @@ impl fmt::Display for ReportCopy {
 
 /// Mutable accumulator for copy statistics.
 #[derive(Debug, Default, Clone)]
-pub struct ReportCopyBuilder {
-    /// See [`ReportCopy::cnt_matched`].
+pub struct CopyReportBuilder {
+    /// See [`CopyReport::cnt_matched`].
     pub cnt_matched: u64,
-    /// See [`ReportCopy::cnt_scanned`].
+    /// See [`CopyReport::cnt_scanned`].
     pub cnt_scanned: u64,
-    /// See [`ReportCopy::cnt_copied`].
+    /// See [`CopyReport::cnt_copied`].
     pub cnt_copied: u64,
-    /// See [`ReportCopy::cnt_skipped`].
+    /// See [`CopyReport::cnt_skipped`].
     pub cnt_skipped: u64,
-    /// See [`ReportCopy::errors`].
-    pub errors: Vec<SpecCopyError>,
-    /// See [`ReportCopy::warnings`].
+    /// See [`CopyReport::errors`].
+    pub errors: Vec<CopyErrorRecord>,
+    /// See [`CopyReport::warnings`].
     pub warnings: Vec<String>,
 }
 
-impl ReportCopyBuilder {
+impl CopyReportBuilder {
     /// Increment one or more named counters by `value`.
     ///
     /// Unknown names are ignored intentionally to keep call-sites concise.
@@ -126,12 +126,12 @@ impl ReportCopyBuilder {
 
     /// Add one path-scoped error.
     pub fn add_error(&mut self, path: std::path::PathBuf, exception: String) {
-        self.errors.push(SpecCopyError { path, exception });
+        self.errors.push(CopyErrorRecord { path, exception });
     }
 
     /// Finalize builder into immutable report.
-    pub fn build(self) -> ReportCopy {
-        ReportCopy {
+    pub fn build(self) -> CopyReport {
+        CopyReport {
             cnt_matched: self.cnt_matched,
             cnt_scanned: self.cnt_scanned,
             cnt_copied: self.cnt_copied,
@@ -144,11 +144,11 @@ impl ReportCopyBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::ReportCopy;
+    use super::CopyReport;
 
     #[test]
     fn report_copy_to_dict_and_format_match_python_style() {
-        let report = ReportCopy {
+        let report = CopyReport {
             cnt_matched: 5,
             cnt_scanned: 8,
             cnt_copied: 3,

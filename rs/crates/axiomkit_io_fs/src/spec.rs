@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 /// Symlink handling policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnumCopySymlinkStrategy {
+pub enum CopySymlinkStrategy {
     /// Follow the link and copy the target bytes/entries.
     Dereference,
     /// Create a symbolic link at destination (do not copy target bytes).
@@ -19,7 +19,7 @@ pub enum EnumCopySymlinkStrategy {
 
 /// Existing destination file conflict policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnumCopyFileConflictStrategy {
+pub enum CopyFileConflictStrategy {
     /// Keep destination file and skip current source file.
     Skip,
     /// Replace destination file with source file.
@@ -30,7 +30,7 @@ pub enum EnumCopyFileConflictStrategy {
 
 /// Existing destination directory conflict policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnumCopyDirectoryConflictStrategy {
+pub enum CopyDirectoryConflictStrategy {
     /// Do not descend/copy into an already existing destination directory.
     Skip,
     /// Reuse destination directory and continue copying children into it.
@@ -41,7 +41,7 @@ pub enum EnumCopyDirectoryConflictStrategy {
 
 /// Pattern matching mode for include/exclude lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnumCopyPatternMode {
+pub enum CopyPatternMode {
     /// Shell-like wildcards (`*`, `?`, character classes).
     Glob,
     /// Regular expression pattern.
@@ -52,7 +52,7 @@ pub enum EnumCopyPatternMode {
 
 /// Depth filter mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnumCopyDepthLimitMode {
+pub enum CopyDepthLimitMode {
     /// Include entries with depth `<= depth_limit`.
     AtMost,
     /// Include entries with depth exactly equal to `depth_limit`.
@@ -65,7 +65,7 @@ pub enum EnumCopyDepthLimitMode {
 
 /// Input options for `copy_tree`.
 #[derive(Debug, Clone)]
-pub struct SpecCopyOptions {
+pub struct CopyOptionsSpec {
     /// Include patterns applied to file basename.
     pub patterns_include_files: Option<Vec<String>>,
     /// Exclude patterns applied to file basename.
@@ -75,17 +75,17 @@ pub struct SpecCopyOptions {
     /// Exclude patterns applied to directory basename.
     pub patterns_exclude_dirs: Option<Vec<String>>,
     /// Pattern interpretation mode.
-    pub rule_pattern: EnumCopyPatternMode,
+    pub rule_pattern: CopyPatternMode,
     /// Conflict behavior for destination files.
-    pub rule_conflict_file: EnumCopyFileConflictStrategy,
+    pub rule_conflict_file: CopyFileConflictStrategy,
     /// Conflict behavior for destination directories.
-    pub rule_conflict_dir: EnumCopyDirectoryConflictStrategy,
+    pub rule_conflict_dir: CopyDirectoryConflictStrategy,
     /// Symlink handling behavior.
-    pub rule_symlink: EnumCopySymlinkStrategy,
+    pub rule_symlink: CopySymlinkStrategy,
     /// Optional maximum/target depth (depends on `rule_depth_limit`).
     pub depth_limit: Option<usize>,
     /// Depth evaluation mode.
-    pub rule_depth_limit: EnumCopyDepthLimitMode,
+    pub rule_depth_limit: CopyDepthLimitMode,
     /// Maximum worker threads for file-copy stage.
     pub workers_max: Option<usize>,
     /// Keep relative source tree structure in destination.
@@ -94,19 +94,19 @@ pub struct SpecCopyOptions {
     pub should_dry_run: bool,
 }
 
-impl Default for SpecCopyOptions {
+impl Default for CopyOptionsSpec {
     fn default() -> Self {
         Self {
             patterns_include_files: None,
             patterns_exclude_files: None,
             patterns_include_dirs: None,
             patterns_exclude_dirs: None,
-            rule_pattern: EnumCopyPatternMode::Glob,
-            rule_conflict_file: EnumCopyFileConflictStrategy::Skip,
-            rule_conflict_dir: EnumCopyDirectoryConflictStrategy::Skip,
-            rule_symlink: EnumCopySymlinkStrategy::CopySymlinks,
+            rule_pattern: CopyPatternMode::Glob,
+            rule_conflict_file: CopyFileConflictStrategy::Skip,
+            rule_conflict_dir: CopyDirectoryConflictStrategy::Skip,
+            rule_symlink: CopySymlinkStrategy::CopySymlinks,
             depth_limit: None,
-            rule_depth_limit: EnumCopyDepthLimitMode::AtMost,
+            rule_depth_limit: CopyDepthLimitMode::AtMost,
             workers_max: None,
             should_keep_tree: true,
             should_dry_run: false,
@@ -116,7 +116,7 @@ impl Default for SpecCopyOptions {
 
 /// One copy failure item with path + error text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecCopyError {
+pub struct CopyErrorRecord {
     /// Failed source or destination path.
     pub path: PathBuf,
     /// User-facing error text.

@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobMatcher};
 use regex::Regex;
 
-use crate::report::ReportCopyBuilder;
+use crate::report::CopyReportBuilder;
 use crate::spec::{
-    CopyTreeError, EnumCopyDepthLimitMode, EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy, EnumCopyPatternMode, EnumCopySymlinkStrategy,
+    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyFileConflictStrategy, CopyPatternMode,
+    CopySymlinkStrategy, CopyTreeError,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -22,20 +22,20 @@ pub(crate) enum TypeCopyPatternSeq {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SpecCopyPatterns {
+pub(crate) struct CopyPatternsSpec {
     pub(crate) patterns_include_files: Option<TypeCopyPatternSeq>,
     pub(crate) patterns_exclude_files: Option<TypeCopyPatternSeq>,
     pub(crate) patterns_include_dirs: Option<TypeCopyPatternSeq>,
     pub(crate) patterns_exclude_dirs: Option<TypeCopyPatternSeq>,
 }
 
-impl SpecCopyPatterns {
+impl CopyPatternsSpec {
     pub(crate) fn from_raw(
         patterns_include_files: Option<&[String]>,
         patterns_exclude_files: Option<&[String]>,
         patterns_include_dirs: Option<&[String]>,
         patterns_exclude_dirs: Option<&[String]>,
-        rule_pattern: EnumCopyPatternMode,
+        rule_pattern: CopyPatternMode,
     ) -> Result<Self, CopyTreeError> {
         Ok(Self {
             patterns_include_files: _compile(patterns_include_files, rule_pattern)?,
@@ -48,7 +48,7 @@ impl SpecCopyPatterns {
 
 fn _compile(
     patterns: Option<&[String]>,
-    rule_pattern: EnumCopyPatternMode,
+    rule_pattern: CopyPatternMode,
 ) -> Result<Option<TypeCopyPatternSeq>, CopyTreeError> {
     let Some(patterns) = patterns else {
         return Ok(None);
@@ -58,8 +58,8 @@ fn _compile(
     }
 
     match rule_pattern {
-        EnumCopyPatternMode::Literal => Ok(Some(TypeCopyPatternSeq::Literal(patterns.to_vec()))),
-        EnumCopyPatternMode::Glob => {
+        CopyPatternMode::Literal => Ok(Some(TypeCopyPatternSeq::Literal(patterns.to_vec()))),
+        CopyPatternMode::Glob => {
             let mut l_glob = Vec::with_capacity(patterns.len());
             for pattern in patterns {
                 let matcher = Glob::new(pattern)
@@ -73,7 +73,7 @@ fn _compile(
             }
             Ok(Some(TypeCopyPatternSeq::Glob(l_glob)))
         }
-        EnumCopyPatternMode::Regex => {
+        CopyPatternMode::Regex => {
             let mut l_regex = Vec::with_capacity(patterns.len());
             for pattern in patterns {
                 let regex = Regex::new(pattern).map_err(|e| {
@@ -91,24 +91,24 @@ fn _compile(
 fn _is_pattern_matching(
     value: &str,
     patterns: Option<&TypeCopyPatternSeq>,
-    rule_pattern: EnumCopyPatternMode,
+    rule_pattern: CopyPatternMode,
 ) -> bool {
     let Some(patterns) = patterns else {
         return false;
     };
 
     match rule_pattern {
-        EnumCopyPatternMode::Literal => match patterns {
+        CopyPatternMode::Literal => match patterns {
             TypeCopyPatternSeq::Literal(v) => v.iter().any(|p| value.contains(p)),
             TypeCopyPatternSeq::Glob(_) => false,
             TypeCopyPatternSeq::Regex(_) => false,
         },
-        EnumCopyPatternMode::Glob => match patterns {
+        CopyPatternMode::Glob => match patterns {
             TypeCopyPatternSeq::Glob(v) => v.iter().any(|p| p.is_match(value)),
             TypeCopyPatternSeq::Literal(_) => false,
             TypeCopyPatternSeq::Regex(_) => false,
         },
-        EnumCopyPatternMode::Regex => match patterns {
+        CopyPatternMode::Regex => match patterns {
             TypeCopyPatternSeq::Regex(v) => v.iter().any(|p| p.is_match(value)),
             TypeCopyPatternSeq::Literal(_) => false,
             TypeCopyPatternSeq::Glob(_) => false,
@@ -119,7 +119,7 @@ fn _is_pattern_matching(
 fn _should_include(
     value: &str,
     patterns: Option<&TypeCopyPatternSeq>,
-    rule_pattern: EnumCopyPatternMode,
+    rule_pattern: CopyPatternMode,
 ) -> bool {
     match patterns {
         None => true,
@@ -130,7 +130,7 @@ fn _should_include(
 fn _should_exclude(
     value: &str,
     patterns: Option<&TypeCopyPatternSeq>,
-    rule_pattern: EnumCopyPatternMode,
+    rule_pattern: CopyPatternMode,
 ) -> bool {
     match patterns {
         None => false,
@@ -142,7 +142,7 @@ pub(crate) fn should_exclude_by_patterns(
     value: &str,
     patterns_include: Option<&TypeCopyPatternSeq>,
     patterns_exclude: Option<&TypeCopyPatternSeq>,
-    rule_pattern: EnumCopyPatternMode,
+    rule_pattern: CopyPatternMode,
 ) -> bool {
     !_should_include(value, patterns_include, rule_pattern)
         || _should_exclude(value, patterns_exclude, rule_pattern)
@@ -267,15 +267,15 @@ pub(crate) fn validate_destination_path_safety(
 
 pub(crate) fn should_error_broken_symlink(
     path_symlink: &Path,
-    rule_symlink: EnumCopySymlinkStrategy,
+    rule_symlink: CopySymlinkStrategy,
 ) -> bool {
-    rule_symlink == EnumCopySymlinkStrategy::Dereference && !path_symlink.exists()
+    rule_symlink == CopySymlinkStrategy::Dereference && !path_symlink.exists()
 }
 
 pub(crate) fn should_skip_dir_conflict(
     path_dst: &Path,
-    rule_conflict: EnumCopyDirectoryConflictStrategy,
-    builder_cp_report: &mut ReportCopyBuilder,
+    rule_conflict: CopyDirectoryConflictStrategy,
+    builder_cp_report: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
         return false;
@@ -292,25 +292,25 @@ pub(crate) fn should_skip_dir_conflict(
     }
 
     match rule_conflict {
-        EnumCopyDirectoryConflictStrategy::Skip => {
+        CopyDirectoryConflictStrategy::Skip => {
             builder_cp_report.add_skipped();
             true
         }
-        EnumCopyDirectoryConflictStrategy::Error => {
+        CopyDirectoryConflictStrategy::Error => {
             builder_cp_report.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
             true
         }
-        EnumCopyDirectoryConflictStrategy::Merge => false,
+        CopyDirectoryConflictStrategy::Merge => false,
     }
 }
 
 pub(crate) fn should_skip_file_conflict(
     path_dst: &Path,
-    rule_conflict: EnumCopyFileConflictStrategy,
-    builder_cp_report: &mut ReportCopyBuilder,
+    rule_conflict: CopyFileConflictStrategy,
+    builder_cp_report: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
         return false;
@@ -324,25 +324,25 @@ pub(crate) fn should_skip_file_conflict(
     }
 
     match rule_conflict {
-        EnumCopyFileConflictStrategy::Skip => {
+        CopyFileConflictStrategy::Skip => {
             builder_cp_report.add_skipped();
             true
         }
-        EnumCopyFileConflictStrategy::Error => {
+        CopyFileConflictStrategy::Error => {
             builder_cp_report.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
             true
         }
-        EnumCopyFileConflictStrategy::Overwrite => false,
+        CopyFileConflictStrategy::Overwrite => false,
     }
 }
 
 pub(crate) fn create_symbolic_link(
     path_src: &Path,
     path_dst: &Path,
-    builder_cp_report: &mut ReportCopyBuilder,
+    builder_cp_report: &mut CopyReportBuilder,
 ) {
     let target = match fs::read_link(path_src) {
         Ok(v) => v,
@@ -428,13 +428,13 @@ fn copy_xattrs_linux(path_file_src: &Path, path_file_dst: &Path) {
 pub(crate) fn is_depth_within_limit(
     depth_value: usize,
     depth_limit: Option<usize>,
-    rule_depth_limit: EnumCopyDepthLimitMode,
+    rule_depth_limit: CopyDepthLimitMode,
 ) -> bool {
     match depth_limit {
         None => true,
         Some(limit) => match rule_depth_limit {
-            EnumCopyDepthLimitMode::AtMost => depth_value <= limit,
-            EnumCopyDepthLimitMode::Exact => depth_value == limit,
+            CopyDepthLimitMode::AtMost => depth_value <= limit,
+            CopyDepthLimitMode::Exact => depth_value == limit,
         },
     }
 }

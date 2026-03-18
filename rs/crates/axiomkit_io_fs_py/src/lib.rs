@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
 use axiomkit_io_fs::{
-    CopyTreeError, EnumCopyDepthLimitMode, EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy, EnumCopyPatternMode, EnumCopySymlinkStrategy, ReportCopy,
-    SpecCopyError, SpecCopyOptions, copy_tree,
+    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyErrorRecord, CopyFileConflictStrategy,
+    CopyOptionsSpec, CopyPatternMode, CopyReport, CopySymlinkStrategy, CopyTreeError, copy_tree,
 };
 use pyo3::exceptions::{PyNotADirectoryError, PyOSError, PyValueError};
 use pyo3::prelude::*;
@@ -12,7 +11,7 @@ const N_BRIDGE_ABI_VERSION: u64 = 1;
 const C_BRIDGE_CONTRACT_VERSION: &str = "axiomkit.fs.copy_tree.v1";
 const C_BRIDGE_TRANSPORT: &str = "rust_native";
 
-#[pyclass(name = "SpecCopyError")]
+#[pyclass(name = "CopyErrorRecord")]
 #[derive(Debug, Clone)]
 struct PySpecCopyError {
     #[pyo3(get)]
@@ -21,8 +20,8 @@ struct PySpecCopyError {
     exception: String,
 }
 
-impl From<SpecCopyError> for PySpecCopyError {
-    fn from(spec_error: SpecCopyError) -> Self {
+impl From<CopyErrorRecord> for PySpecCopyError {
+    fn from(spec_error: CopyErrorRecord) -> Self {
         Self {
             path: spec_error.path.to_string_lossy().to_string(),
             exception: spec_error.exception,
@@ -30,7 +29,7 @@ impl From<SpecCopyError> for PySpecCopyError {
     }
 }
 
-#[pyclass(name = "ReportCopy")]
+#[pyclass(name = "CopyReport")]
 #[derive(Debug, Clone)]
 struct PyReportCopy {
     #[pyo3(get)]
@@ -47,8 +46,8 @@ struct PyReportCopy {
     errors: Vec<PySpecCopyError>,
 }
 
-impl From<ReportCopy> for PyReportCopy {
-    fn from(report_copy: ReportCopy) -> Self {
+impl From<CopyReport> for PyReportCopy {
+    fn from(report_copy: CopyReport) -> Self {
         Self {
             cnt_matched: report_copy.cnt_matched,
             cnt_scanned: report_copy.cnt_scanned,
@@ -105,54 +104,54 @@ impl PyReportCopy {
     }
 }
 
-fn parse_rule_pattern(value: &str) -> PyResult<EnumCopyPatternMode> {
+fn parse_rule_pattern(value: &str) -> PyResult<CopyPatternMode> {
     match value {
-        "glob" => Ok(EnumCopyPatternMode::Glob),
-        "regex" => Ok(EnumCopyPatternMode::Regex),
-        "literal" => Ok(EnumCopyPatternMode::Literal),
+        "glob" => Ok(CopyPatternMode::Glob),
+        "regex" => Ok(CopyPatternMode::Regex),
+        "literal" => Ok(CopyPatternMode::Literal),
         _ => Err(PyValueError::new_err(format!(
             "Invalid pattern strategy: `{value}`. Expected one of: ['glob', 'regex', 'literal']"
         ))),
     }
 }
 
-fn parse_rule_conflict_file(value: &str) -> PyResult<EnumCopyFileConflictStrategy> {
+fn parse_rule_conflict_file(value: &str) -> PyResult<CopyFileConflictStrategy> {
     match value {
-        "skip" => Ok(EnumCopyFileConflictStrategy::Skip),
-        "overwrite" => Ok(EnumCopyFileConflictStrategy::Overwrite),
-        "error" => Ok(EnumCopyFileConflictStrategy::Error),
+        "skip" => Ok(CopyFileConflictStrategy::Skip),
+        "overwrite" => Ok(CopyFileConflictStrategy::Overwrite),
+        "error" => Ok(CopyFileConflictStrategy::Error),
         _ => Err(PyValueError::new_err(format!(
             "Invalid file conflict strategy: `{value}`. Expected one of: ['skip', 'overwrite', 'error']"
         ))),
     }
 }
 
-fn parse_rule_conflict_dir(value: &str) -> PyResult<EnumCopyDirectoryConflictStrategy> {
+fn parse_rule_conflict_dir(value: &str) -> PyResult<CopyDirectoryConflictStrategy> {
     match value {
-        "skip" => Ok(EnumCopyDirectoryConflictStrategy::Skip),
-        "merge" => Ok(EnumCopyDirectoryConflictStrategy::Merge),
-        "error" => Ok(EnumCopyDirectoryConflictStrategy::Error),
+        "skip" => Ok(CopyDirectoryConflictStrategy::Skip),
+        "merge" => Ok(CopyDirectoryConflictStrategy::Merge),
+        "error" => Ok(CopyDirectoryConflictStrategy::Error),
         _ => Err(PyValueError::new_err(format!(
             "Invalid directory conflict strategy: `{value}`. Expected one of: ['skip', 'merge', 'error']"
         ))),
     }
 }
 
-fn parse_rule_symlink(value: &str) -> PyResult<EnumCopySymlinkStrategy> {
+fn parse_rule_symlink(value: &str) -> PyResult<CopySymlinkStrategy> {
     match value {
-        "dereference" => Ok(EnumCopySymlinkStrategy::Dereference),
-        "copy_symlinks" => Ok(EnumCopySymlinkStrategy::CopySymlinks),
-        "skip_symlinks" => Ok(EnumCopySymlinkStrategy::SkipSymlinks),
+        "dereference" => Ok(CopySymlinkStrategy::Dereference),
+        "copy_symlinks" => Ok(CopySymlinkStrategy::CopySymlinks),
+        "skip_symlinks" => Ok(CopySymlinkStrategy::SkipSymlinks),
         _ => Err(PyValueError::new_err(format!(
             "Invalid symlink strategy: `{value}`. Expected one of: ['dereference', 'copy_symlinks', 'skip_symlinks']"
         ))),
     }
 }
 
-fn parse_rule_depth_limit(value: &str) -> PyResult<EnumCopyDepthLimitMode> {
+fn parse_rule_depth_limit(value: &str) -> PyResult<CopyDepthLimitMode> {
     match value {
-        "at_most" => Ok(EnumCopyDepthLimitMode::AtMost),
-        "exact" => Ok(EnumCopyDepthLimitMode::Exact),
+        "at_most" => Ok(CopyDepthLimitMode::AtMost),
+        "exact" => Ok(CopyDepthLimitMode::Exact),
         _ => Err(PyValueError::new_err(format!(
             "Invalid depth mode: `{value}`. Expected one of: ['at_most', 'exact']"
         ))),
@@ -220,7 +219,7 @@ fn copy_tree_py(
     should_keep_tree: bool,
     should_dry_run: bool,
 ) -> PyResult<PyReportCopy> {
-    let spec_cp_options = SpecCopyOptions {
+    let spec_cp_options = CopyOptionsSpec {
         patterns_include_files,
         patterns_exclude_files,
         patterns_include_dirs,

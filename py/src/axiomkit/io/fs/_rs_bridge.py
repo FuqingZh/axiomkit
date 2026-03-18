@@ -4,14 +4,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .report import ReportCopy
+from .report import CopyReport
 from .spec import (
-    EnumCopyDepthLimitMode,
-    EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy,
-    EnumCopyPatternMode,
-    EnumCopySymlinkStrategy,
-    SpecCopyError,
+    CopyDepthLimitMode,
+    CopyDirectoryConflictStrategy,
+    CopyFileConflictStrategy,
+    CopyPatternMode,
+    CopySymlinkStrategy,
+    CopyErrorRecord,
 )
 
 EXPECTED_BRIDGE_ABI = 1
@@ -92,16 +92,16 @@ def copy_tree_via_rs(
     patterns_exclude_files: Sequence[str] | str | None,
     patterns_include_dirs: Sequence[str] | str | None,
     patterns_exclude_dirs: Sequence[str] | str | None,
-    rule_pattern: EnumCopyPatternMode,
-    rule_conflict_file: EnumCopyFileConflictStrategy,
-    rule_conflict_dir: EnumCopyDirectoryConflictStrategy,
-    rule_symlink: EnumCopySymlinkStrategy,
+    rule_pattern: CopyPatternMode,
+    rule_conflict_file: CopyFileConflictStrategy,
+    rule_conflict_dir: CopyDirectoryConflictStrategy,
+    rule_symlink: CopySymlinkStrategy,
     depth_limit: int | None,
-    rule_depth_limit: EnumCopyDepthLimitMode,
+    rule_depth_limit: CopyDepthLimitMode,
     workers_max: int | None,
     should_keep_tree: bool,
     should_dry_run: bool,
-) -> ReportCopy:
+) -> CopyReport:
     if _copy_tree_rs is None:  # pragma: no cover
         _raise_unavailable()
     else:
@@ -124,12 +124,12 @@ def copy_tree_via_rs(
         )
 
     errors = tuple(
-        SpecCopyError(path=Path(e.path), exception=RuntimeError(e.exception))
+        CopyErrorRecord(path=Path(e.path), exception=RuntimeError(e.exception))
         for e in report_rs.errors
     )
     warnings = tuple(report_rs.warnings)
 
-    return ReportCopy(
+    return CopyReport(
         cnt_matched=report_rs.cnt_matched,
         cnt_scanned=report_rs.cnt_scanned,
         cnt_copied=report_rs.cnt_copied,

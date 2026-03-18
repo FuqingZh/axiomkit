@@ -13,9 +13,8 @@ pub mod spec;
 mod util;
 
 pub use copy::copy_tree;
-pub use report::{ReportCopy, ReportCopyBuilder};
+pub use report::{CopyReport, CopyReportBuilder};
 pub use spec::{
-    CopyTreeError, EnumCopyDepthLimitMode, EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy, EnumCopyPatternMode, EnumCopySymlinkStrategy, SpecCopyError,
-    SpecCopyOptions,
+    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyErrorRecord, CopyFileConflictStrategy,
+    CopyOptionsSpec, CopyPatternMode, CopySymlinkStrategy, CopyTreeError,
 };

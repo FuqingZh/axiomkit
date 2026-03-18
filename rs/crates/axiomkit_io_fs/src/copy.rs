@@ -7,53 +7,53 @@ use std::path::{Path, PathBuf};
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 
-use crate::report::{ReportCopy, ReportCopyBuilder};
+use crate::report::{CopyReport, CopyReportBuilder};
 use crate::spec::{
-    CopyTreeError, EnumCopyDepthLimitMode, EnumCopyDirectoryConflictStrategy,
-    EnumCopySymlinkStrategy, SpecCopyOptions,
+    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyOptionsSpec, CopySymlinkStrategy,
+    CopyTreeError,
 };
 use crate::util::{
-    SpecCopyPatterns, calculate_worker_limit, copy_file_with_metadata, create_symbolic_link,
+    CopyPatternsSpec, calculate_worker_limit, copy_file_with_metadata, create_symbolic_link,
     derive_destination_path, is_depth_within_limit, is_overlap, should_error_broken_symlink,
     should_exclude_by_patterns, should_skip_dir_conflict, should_skip_file_conflict,
     validate_destination_path_safety,
 };
 
 #[derive(Debug, Clone)]
-struct SpecDirEntry {
+struct DirEntryRecord {
     path_dir_src_sub: PathBuf,
     name_dir: String,
     if_is_symlink: bool,
 }
 
 #[derive(Debug, Clone)]
-struct SpecFileEntry {
+struct FileEntryRecord {
     path_file_src: PathBuf,
     name_file: String,
     if_is_symlink: bool,
 }
 
 #[derive(Debug, Clone)]
-struct SpecCopyTaskFile {
+struct CopyTaskFileSpec {
     path_file_src: PathBuf,
     path_file_dst: PathBuf,
 }
 
 #[derive(Debug)]
-struct SpecCopyContext {
+struct CopyContext {
     path_dir_src: PathBuf,
     path_dir_dst: PathBuf,
-    spec_cp_options: SpecCopyOptions,
-    spec_cp_pats: SpecCopyPatterns,
+    spec_cp_options: CopyOptionsSpec,
+    spec_cp_pats: CopyPatternsSpec,
     workers_max: usize,
-    builder_cp_report: ReportCopyBuilder,
+    builder_cp_report: CopyReportBuilder,
     set_visited_dirs: HashSet<(u64, u64)>,
-    l_tasks_file_copy: Vec<SpecCopyTaskFile>,
+    l_tasks_file_copy: Vec<CopyTaskFileSpec>,
 }
 
 /// Copy a directory tree from `dir_source` to `dir_destination`.
 ///
-/// Behavior is controlled by [`SpecCopyOptions`], including:
+/// Behavior is controlled by [`CopyOptionsSpec`], including:
 /// - include/exclude pattern rules for files and directories,
 /// - conflict policies for destination files/directories,
 /// - symlink handling strategy,
@@ -67,14 +67,14 @@ struct SpecCopyContext {
 /// 3. Batched file-copy execution (serial or rayon thread pool).
 /// 4. Report aggregation.
 ///
-/// Returns [`ReportCopy`] when the run completes (with possible per-entry errors
+/// Returns [`CopyReport`] when the run completes (with possible per-entry errors
 /// stored in the report). Returns [`CopyTreeError`] only for top-level setup and
 /// validation failures.
 pub fn copy_tree<P, Q>(
     dir_source: P,
     dir_destination: Q,
-    spec_cp_options: SpecCopyOptions,
-) -> Result<ReportCopy, CopyTreeError>
+    spec_cp_options: CopyOptionsSpec,
+) -> Result<CopyReport, CopyTreeError>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
@@ -85,9 +85,7 @@ where
             "Arg `depth_limit` must be >= 1 or None.".to_string(),
         ));
     }
-    if spec_cp_options.depth_limit.is_none()
-        && enum_rule_depth_limit == EnumCopyDepthLimitMode::Exact
-    {
+    if spec_cp_options.depth_limit.is_none() && enum_rule_depth_limit == CopyDepthLimitMode::Exact {
         return Err(CopyTreeError::InvalidDepthLimit(
             "`depth_limit` is required when depth_mode='exact'.".to_string(),
         ));
@@ -121,7 +119,7 @@ where
         });
     }
 
-    let spec_cp_pats = SpecCopyPatterns::from_raw(
+    let spec_cp_pats = CopyPatternsSpec::from_raw(
         spec_cp_options.patterns_include_files.as_deref(),
         spec_cp_options.patterns_exclude_files.as_deref(),
         spec_cp_options.patterns_include_dirs.as_deref(),
@@ -130,13 +128,13 @@ where
     )?;
     let workers_max = calculate_worker_limit(spec_cp_options.workers_max);
 
-    let mut spec_cp_ctx = SpecCopyContext {
+    let mut spec_cp_ctx = CopyContext {
         path_dir_src: path_dir_src.clone(),
         path_dir_dst,
         spec_cp_options,
         spec_cp_pats,
         workers_max,
-        builder_cp_report: ReportCopyBuilder::default(),
+        builder_cp_report: CopyReportBuilder::default(),
         set_visited_dirs: HashSet::new(),
         l_tasks_file_copy: Vec::new(),
     };
@@ -146,10 +144,7 @@ where
     Ok(spec_cp_ctx.builder_cp_report.build())
 }
 
-fn should_error_unsafe_destination_path(
-    path_dst: &Path,
-    spec_cp_ctx: &mut SpecCopyContext,
-) -> bool {
+fn should_error_unsafe_destination_path(path_dst: &Path, spec_cp_ctx: &mut CopyContext) -> bool {
     if let Err(message) = validate_destination_path_safety(path_dst, &spec_cp_ctx.path_dir_dst) {
         spec_cp_ctx
             .builder_cp_report
@@ -159,14 +154,14 @@ fn should_error_unsafe_destination_path(
     false
 }
 
-fn flush_file_copy_tasks(spec_cp_ctx: &mut SpecCopyContext) {
+fn flush_file_copy_tasks(spec_cp_ctx: &mut CopyContext) {
     let l_tasks_file_copy = std::mem::take(&mut spec_cp_ctx.l_tasks_file_copy);
     if l_tasks_file_copy.is_empty() {
         return;
     }
 
     let apply_results = |l_results: Vec<(PathBuf, Result<(), String>)>,
-                         builder_cp_report: &mut ReportCopyBuilder| {
+                         builder_cp_report: &mut CopyReportBuilder| {
         for (path_file_dst, res_copy) in l_results {
             match res_copy {
                 Ok(_) => builder_cp_report.add_copied(),
@@ -241,9 +236,9 @@ fn flush_file_copy_tasks(spec_cp_ctx: &mut SpecCopyContext) {
     apply_results(l_results, &mut spec_cp_ctx.builder_cp_report);
 }
 
-fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut SpecCopyContext) {
+fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut CopyContext) {
     let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
-    if enum_rule_symlink == EnumCopySymlinkStrategy::Dereference {
+    if enum_rule_symlink == CopySymlinkStrategy::Dereference {
         if let Ok(stat_root) = fs::metadata(path_root) {
             #[cfg(unix)]
             {
@@ -264,8 +259,8 @@ fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut S
         }
     }
 
-    let mut l_dirs: Vec<SpecDirEntry> = Vec::new();
-    let mut l_files: Vec<SpecFileEntry> = Vec::new();
+    let mut l_dirs: Vec<DirEntryRecord> = Vec::new();
+    let mut l_files: Vec<FileEntryRecord> = Vec::new();
 
     let iter_entries = match fs::read_dir(path_root) {
         Ok(iter) => iter,
@@ -305,13 +300,13 @@ fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut S
         let b_is_symlink = cfg_file_type.is_symlink();
         let b_is_dir = cfg_file_type.is_dir() || (b_is_symlink && path_entry.is_dir());
         if b_is_dir {
-            l_dirs.push(SpecDirEntry {
+            l_dirs.push(DirEntryRecord {
                 path_dir_src_sub: path_entry,
                 name_dir: c_name,
                 if_is_symlink: b_is_symlink,
             });
         } else if cfg_file_type.is_file() || b_is_symlink {
-            l_files.push(SpecFileEntry {
+            l_files.push(FileEntryRecord {
                 path_file_src: path_entry,
                 name_file: c_name,
                 if_is_symlink: b_is_symlink,
@@ -359,9 +354,9 @@ fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut S
 }
 
 fn handle_dir_entry(
-    spec_dir_entry: SpecDirEntry,
+    spec_dir_entry: DirEntryRecord,
     depth_value: usize,
-    spec_cp_ctx: &mut SpecCopyContext,
+    spec_cp_ctx: &mut CopyContext,
 ) -> bool {
     let depth_limit = spec_cp_ctx.spec_cp_options.depth_limit;
     let enum_rule_depth_limit = spec_cp_ctx.spec_cp_options.rule_depth_limit;
@@ -374,7 +369,7 @@ fn handle_dir_entry(
     let should_dry_run = spec_cp_ctx.spec_cp_options.should_dry_run;
 
     if spec_dir_entry.if_is_symlink {
-        if enum_rule_symlink == EnumCopySymlinkStrategy::SkipSymlinks {
+        if enum_rule_symlink == CopySymlinkStrategy::SkipSymlinks {
             if should_keep_tree && b_depth_within {
                 spec_cp_ctx
                     .builder_cp_report
@@ -399,7 +394,7 @@ fn handle_dir_entry(
             return false;
         }
 
-        if enum_rule_symlink == EnumCopySymlinkStrategy::CopySymlinks {
+        if enum_rule_symlink == CopySymlinkStrategy::CopySymlinks {
             if !b_depth_within {
                 return false;
             }
@@ -427,7 +422,7 @@ fn handle_dir_entry(
                     return false;
                 }
 
-                if enum_rule_conflict_dir == EnumCopyDirectoryConflictStrategy::Merge {
+                if enum_rule_conflict_dir == CopyDirectoryConflictStrategy::Merge {
                     spec_cp_ctx.builder_cp_report.add_warning(format!(
                         "Merge not applicable to symlink: {}",
                         path_dir_dst_sub.display()
@@ -514,9 +509,9 @@ fn handle_dir_entry(
 }
 
 fn handle_file_entry(
-    spec_file_entry: SpecFileEntry,
+    spec_file_entry: FileEntryRecord,
     depth_value: usize,
-    spec_cp_ctx: &mut SpecCopyContext,
+    spec_cp_ctx: &mut CopyContext,
 ) {
     let depth_limit = spec_cp_ctx.spec_cp_options.depth_limit;
     let enum_rule_depth_limit = spec_cp_ctx.spec_cp_options.rule_depth_limit;
@@ -539,7 +534,7 @@ fn handle_file_entry(
 
     let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
     if spec_file_entry.if_is_symlink {
-        if enum_rule_symlink == EnumCopySymlinkStrategy::SkipSymlinks {
+        if enum_rule_symlink == CopySymlinkStrategy::SkipSymlinks {
             spec_cp_ctx.builder_cp_report.add_skipped();
             return;
         }
@@ -573,7 +568,7 @@ fn handle_file_entry(
             spec_cp_ctx.builder_cp_report.add_skipped();
             return;
         }
-    } else if enum_rule_symlink == EnumCopySymlinkStrategy::Dereference {
+    } else if enum_rule_symlink == CopySymlinkStrategy::Dereference {
         let meta_file_src_target = match fs::metadata(&spec_file_entry.path_file_src) {
             Ok(v) => v,
             Err(e) => {
@@ -644,7 +639,7 @@ fn handle_file_entry(
         return;
     }
 
-    if spec_file_entry.if_is_symlink && enum_rule_symlink == EnumCopySymlinkStrategy::CopySymlinks {
+    if spec_file_entry.if_is_symlink && enum_rule_symlink == CopySymlinkStrategy::CopySymlinks {
         create_symbolic_link(
             &spec_file_entry.path_file_src,
             &path_file_dst,
@@ -653,7 +648,7 @@ fn handle_file_entry(
         return;
     }
 
-    spec_cp_ctx.l_tasks_file_copy.push(SpecCopyTaskFile {
+    spec_cp_ctx.l_tasks_file_copy.push(CopyTaskFileSpec {
         path_file_src: spec_file_entry.path_file_src,
         path_file_dst,
     });
@@ -666,9 +661,8 @@ mod tests {
 
     use super::copy_tree;
     use crate::spec::{
-        CopyTreeError, EnumCopyDepthLimitMode, EnumCopyDirectoryConflictStrategy,
-        EnumCopyFileConflictStrategy, EnumCopyPatternMode, EnumCopySymlinkStrategy,
-        SpecCopyOptions,
+        CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyFileConflictStrategy,
+        CopyOptionsSpec, CopyPatternMode, CopySymlinkStrategy, CopyTreeError,
     };
 
     struct TestDir {
@@ -714,7 +708,7 @@ mod tests {
         write_text(&src.join("a/file1.txt"), "a");
         write_text(&src.join("b/sub/file2.txt"), "b");
 
-        let report = copy_tree(&src, &dst, SpecCopyOptions::default()).expect("copy tree");
+        let report = copy_tree(&src, &dst, CopyOptionsSpec::default()).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("root.txt").exists());
         assert!(dst.join("a/file1.txt").exists());
@@ -731,10 +725,10 @@ mod tests {
         write_text(&src.join("a/file1.txt"), "a");
         write_text(&src.join("a/file1.md"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             should_keep_tree: false,
             patterns_include_files: Some(vec!["*.txt".to_string()]),
-            ..SpecCopyOptions::default()
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -753,10 +747,10 @@ mod tests {
         write_text(&src.join("root.txt"), "root");
         write_text(&src.join("a/file1.txt"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             depth_limit: Some(1),
-            rule_depth_limit: EnumCopyDepthLimitMode::Exact,
-            ..SpecCopyOptions::default()
+            rule_depth_limit: CopyDepthLimitMode::Exact,
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -772,7 +766,7 @@ mod tests {
         std::fs::create_dir_all(&src).expect("mkdir src");
 
         let nested = src.join("nested");
-        let err = copy_tree(&src, &nested, SpecCopyOptions::default()).expect_err("must fail");
+        let err = copy_tree(&src, &nested, CopyOptionsSpec::default()).expect_err("must fail");
         assert!(matches!(
             err,
             CopyTreeError::SourceDestinationOverlap { .. }
@@ -790,9 +784,9 @@ mod tests {
         write_text(&src.join("root.txt"), "root");
         symlink(src.join("root.txt"), src.join("link_root.txt")).expect("create symlink");
 
-        let spec_cp_options = SpecCopyOptions {
-            rule_symlink: EnumCopySymlinkStrategy::CopySymlinks,
-            ..SpecCopyOptions::default()
+        let spec_cp_options = CopyOptionsSpec {
+            rule_symlink: CopySymlinkStrategy::CopySymlinks,
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -810,10 +804,10 @@ mod tests {
         write_text(&src.join("report_02.csv"), "ok");
         write_text(&src.join("note.txt"), "txt");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             patterns_include_files: Some(vec![r"^report_\d+\.csv$".to_string()]),
-            rule_pattern: EnumCopyPatternMode::Regex,
-            ..SpecCopyOptions::default()
+            rule_pattern: CopyPatternMode::Regex,
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -833,11 +827,11 @@ mod tests {
         write_text(&src.join("report_skip.csv"), "skip");
         write_text(&src.join("other.csv"), "other");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             patterns_include_files: Some(vec![r"^report_.*\.csv$".to_string()]),
             patterns_exclude_files: Some(vec![r"^report_skip\.csv$".to_string()]),
-            rule_pattern: EnumCopyPatternMode::Regex,
-            ..SpecCopyOptions::default()
+            rule_pattern: CopyPatternMode::Regex,
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -854,10 +848,10 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["(".to_string()]),
-            rule_pattern: EnumCopyPatternMode::Regex,
-            ..SpecCopyOptions::default()
+            rule_pattern: CopyPatternMode::Regex,
+            ..CopyOptionsSpec::default()
         };
 
         let err = copy_tree(&src, &dst, spec_cp_options).expect_err("invalid regex must fail");
@@ -873,10 +867,10 @@ mod tests {
         write_text(&src.join("file1.txt"), "1");
         write_text(&src.join("filea.txt"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["file[0-9].txt".to_string()]),
-            rule_pattern: EnumCopyPatternMode::Glob,
-            ..SpecCopyOptions::default()
+            rule_pattern: CopyPatternMode::Glob,
+            ..CopyOptionsSpec::default()
         };
 
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
@@ -892,10 +886,10 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["[".to_string()]),
-            rule_pattern: EnumCopyPatternMode::Glob,
-            ..SpecCopyOptions::default()
+            rule_pattern: CopyPatternMode::Glob,
+            ..CopyOptionsSpec::default()
         };
 
         let err = copy_tree(&src, &dst, spec_cp_options).expect_err("invalid glob must fail");
@@ -911,7 +905,7 @@ mod tests {
         write_text(&src.join("base.txt"), "base");
         std::fs::hard_link(src.join("base.txt"), src.join("alias.txt")).expect("hard link");
 
-        let report = copy_tree(&src, &dst, SpecCopyOptions::default()).expect("copy tree");
+        let report = copy_tree(&src, &dst, CopyOptionsSpec::default()).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(
             report
@@ -945,7 +939,7 @@ mod tests {
         let c_xattr_name = "user.axiomkit_fs_test";
         let b_if_has_xattr = xattr::set(&path_file_src, c_xattr_name, b"meta_value").is_ok();
 
-        let report = copy_tree(&src, &dst, SpecCopyOptions::default()).expect("copy tree");
+        let report = copy_tree(&src, &dst, CopyOptionsSpec::default()).expect("copy tree");
         assert_eq!(report.error_count(), 0);
 
         let path_file_dst = dst.join("meta.txt");
@@ -978,9 +972,9 @@ mod tests {
         write_text(&src.join("b.txt"), "b");
         write_text(&src.join("c.txt"), "c");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             workers_max: Some(1),
-            ..SpecCopyOptions::default()
+            ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
 
@@ -998,9 +992,9 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = SpecCopyOptions {
+        let spec_cp_options = CopyOptionsSpec {
             workers_max: Some(0),
-            ..SpecCopyOptions::default()
+            ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
 
@@ -1021,7 +1015,7 @@ mod tests {
         std::fs::create_dir_all(&dst_real).expect("create dst real");
         symlink(&dst_real, &dst_link).expect("create dst symlink");
 
-        let err = copy_tree(&src, &dst_link, SpecCopyOptions::default())
+        let err = copy_tree(&src, &dst_link, CopyOptionsSpec::default())
             .expect_err("symlink destination root must fail");
         assert!(matches!(err, CopyTreeError::DestinationInitFailed { .. }));
     }
@@ -1041,9 +1035,9 @@ mod tests {
         std::fs::create_dir_all(&outside).expect("create outside");
         symlink(&outside, dst.join("escape")).expect("create escape symlink");
 
-        let spec_cp_options = SpecCopyOptions {
-            rule_conflict_dir: EnumCopyDirectoryConflictStrategy::Merge,
-            ..SpecCopyOptions::default()
+        let spec_cp_options = CopyOptionsSpec {
+            rule_conflict_dir: CopyDirectoryConflictStrategy::Merge,
+            ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree returns report");
 
@@ -1066,9 +1060,9 @@ mod tests {
         std::fs::create_dir_all(&outside).expect("create outside");
         symlink(outside.join("out.txt"), dst.join("a.txt")).expect("create dst symlink");
 
-        let spec_cp_options = SpecCopyOptions {
-            rule_conflict_file: EnumCopyFileConflictStrategy::Overwrite,
-            ..SpecCopyOptions::default()
+        let spec_cp_options = CopyOptionsSpec {
+            rule_conflict_file: CopyFileConflictStrategy::Overwrite,
+            ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree returns report");
 
@@ -1088,9 +1082,9 @@ mod tests {
         std::fs::create_dir_all(&src).expect("create src");
         symlink("/dev/null", src.join("null_dev")).expect("create symlink to /dev/null");
 
-        let spec_cp_options = SpecCopyOptions {
-            rule_symlink: EnumCopySymlinkStrategy::Dereference,
-            ..SpecCopyOptions::default()
+        let spec_cp_options = CopyOptionsSpec {
+            rule_symlink: CopySymlinkStrategy::Dereference,
+            ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
 
@@ -1129,19 +1123,19 @@ mod tests {
                 }
             }
 
-            let mut spec_cp_options = SpecCopyOptions::default();
+            let mut spec_cp_options = CopyOptionsSpec::default();
             match n_seed % 3 {
                 0 => {
-                    spec_cp_options.rule_pattern = EnumCopyPatternMode::Literal;
+                    spec_cp_options.rule_pattern = CopyPatternMode::Literal;
                     spec_cp_options.patterns_include_files = Some(vec!["f_".to_string()]);
                 }
                 1 => {
-                    spec_cp_options.rule_pattern = EnumCopyPatternMode::Glob;
+                    spec_cp_options.rule_pattern = CopyPatternMode::Glob;
                     spec_cp_options.patterns_include_files = Some(vec!["*.txt".to_string()]);
                     spec_cp_options.patterns_exclude_dirs = Some(vec!["b".to_string()]);
                 }
                 _ => {
-                    spec_cp_options.rule_pattern = EnumCopyPatternMode::Regex;
+                    spec_cp_options.rule_pattern = CopyPatternMode::Regex;
                     spec_cp_options.patterns_include_files =
                         Some(vec![r"^f_[0-9a-f]+\.txt$".to_string()]);
                 }

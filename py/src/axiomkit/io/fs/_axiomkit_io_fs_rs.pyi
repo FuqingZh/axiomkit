@@ -5,18 +5,18 @@ __bridge_contract__: str
 __bridge_transport__: str
 
 
-class SpecCopyError:
+class CopyErrorRecord:
     path: str
     exception: str
 
 
-class ReportCopy:
+class CopyReport:
     cnt_matched: int
     cnt_scanned: int
     cnt_copied: int
     cnt_skipped: int
     warnings: list[str]
-    errors: list[SpecCopyError]
+    errors: list[CopyErrorRecord]
 
     @property
     def error_count(self) -> int: ...
@@ -45,4 +45,4 @@ def copy_tree(
     workers_max: int | None = None,
     should_keep_tree: bool = True,
     should_dry_run: bool = False,
-) -> ReportCopy: ...
+) -> CopyReport: ...

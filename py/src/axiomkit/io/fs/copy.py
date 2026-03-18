@@ -3,13 +3,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ._rs_bridge import copy_tree_via_rs, is_rs_backend_available
-from .report import ReportCopy
+from .report import CopyReport
 from .spec import (
-    EnumCopyDepthLimitMode,
-    EnumCopyDirectoryConflictStrategy,
-    EnumCopyFileConflictStrategy,
-    EnumCopyPatternMode,
-    EnumCopySymlinkStrategy,
+    CopyDepthLimitMode,
+    CopyDirectoryConflictStrategy,
+    CopyFileConflictStrategy,
+    CopyPatternMode,
+    CopySymlinkStrategy,
 )
 from .util import (
     validate_copy_depth_mode,
@@ -30,16 +30,16 @@ def copy_tree(
     patterns_exclude_files: Sequence[str] | str | None = None,
     patterns_include_dirs: Sequence[str] | str | None = None,
     patterns_exclude_dirs: Sequence[str] | str | None = None,
-    rule_pattern: EnumCopyPatternMode | str = "glob",
-    rule_conflict_file: EnumCopyFileConflictStrategy | str = "skip",
-    rule_conflict_dir: EnumCopyDirectoryConflictStrategy | str = "skip",
-    rule_symlink: EnumCopySymlinkStrategy | str = "copy_symlinks",
+    rule_pattern: CopyPatternMode | str = "glob",
+    rule_conflict_file: CopyFileConflictStrategy | str = "skip",
+    rule_conflict_dir: CopyDirectoryConflictStrategy | str = "skip",
+    rule_symlink: CopySymlinkStrategy | str = "copy_symlinks",
     depth_limit: int | None = None,
-    rule_depth_limit: EnumCopyDepthLimitMode | str = "at_most",
+    rule_depth_limit: CopyDepthLimitMode | str = "at_most",
     workers_max: int | None = None,
     should_keep_tree: bool = True,
     should_dry_run: bool = False,
-) -> ReportCopy:
+) -> CopyReport:
     """Copy a directory tree with filtering, depth limits, and conflict handling.
 
     This function delegates filesystem traversal/copy execution to the Rust backend.
@@ -56,22 +56,22 @@ def copy_tree(
         patterns_exclude_dirs: Directory basename exclude patterns.
 
         rule_pattern:
-            Pattern interpretation mode. See :class:`EnumCopyPatternMode`.
+            Pattern interpretation mode. See :class:`CopyPatternMode`.
             - ``glob``: (Default) Unix shell-style wildcards.
             - ``regex``: Regular expressions.
             - ``literal``: Exact string matches.
         rule_conflict_file:
-            File conflict strategy. See :class:`EnumCopyFileConflictStrategy`.
+            File conflict strategy. See :class:`CopyFileConflictStrategy`.
             - ``skip``: (Default) Skip existing files.
             - ``overwrite``: Overwrite existing files.
             - ``error``: Raise an error on conflict.
         rule_conflict_dir:
-            Directory conflict strategy. See :class:`EnumCopyDirectoryConflictStrategy`.
+            Directory conflict strategy. See :class:`CopyDirectoryConflictStrategy`.
             - ``skip``: (Default) Skip existing directories.
             - ``merge``: Merge contents into existing directories.
             - ``error``: Raise an error on conflict.
         rule_symlink:
-            Symlink handling strategy. See :class:`EnumCopySymlinkStrategy`.
+            Symlink handling strategy. See :class:`CopySymlinkStrategy`.
             - ``copy_symlinks``: (Default) Copy symlinks as symlinks.
             - ``dereference``: Follow symlinks and copy target files/directories.
             - ``skip_symlinks``: Skip symlinked files and directories.
@@ -79,7 +79,7 @@ def copy_tree(
         depth_limit:
             Depth limit used with ``rule_depth_limit`` (None means no limit).
         rule_depth_limit:
-            Depth selection mode. See :class:`EnumCopyDepthLimitMode`.
+            Depth selection mode. See :class:`CopyDepthLimitMode`.
             - ``at_most``: (Default) Copy items at depth <= depth_limit.
             - ``exact``: Copy items at depth == depth_limit.
             It requires ``depth_limit`` to be set.
@@ -102,7 +102,7 @@ def copy_tree(
             If Rust backend is unavailable.
 
     Returns:
-        ReportCopy: Summary of the copy operation.
+        CopyReport: Summary of the copy operation.
 
     Examples:
         >>> from pathlib import Path
@@ -131,7 +131,7 @@ def copy_tree(
     enum_rule_depth_limit = validate_copy_depth_mode(rule_depth_limit)
 
     if depth_limit is None:
-        if enum_rule_depth_limit is EnumCopyDepthLimitMode.EXACT:
+        if enum_rule_depth_limit is CopyDepthLimitMode.EXACT:
             raise ValueError("`depth_limit` is required when depth_mode='exact'.")
     elif depth_limit < 1:
         raise ValueError("Arg `depth_limit` must be >= 1 or None.")

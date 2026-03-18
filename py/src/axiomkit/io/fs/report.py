@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-from .spec import SpecCopyError
+from .spec import CopyErrorRecord
 
 
 @dataclass(frozen=True, slots=True)
-class ReportCopy:
+class CopyReport:
     """
     Summary of the outcome of a copy operation.
 
@@ -26,7 +26,7 @@ class ReportCopy:
             Number of entries that were intentionally not copied
             (for example due to conflict resolution strategy, filters, or patterns).
         errors:
-            Tuple of :class:`SpecCopyError` instances describing failures
+            Tuple of :class:`CopyErrorRecord` instances describing failures
             that occurred while attempting to copy specific paths.
             The length of this tuple corresponds to the total number of errors.
         warnings:
@@ -39,7 +39,7 @@ class ReportCopy:
     cnt_scanned: int = 0
     cnt_copied: int = 0
     cnt_skipped: int = 0
-    errors: tuple[SpecCopyError, ...] = ()
+    errors: tuple[CopyErrorRecord, ...] = ()
     warnings: tuple[str, ...] = ()
 
     @property
