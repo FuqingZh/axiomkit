@@ -7,7 +7,7 @@ from typing import Any, Literal
 ################################################################################
 # #region CellFormatSpecification
 @dataclass(frozen=True, slots=True)
-class SpecCellFormat:
+class CellFormatSpec:
     # 字段名严格对齐 XlsxWriter format properties keys
     font_name: str | None = None
     font_size: int | None = None
@@ -28,10 +28,10 @@ class SpecCellFormat:
     bg_color: str | None = None
     font_color: str | None = None
 
-    def with_(self, **kwargs: Any) -> "SpecCellFormat":
+    def with_(self, **kwargs: Any) -> "CellFormatSpec":
         return replace(self, **kwargs)
 
-    def merge(self, other: "SpecCellFormat") -> "SpecCellFormat":
+    def merge(self, other: "CellFormatSpec") -> "CellFormatSpec":
         # 右侧非 None 覆盖左侧
         data = {
             k: (
@@ -39,7 +39,7 @@ class SpecCellFormat:
             )
             for k in self.__dataclass_fields__
         }
-        return SpecCellFormat(**data)
+        return CellFormatSpec(**data)
 
     def to_xlsxwriter(self) -> dict[str, Any]:
         return {
@@ -50,7 +50,7 @@ class SpecCellFormat:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecCellBorder:
+class CellBorderSpec:
     top: int
     bottom: int
     left: int
@@ -63,7 +63,7 @@ class SpecCellBorder:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecXlsxValuePolicy:
+class XlsxValuePolicySpec:
     missing_value_str: str = "NA"
     nan_str: str = "NaN"
     posinf_str: str = "Inf"
@@ -72,7 +72,7 @@ class SpecXlsxValuePolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecXlsxRowChunkPolicy:
+class XlsxRowChunkPolicySpec:
     width_large: int = 8_000
     width_medium: int = 2_000
     size_large: int = 1_000
@@ -82,23 +82,23 @@ class SpecXlsxRowChunkPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecXlsxWriteOptions:
-    value_policy: SpecXlsxValuePolicy = field(default_factory=SpecXlsxValuePolicy)
+class XlsxWriteOptionsSpec:
+    value_policy: XlsxValuePolicySpec = field(default_factory=XlsxValuePolicySpec)
     keep_missing_values: bool = False
     infer_numeric_cols: bool = True
     infer_integer_cols: bool = True
-    row_chunk_policy: SpecXlsxRowChunkPolicy = field(
-        default_factory=SpecXlsxRowChunkPolicy
+    row_chunk_policy: XlsxRowChunkPolicySpec = field(
+        default_factory=XlsxRowChunkPolicySpec
     )
-    base_format_patch: "SpecCellFormat" = field(
-        default_factory=lambda: SpecCellFormat(
+    base_format_patch: "CellFormatSpec" = field(
+        default_factory=lambda: CellFormatSpec(
             border=0, top=0, bottom=0, left=0, right=0
         )
     )
 
 
 @dataclass(frozen=True, slots=True)
-class SpecScientificPolicy:
+class ScientificPolicySpec:
     rule_scope: Literal["none", "decimal", "integer", "all"] = "decimal"
     thr_min: float = 0.0001
     thr_max: float = 1_000_000_000_000.0
@@ -106,7 +106,7 @@ class SpecScientificPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecAutofitCellsPolicy:
+class AutofitCellsPolicySpec:
     rule_columns: Literal["none", "header", "body", "all"] = "header"
     height_body_inferred_max: int | None = 20_000
     width_cell_min: int = 8
@@ -118,7 +118,7 @@ class SpecAutofitCellsPolicy:
 ################################################################################
 # #region SheetFormatSpecification
 @dataclass(frozen=True, slots=True)
-class SpecSheetSlice:
+class SheetSliceSpec:
     sheet_name: str
     row_start_inclusive: int
     row_end_exclusive: int  # exclusive in source df rows
@@ -127,7 +127,7 @@ class SpecSheetSlice:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecSheetHorizontalMerge:
+class SheetHorizontalMergeSpec:
     row_idx_start: int
     col_idx_start: int
     col_idx_end: int  # inclusive
@@ -138,8 +138,8 @@ class SpecSheetHorizontalMerge:
 ################################################################################
 # #region ReportSpecification
 @dataclass(slots=True)
-class ReportXlsx:
-    sheets: list[SpecSheetSlice]
+class XlsxReport:
+    sheets: list[SheetSliceSpec]
     warnings: list[str]
 
     def warn(self, msg: str) -> None:

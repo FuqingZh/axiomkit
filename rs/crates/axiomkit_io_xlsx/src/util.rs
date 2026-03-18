@@ -6,8 +6,8 @@ use crate::constant::{
     N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
 };
 use crate::spec::{
-    EnumCellValue, EnumIntegerCoerceMode, ReportXlsx, SpecCellBorder, SpecSheetHorizontalMerge,
-    SpecSheetSlice, SpecXlsxRowChunkPolicy, SpecXlsxValuePolicy,
+    CellBorderSpec, CellValue, IntegerCoerceMode, SheetHorizontalMergeSpec, SheetSliceSpec,
+    XlsxReport, XlsxRowChunkPolicySpec, XlsxValuePolicySpec,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,7 +16,7 @@ use crate::spec::{
 /// Convert `NaN`/`Inf` to policy string; return error for finite values.
 pub fn convert_nan_inf_to_str(
     x: f64,
-    value_policy: &SpecXlsxValuePolicy,
+    value_policy: &XlsxValuePolicySpec,
 ) -> Result<String, String> {
     if x.is_nan() {
         return Ok(value_policy.nan_str.clone());
@@ -33,106 +33,106 @@ pub fn convert_nan_inf_to_str(
 
 /// Normalize cell value according to numeric/integer flags and value policy.
 pub fn convert_cell_value(
-    value: &EnumCellValue,
+    value: &CellValue,
     is_numeric_col: bool,
     is_integer_col: bool,
     should_keep_missing_values: bool,
-    value_policy: &SpecXlsxValuePolicy,
-) -> EnumCellValue {
-    if matches!(value, EnumCellValue::None) {
+    value_policy: &XlsxValuePolicySpec,
+) -> CellValue {
+    if matches!(value, CellValue::None) {
         return if should_keep_missing_values {
-            EnumCellValue::String(value_policy.missing_value_str.clone())
+            CellValue::String(value_policy.missing_value_str.clone())
         } else {
-            EnumCellValue::None
+            CellValue::None
         };
     }
 
     if !is_numeric_col {
         return match value {
-            EnumCellValue::String(s) => EnumCellValue::String(s.clone()),
-            EnumCellValue::Number(n) => EnumCellValue::String(n.to_string()),
-            EnumCellValue::None => EnumCellValue::None,
+            CellValue::String(s) => CellValue::String(s.clone()),
+            CellValue::Number(n) => CellValue::String(n.to_string()),
+            CellValue::None => CellValue::None,
         };
     }
 
     if is_integer_col {
         return match value {
-            EnumCellValue::Number(n) => {
+            CellValue::Number(n) => {
                 if !n.is_finite() {
                     if should_keep_missing_values {
-                        EnumCellValue::String(
+                        CellValue::String(
                             convert_nan_inf_to_str(*n, value_policy)
                                 .unwrap_or_else(|_| value_policy.nan_str.clone()),
                         )
                     } else {
-                        EnumCellValue::None
+                        CellValue::None
                     }
-                } else if value_policy.integer_coerce == EnumIntegerCoerceMode::Coerce {
-                    EnumCellValue::Number(*n as i64 as f64)
+                } else if value_policy.integer_coerce == IntegerCoerceMode::Coerce {
+                    CellValue::Number(*n as i64 as f64)
                 } else if n.fract() == 0.0 {
-                    EnumCellValue::Number(*n)
+                    CellValue::Number(*n)
                 } else {
-                    EnumCellValue::String(n.to_string())
+                    CellValue::String(n.to_string())
                 }
             }
-            EnumCellValue::String(s) => {
-                if value_policy.integer_coerce == EnumIntegerCoerceMode::Coerce {
+            CellValue::String(s) => {
+                if value_policy.integer_coerce == IntegerCoerceMode::Coerce {
                     if let Ok(v) = s.parse::<i64>() {
-                        EnumCellValue::Number(v as f64)
+                        CellValue::Number(v as f64)
                     } else if let Ok(v) = s.parse::<f64>() {
                         if v.is_finite() {
-                            EnumCellValue::Number(v as i64 as f64)
+                            CellValue::Number(v as i64 as f64)
                         } else if should_keep_missing_values {
-                            EnumCellValue::String(
+                            CellValue::String(
                                 convert_nan_inf_to_str(v, value_policy)
                                     .unwrap_or_else(|_| value_policy.nan_str.clone()),
                             )
                         } else {
-                            EnumCellValue::None
+                            CellValue::None
                         }
                     } else {
-                        EnumCellValue::String(s.clone())
+                        CellValue::String(s.clone())
                     }
                 } else if let Ok(v) = s.parse::<i64>() {
-                    EnumCellValue::Number(v as f64)
+                    CellValue::Number(v as f64)
                 } else {
-                    EnumCellValue::String(s.clone())
+                    CellValue::String(s.clone())
                 }
             }
-            EnumCellValue::None => EnumCellValue::None,
+            CellValue::None => CellValue::None,
         };
     }
 
     match value {
-        EnumCellValue::Number(n) => {
+        CellValue::Number(n) => {
             if n.is_finite() {
-                EnumCellValue::Number(*n)
+                CellValue::Number(*n)
             } else if should_keep_missing_values {
-                EnumCellValue::String(
+                CellValue::String(
                     convert_nan_inf_to_str(*n, value_policy)
                         .unwrap_or_else(|_| value_policy.nan_str.clone()),
                 )
             } else {
-                EnumCellValue::None
+                CellValue::None
             }
         }
-        EnumCellValue::String(s) => {
+        CellValue::String(s) => {
             if let Ok(v) = s.parse::<f64>() {
                 if v.is_finite() {
-                    EnumCellValue::Number(v)
+                    CellValue::Number(v)
                 } else if should_keep_missing_values {
-                    EnumCellValue::String(
+                    CellValue::String(
                         convert_nan_inf_to_str(v, value_policy)
                             .unwrap_or_else(|_| value_policy.nan_str.clone()),
                     )
                 } else {
-                    EnumCellValue::None
+                    CellValue::None
                 }
             } else {
-                EnumCellValue::String(s.clone())
+                CellValue::String(s.clone())
             }
         }
-        EnumCellValue::None => EnumCellValue::None,
+        CellValue::None => CellValue::None,
     }
 }
 
@@ -200,7 +200,7 @@ pub fn select_sorted_indices_from_refs(
 // #region RowChunking
 
 /// Derive row chunk size from dataframe width and chunk policy.
-pub fn calculate_row_chunk_size(width_df: usize, policy: &SpecXlsxRowChunkPolicy) -> usize {
+pub fn calculate_row_chunk_size(width_df: usize, policy: &XlsxRowChunkPolicySpec) -> usize {
     if let Some(n_fixed_size) = policy.fixed_size {
         return n_fixed_size;
     }
@@ -249,8 +249,8 @@ pub fn plan_sheet_slices(
     width_df: usize,
     height_header: usize,
     sheet_name: &str,
-    report: &mut ReportXlsx,
-) -> Result<Vec<SpecSheetSlice>, String> {
+    report: &mut XlsxReport,
+) -> Result<Vec<SheetSliceSpec>, String> {
     if height_header == 0 {
         return Err("height_header must be >= 1.".to_string());
     }
@@ -299,7 +299,7 @@ pub fn plan_sheet_slices(
                 create_sheet_identifier(sheet_name, n_idx_part)
             };
 
-            l_sheet_parts.push(SpecSheetSlice {
+            l_sheet_parts.push(SheetSliceSpec {
                 sheet_name: c_part_sheet_name,
                 row_start_inclusive: *row_start,
                 row_end_exclusive: *row_end,
@@ -364,7 +364,7 @@ pub fn derive_contiguous_ranges(sorted_indices: &[usize]) -> Vec<(usize, usize)>
 /// Plan horizontal merges for repeated non-empty header text per row.
 pub fn plan_horizontal_merges(
     header_grid: &[Vec<String>],
-) -> BTreeMap<usize, Vec<SpecSheetHorizontalMerge>> {
+) -> BTreeMap<usize, Vec<SheetHorizontalMergeSpec>> {
     let mut dict_horizontal_merges_map = BTreeMap::new();
     if header_grid.is_empty() {
         return dict_horizontal_merges_map;
@@ -393,7 +393,7 @@ pub fn plan_horizontal_merges(
                 dict_horizontal_merges_map
                     .entry(_idx_row)
                     .or_insert_with(Vec::new)
-                    .push(SpecSheetHorizontalMerge {
+                    .push(SheetHorizontalMergeSpec {
                         row_idx_start: _idx_row,
                         col_idx_start: n_col_idx,
                         col_idx_end: n_col_idx_end - 1,
@@ -461,14 +461,14 @@ pub fn _generate_vertical_runs(header_grid: &[Vec<String>]) -> Vec<(usize, usize
 /// Build border plan to simulate vertical merge visuals without merge cells.
 pub fn plan_vertical_visual_merge_borders(
     header_grid: &[Vec<String>],
-) -> BTreeMap<(usize, usize), SpecCellBorder> {
+) -> BTreeMap<(usize, usize), CellBorderSpec> {
     let mut dict_plan_vertical_merge_border = BTreeMap::new();
 
     for (col_idx, row_start, row_end, _) in _generate_vertical_runs(header_grid) {
         for row_idx_within_merge in row_start..=row_end {
             dict_plan_vertical_merge_border.insert(
                 (row_idx_within_merge, col_idx),
-                SpecCellBorder {
+                CellBorderSpec {
                     top: if row_idx_within_merge == row_start {
                         1
                     } else {
@@ -500,7 +500,7 @@ pub fn apply_vertical_run_text_blankout(header_grid: &mut [Vec<String>]) {
 
 /// Build lookup map for cells covered by a horizontal merge (excluding anchor).
 pub fn derive_horizontal_merge_tracker(
-    row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SpecSheetHorizontalMerge>>,
+    row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SheetHorizontalMergeSpec>>,
 ) -> BTreeMap<(usize, usize), bool> {
     let mut dict_merged_cells_tracker = BTreeMap::new();
 

@@ -6,11 +6,11 @@ use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
 use arrow::record_batch::RecordBatchT;
 use axiomkit_io_xlsx::constant::{derive_default_xlsx_formats, derive_default_xlsx_write_options};
 use axiomkit_io_xlsx::spec::{
-    EnumAutofitColumnsRule, EnumIntegerCoerceMode, EnumScientificScope, SpecAutofitCellsPolicy,
-    SpecCellFormat, SpecScientificPolicy, SpecSheetSlice, SpecXlsxValuePolicy,
-    SpecXlsxWriteOptions,
+    AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, IntegerCoerceMode,
+    ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxValuePolicySpec,
+    XlsxWriteOptionsSpec,
 };
-use axiomkit_io_xlsx::{SpecXlsxSheetWriteOptions, XlsxWriter as RsXlsxWriter};
+use axiomkit_io_xlsx::{XlsxSheetWriteOptionsSpec, XlsxWriter as RsXlsxWriter};
 use polars::prelude::DataFrame;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::ffi as pyffi;
@@ -119,8 +119,8 @@ impl PyXlsxWriter {
         let l_reports = self.inner.report();
 
         let module_spec = py.import("axiomkit.io.xlsx.spec")?;
-        let cls_spec_sheet_slice = module_spec.getattr("SpecSheetSlice")?;
-        let cls_spec_xlsx_report = module_spec.getattr("ReportXlsx")?;
+        let cls_spec_sheet_slice = module_spec.getattr("SheetSliceSpec")?;
+        let cls_spec_xlsx_report = module_spec.getattr("XlsxReport")?;
 
         let mut l_report_obj = Vec::with_capacity(l_reports.len());
         for report in l_reports {
@@ -176,7 +176,7 @@ impl PyXlsxWriter {
             None => None,
         };
 
-        let cfg_sheet_write_options = SpecXlsxSheetWriteOptions {
+        let cfg_sheet_write_options = XlsxSheetWriteOptionsSpec {
             cols_integer: parse_column_refs(cols_integer)?,
             cols_decimal: parse_column_refs(cols_decimal)?,
             col_freeze,
@@ -184,9 +184,9 @@ impl PyXlsxWriter {
             should_merge_header,
             should_keep_missing_values,
             policy_autofit: parse_spec_autofit_cells_policy(policy_autofit)?
-                .unwrap_or_else(SpecAutofitCellsPolicy::default),
+                .unwrap_or_else(AutofitCellsPolicySpec::default),
             policy_scientific: parse_spec_scientific_policy(policy_scientific)?
-                .unwrap_or_else(SpecScientificPolicy::default),
+                .unwrap_or_else(ScientificPolicySpec::default),
         };
 
         slf.inner
@@ -204,7 +204,7 @@ impl PyXlsxWriter {
 
 fn create_sheet_slice_object(
     cls_spec_sheet_slice: &Bound<'_, PyAny>,
-    sheet: &SpecSheetSlice,
+    sheet: &SheetSliceSpec,
 ) -> PyResult<Py<PyAny>> {
     let inst_sheet = cls_spec_sheet_slice.call1((
         sheet.sheet_name.clone(),
@@ -304,7 +304,7 @@ fn derive_arrow_schema_from_stream_field(field: &ArrowField) -> PyResult<ArrowSc
     }
 }
 
-fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<SpecCellFormat>> {
+fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<CellFormatSpec>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -312,7 +312,7 @@ fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Spe
         return Ok(None);
     }
 
-    Ok(Some(SpecCellFormat {
+    Ok(Some(CellFormatSpec {
         font_name: extract_optional_attr::<String>(obj, "font_name")?,
         font_size: extract_optional_attr::<i64>(obj, "font_size")?,
         bold: extract_optional_attr::<bool>(obj, "bold")?,
@@ -333,7 +333,7 @@ fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Spe
 
 fn parse_spec_xlsx_write_options(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<SpecXlsxWriteOptions>> {
+) -> PyResult<Option<XlsxWriteOptionsSpec>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -344,7 +344,7 @@ fn parse_spec_xlsx_write_options(
     let mut cfg_write_options = derive_default_xlsx_write_options();
 
     if let Some(value_policy_obj) = extract_optional_attr_bound(obj, "value_policy")? {
-        let mut value_policy = SpecXlsxValuePolicy::default();
+        let mut value_policy = XlsxValuePolicySpec::default();
         if let Some(v) = extract_optional_attr::<String>(&value_policy_obj, "missing_value_str")? {
             value_policy.missing_value_str = v;
         }
@@ -359,9 +359,9 @@ fn parse_spec_xlsx_write_options(
         }
         if let Some(v) = extract_optional_attr::<String>(&value_policy_obj, "integer_coerce")? {
             value_policy.integer_coerce = if v == "coerce" {
-                EnumIntegerCoerceMode::Coerce
+                IntegerCoerceMode::Coerce
             } else {
-                EnumIntegerCoerceMode::Strict
+                IntegerCoerceMode::Strict
             };
         }
         cfg_write_options.value_policy = value_policy;
@@ -407,24 +407,24 @@ fn parse_spec_xlsx_write_options(
     Ok(Some(cfg_write_options))
 }
 
-fn parse_rule_autofit_columns(value: &str) -> PyResult<EnumAutofitColumnsRule> {
+fn parse_rule_autofit_columns(value: &str) -> PyResult<AutofitColumnsRule> {
     match value {
-        "none" => Ok(EnumAutofitColumnsRule::None),
-        "header" => Ok(EnumAutofitColumnsRule::Header),
-        "body" => Ok(EnumAutofitColumnsRule::Body),
-        "all" => Ok(EnumAutofitColumnsRule::All),
+        "none" => Ok(AutofitColumnsRule::None),
+        "header" => Ok(AutofitColumnsRule::Header),
+        "body" => Ok(AutofitColumnsRule::Body),
+        "all" => Ok(AutofitColumnsRule::All),
         _ => Err(PyValueError::new_err(
             "policy_autofit.rule_columns must be one of: 'none', 'header', 'body', 'all'.",
         )),
     }
 }
 
-fn parse_rule_scientific_scope(value: &str) -> PyResult<EnumScientificScope> {
+fn parse_rule_scientific_scope(value: &str) -> PyResult<ScientificScope> {
     match value {
-        "none" => Ok(EnumScientificScope::None),
-        "decimal" => Ok(EnumScientificScope::Decimal),
-        "integer" => Ok(EnumScientificScope::Integer),
-        "all" => Ok(EnumScientificScope::All),
+        "none" => Ok(ScientificScope::None),
+        "decimal" => Ok(ScientificScope::Decimal),
+        "integer" => Ok(ScientificScope::Integer),
+        "all" => Ok(ScientificScope::All),
         _ => Err(PyValueError::new_err(
             "policy_scientific.rule_scope must be one of: 'none', 'decimal', 'integer', 'all'.",
         )),
@@ -433,7 +433,7 @@ fn parse_rule_scientific_scope(value: &str) -> PyResult<EnumScientificScope> {
 
 fn parse_spec_autofit_cells_policy(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<SpecAutofitCellsPolicy>> {
+) -> PyResult<Option<AutofitCellsPolicySpec>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -441,7 +441,7 @@ fn parse_spec_autofit_cells_policy(
         return Ok(None);
     }
 
-    let mut policy = SpecAutofitCellsPolicy::default();
+    let mut policy = AutofitCellsPolicySpec::default();
 
     if let Some(v) = extract_optional_attr::<String>(obj, "rule_columns")? {
         policy.rule_columns = parse_rule_autofit_columns(&v)?;
@@ -469,7 +469,7 @@ fn parse_spec_autofit_cells_policy(
 
 fn parse_spec_scientific_policy(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<SpecScientificPolicy>> {
+) -> PyResult<Option<ScientificPolicySpec>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -477,7 +477,7 @@ fn parse_spec_scientific_policy(
         return Ok(None);
     }
 
-    let mut policy = SpecScientificPolicy::default();
+    let mut policy = ScientificPolicySpec::default();
 
     if let Some(v) = extract_optional_attr::<String>(obj, "rule_scope")? {
         policy.rule_scope = parse_rule_scientific_scope(&v)?;

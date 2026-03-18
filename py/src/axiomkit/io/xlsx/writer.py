@@ -14,18 +14,18 @@ from .constant import (
     LIT_FMT_KEYS,
 )
 from .spec import (
-    SpecAutofitCellsPolicy,
-    SpecCellFormat,
-    SpecScientificPolicy,
-    ReportXlsx,
-    SpecXlsxWriteOptions,
+    AutofitCellsPolicySpec,
+    CellFormatSpec,
+    ScientificPolicySpec,
+    XlsxReport,
+    XlsxWriteOptionsSpec,
 )
 
 
 class ProtocolXlsxWriterBackend(Protocol):
     def close(self) -> None: ...
 
-    def report(self) -> tuple[ReportXlsx, ...]: ...
+    def report(self) -> tuple[XlsxReport, ...]: ...
 
     def write_sheet(
         self,
@@ -39,8 +39,8 @@ class ProtocolXlsxWriterBackend(Protocol):
         row_freeze: int | None = None,
         should_merge_header: bool = False,
         should_keep_missing_values: bool | None = None,
-        policy_autofit: SpecAutofitCellsPolicy | None = None,
-        policy_scientific: SpecScientificPolicy | None = None,
+        policy_autofit: AutofitCellsPolicySpec | None = None,
+        policy_scientific: ScientificPolicySpec | None = None,
     ) -> Any: ...
 
 
@@ -52,10 +52,10 @@ class XlsxWriter:
     thin Python facade that preserves call signatures and return types.
     """
 
-    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, SpecCellFormat]] = (
+    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, CellFormatSpec]] = (
         DEFAULT_XLSX_FORMATS
     )
-    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[SpecXlsxWriteOptions] = (
+    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[XlsxWriteOptionsSpec] = (
         DEFAULT_XLSX_WRITE_OPTIONS
     )
 
@@ -63,12 +63,12 @@ class XlsxWriter:
         self,
         file_out: os.PathLike[str] | str,
         *,
-        fmt_text: SpecCellFormat | None = None,
-        fmt_integer: SpecCellFormat | None = None,
-        fmt_decimal: SpecCellFormat | None = None,
-        fmt_scientific: SpecCellFormat | None = None,
-        fmt_header: SpecCellFormat | None = None,
-        write_options: SpecXlsxWriteOptions | None = None,
+        fmt_text: CellFormatSpec | None = None,
+        fmt_integer: CellFormatSpec | None = None,
+        fmt_decimal: CellFormatSpec | None = None,
+        fmt_scientific: CellFormatSpec | None = None,
+        fmt_header: CellFormatSpec | None = None,
+        write_options: XlsxWriteOptionsSpec | None = None,
     ):
         if not is_rs_backend_available():
             raise RuntimeError(
@@ -100,7 +100,7 @@ class XlsxWriter:
     def close(self) -> None:
         self._writer.close()
 
-    def report(self) -> tuple[ReportXlsx, ...]:
+    def report(self) -> tuple[XlsxReport, ...]:
         return self._writer.report()
 
     def write_sheet(
@@ -115,8 +115,8 @@ class XlsxWriter:
         row_freeze: int | None = None,
         should_merge_header: bool = False,
         should_keep_missing_values: bool | None = None,
-        policy_autofit: SpecAutofitCellsPolicy | None = None,
-        policy_scientific: SpecScientificPolicy | None = None,
+        policy_autofit: AutofitCellsPolicySpec | None = None,
+        policy_scientific: ScientificPolicySpec | None = None,
     ) -> Self:
         self._writer.write_sheet(
             df=df,

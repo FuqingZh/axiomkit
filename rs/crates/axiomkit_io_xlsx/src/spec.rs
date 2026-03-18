@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 ////////////////////////////////////////////////////////////////////////////////
 // #region CellFormatSpecification
 
-/// Cell format specification aligned with Python `SpecCellFormat`.
+/// Cell format specification aligned with Python `CellFormatSpec`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct SpecCellFormat {
+pub struct CellFormatSpec {
     /// Font family name.
     pub font_name: Option<String>,
     /// Font size in points.
@@ -45,7 +45,7 @@ pub struct SpecCellFormat {
 
 /// Scalar value for generic format-map representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EnumCellFormatValue {
+pub enum CellFormatValue {
     /// String format property value.
     String(String),
     /// Integer format property value.
@@ -56,7 +56,7 @@ pub enum EnumCellFormatValue {
 
 /// Normalized cell value during conversion/write pipeline.
 #[derive(Debug, Clone, PartialEq)]
-pub enum EnumCellValue {
+pub enum CellValue {
     /// Missing/blank value.
     None,
     /// Text value.
@@ -65,15 +65,15 @@ pub enum EnumCellValue {
     Number(f64),
 }
 
-impl SpecCellFormat {
+impl CellFormatSpec {
     /// Return a new format by overlaying `patch` onto `self`.
-    pub fn with_(&self, patch: SpecCellFormat) -> SpecCellFormat {
+    pub fn with_(&self, patch: CellFormatSpec) -> CellFormatSpec {
         self.merge(&patch)
     }
 
     /// Merge two formats with right-side non-`None` overwrite semantics.
-    pub fn merge(&self, other: &SpecCellFormat) -> SpecCellFormat {
-        SpecCellFormat {
+    pub fn merge(&self, other: &CellFormatSpec) -> CellFormatSpec {
+        CellFormatSpec {
             font_name: other.font_name.clone().or_else(|| self.font_name.clone()),
             font_size: other.font_size.or(self.font_size),
             bold: other.bold.or(self.bold),
@@ -93,73 +93,67 @@ impl SpecCellFormat {
     }
 
     /// Convert format into key-value map compatible with xlsxwriter properties.
-    pub fn to_xlsxwriter(&self) -> BTreeMap<String, EnumCellFormatValue> {
+    pub fn to_xlsxwriter(&self) -> BTreeMap<String, CellFormatValue> {
         let mut dict_fmt = BTreeMap::new();
 
         if let Some(value) = &self.font_name {
             dict_fmt.insert(
                 "font_name".to_string(),
-                EnumCellFormatValue::String(value.clone()),
+                CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = self.font_size {
-            dict_fmt.insert("font_size".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("font_size".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.bold {
-            dict_fmt.insert("bold".to_string(), EnumCellFormatValue::Boolean(value));
+            dict_fmt.insert("bold".to_string(), CellFormatValue::Boolean(value));
         }
         if let Some(value) = self.italic {
-            dict_fmt.insert("italic".to_string(), EnumCellFormatValue::Boolean(value));
+            dict_fmt.insert("italic".to_string(), CellFormatValue::Boolean(value));
         }
 
         if let Some(value) = &self.align {
-            dict_fmt.insert(
-                "align".to_string(),
-                EnumCellFormatValue::String(value.clone()),
-            );
+            dict_fmt.insert("align".to_string(), CellFormatValue::String(value.clone()));
         }
         if let Some(value) = &self.valign {
-            dict_fmt.insert(
-                "valign".to_string(),
-                EnumCellFormatValue::String(value.clone()),
-            );
+            dict_fmt.insert("valign".to_string(), CellFormatValue::String(value.clone()));
         }
         if let Some(value) = self.border {
-            dict_fmt.insert("border".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("border".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.text_wrap {
-            dict_fmt.insert("text_wrap".to_string(), EnumCellFormatValue::Boolean(value));
+            dict_fmt.insert("text_wrap".to_string(), CellFormatValue::Boolean(value));
         }
 
         if let Some(value) = self.top {
-            dict_fmt.insert("top".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("top".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.bottom {
-            dict_fmt.insert("bottom".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("bottom".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.left {
-            dict_fmt.insert("left".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("left".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.right {
-            dict_fmt.insert("right".to_string(), EnumCellFormatValue::Integer(value));
+            dict_fmt.insert("right".to_string(), CellFormatValue::Integer(value));
         }
 
         if let Some(value) = &self.num_format {
             dict_fmt.insert(
                 "num_format".to_string(),
-                EnumCellFormatValue::String(value.clone()),
+                CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = &self.bg_color {
             dict_fmt.insert(
                 "bg_color".to_string(),
-                EnumCellFormatValue::String(value.clone()),
+                CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = &self.font_color {
             dict_fmt.insert(
                 "font_color".to_string(),
-                EnumCellFormatValue::String(value.clone()),
+                CellFormatValue::String(value.clone()),
             );
         }
 
@@ -169,7 +163,7 @@ impl SpecCellFormat {
 
 /// Border tuple for top/bottom/left/right.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecCellBorder {
+pub struct CellBorderSpec {
     /// Top border style.
     pub top: i64,
     /// Bottom border style.
@@ -186,11 +180,11 @@ pub struct SpecCellBorder {
 
 /// Planned final/base formats by column.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecColumnFormatPlan {
+pub struct ColumnFormatPlanSpec {
     /// Final format applied at write time.
-    pub fmts_by_col: Vec<SpecCellFormat>,
+    pub fmts_by_col: Vec<CellFormatSpec>,
     /// Base format before per-column override.
-    pub fmts_base_by_col: Vec<SpecCellFormat>,
+    pub fmts_base_by_col: Vec<CellFormatSpec>,
 }
 
 // #endregion
@@ -199,7 +193,7 @@ pub struct SpecColumnFormatPlan {
 
 /// Integer conversion policy for numeric-looking values in integer columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EnumIntegerCoerceMode {
+pub enum IntegerCoerceMode {
     /// Coerce numeric values to integer representation when possible.
     Coerce,
     /// Keep non-integer numeric values as text in integer columns.
@@ -209,7 +203,7 @@ pub enum EnumIntegerCoerceMode {
 
 /// Value conversion policy for missing/NaN/Inf and integer coercion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecXlsxValuePolicy {
+pub struct XlsxValuePolicySpec {
     /// Replacement text for missing value when keep-missing is enabled.
     pub missing_value_str: String,
     /// Replacement text for NaN.
@@ -219,24 +213,24 @@ pub struct SpecXlsxValuePolicy {
     /// Replacement text for negative infinity.
     pub neginf_str: String,
     /// Integer conversion mode.
-    pub integer_coerce: EnumIntegerCoerceMode,
+    pub integer_coerce: IntegerCoerceMode,
 }
 
-impl Default for SpecXlsxValuePolicy {
+impl Default for XlsxValuePolicySpec {
     fn default() -> Self {
         Self {
             missing_value_str: "NA".to_string(),
             nan_str: "NaN".to_string(),
             posinf_str: "Inf".to_string(),
             neginf_str: "-Inf".to_string(),
-            integer_coerce: EnumIntegerCoerceMode::Strict,
+            integer_coerce: IntegerCoerceMode::Strict,
         }
     }
 }
 
 /// Policy for selecting row chunk size in write pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecXlsxRowChunkPolicy {
+pub struct XlsxRowChunkPolicySpec {
     /// Width threshold for large table.
     pub width_large: usize,
     /// Width threshold for medium table.
@@ -251,7 +245,7 @@ pub struct SpecXlsxRowChunkPolicy {
     pub fixed_size: Option<usize>,
 }
 
-impl Default for SpecXlsxRowChunkPolicy {
+impl Default for XlsxRowChunkPolicySpec {
     fn default() -> Self {
         Self {
             width_large: 8_000,
@@ -266,7 +260,7 @@ impl Default for SpecXlsxRowChunkPolicy {
 
 /// Scientific formatting candidate scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EnumScientificScope {
+pub enum ScientificScope {
     /// Disable scientific auto-selection entirely.
     None,
     /// Apply to decimal-like numeric columns (default).
@@ -280,9 +274,9 @@ pub enum EnumScientificScope {
 
 /// Scientific formatting policy used in per-sheet write.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SpecScientificPolicy {
+pub struct ScientificPolicySpec {
     /// Scientific trigger scope.
-    pub rule_scope: EnumScientificScope,
+    pub rule_scope: ScientificScope,
     /// Lower absolute bound trigger (exclusive, except zero).
     pub thr_min: f64,
     /// Upper absolute bound trigger (inclusive).
@@ -291,10 +285,10 @@ pub struct SpecScientificPolicy {
     pub height_body_inferred_max: Option<usize>,
 }
 
-impl Default for SpecScientificPolicy {
+impl Default for ScientificPolicySpec {
     fn default() -> Self {
         Self {
-            rule_scope: EnumScientificScope::Decimal,
+            rule_scope: ScientificScope::Decimal,
             thr_min: 0.0001,
             thr_max: 1_000_000_000_000.0,
             height_body_inferred_max: Some(20_000),
@@ -304,7 +298,7 @@ impl Default for SpecScientificPolicy {
 
 /// Autofit rule for column width inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EnumAutofitColumnsRule {
+pub enum AutofitColumnsRule {
     /// Disable autofit.
     None,
     /// Infer width from header cells only (default).
@@ -318,9 +312,9 @@ pub enum EnumAutofitColumnsRule {
 
 /// Autofit policy for per-sheet write call.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecAutofitCellsPolicy {
+pub struct AutofitCellsPolicySpec {
     /// Autofit width inference rule.
-    pub rule_columns: EnumAutofitColumnsRule,
+    pub rule_columns: AutofitColumnsRule,
     /// Max body rows inspected when body-based inference is active.
     pub height_body_inferred_max: Option<usize>,
     /// Minimum final width.
@@ -331,10 +325,10 @@ pub struct SpecAutofitCellsPolicy {
     pub width_cell_padding: usize,
 }
 
-impl Default for SpecAutofitCellsPolicy {
+impl Default for AutofitCellsPolicySpec {
     fn default() -> Self {
         Self {
-            rule_columns: EnumAutofitColumnsRule::Header,
+            rule_columns: AutofitColumnsRule::Header,
             height_body_inferred_max: Some(20_000),
             width_cell_min: 8,
             width_cell_max: 60,
@@ -345,9 +339,9 @@ impl Default for SpecAutofitCellsPolicy {
 
 /// Writer-wide options controlling value conversion and formatting defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecXlsxWriteOptions {
+pub struct XlsxWriteOptionsSpec {
     /// Value conversion policy.
-    pub value_policy: SpecXlsxValuePolicy,
+    pub value_policy: XlsxValuePolicySpec,
     /// Keep missing/NaN/Inf as text instead of blank.
     pub keep_missing_values: bool,
     /// Infer numeric columns from dtypes.
@@ -355,20 +349,20 @@ pub struct SpecXlsxWriteOptions {
     /// Infer integer subset from numeric columns.
     pub infer_integer_cols: bool,
     /// Row chunking policy.
-    pub row_chunk_policy: SpecXlsxRowChunkPolicy,
+    pub row_chunk_policy: XlsxRowChunkPolicySpec,
     /// Base patch merged into all per-column formats.
-    pub base_format_patch: SpecCellFormat,
+    pub base_format_patch: CellFormatSpec,
 }
 
-impl Default for SpecXlsxWriteOptions {
+impl Default for XlsxWriteOptionsSpec {
     fn default() -> Self {
         Self {
-            value_policy: SpecXlsxValuePolicy::default(),
+            value_policy: XlsxValuePolicySpec::default(),
             keep_missing_values: false,
             infer_numeric_cols: true,
             infer_integer_cols: true,
-            row_chunk_policy: SpecXlsxRowChunkPolicy::default(),
-            base_format_patch: SpecCellFormat {
+            row_chunk_policy: XlsxRowChunkPolicySpec::default(),
+            base_format_patch: CellFormatSpec {
                 border: Some(0),
                 top: Some(0),
                 bottom: Some(0),
@@ -386,7 +380,7 @@ impl Default for SpecXlsxWriteOptions {
 
 /// Concrete sheet part emitted to workbook (after Excel-limit slicing).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecSheetSlice {
+pub struct SheetSliceSpec {
     /// Actual unique sheet name in workbook.
     pub sheet_name: String,
     /// Inclusive source row start.
@@ -401,7 +395,7 @@ pub struct SpecSheetSlice {
 
 /// Horizontal merge plan item.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpecSheetHorizontalMerge {
+pub struct SheetHorizontalMergeSpec {
     /// Row index where merge is applied.
     pub row_idx_start: usize,
     /// Start column index (inclusive).
@@ -418,14 +412,14 @@ pub struct SpecSheetHorizontalMerge {
 
 /// Per-write call report.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ReportXlsx {
+pub struct XlsxReport {
     /// Sheet slices produced by the write call.
-    pub sheets: Vec<SpecSheetSlice>,
+    pub sheets: Vec<SheetSliceSpec>,
     /// Non-fatal warnings.
     pub warnings: Vec<String>,
 }
 
-impl ReportXlsx {
+impl XlsxReport {
     /// Add a warning message.
     pub fn warn(&mut self, msg: impl AsRef<str>) {
         self.warnings.push(msg.as_ref().to_string());

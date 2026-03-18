@@ -10,11 +10,11 @@ import pytest
 from axiomkit.io.xlsx import XlsxWriter  # noqa: E402
 from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.xlsx.spec import (  # noqa: E402
-    SpecAutofitCellsPolicy,
-    SpecScientificPolicy,
-    SpecXlsxRowChunkPolicy,
-    SpecXlsxValuePolicy,
-    SpecXlsxWriteOptions,
+    AutofitCellsPolicySpec,
+    ScientificPolicySpec,
+    XlsxRowChunkPolicySpec,
+    XlsxValuePolicySpec,
+    XlsxWriteOptionsSpec,
 )
 
 NS_MAIN = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -101,7 +101,7 @@ def test_integer_strict_vs_coerce_semantics(tmp_path: Path) -> None:
             df=df,
             sheet_name="S",
             cols_integer=["x"],
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
         )
 
     c_type_a2, c_value_a2, _ = read_cell(path_file_strict, "A2")
@@ -112,15 +112,15 @@ def test_integer_strict_vs_coerce_semantics(tmp_path: Path) -> None:
     assert c_value_a3 == "2.5"
 
     path_file_coerce = tmp_path / "coerce.xlsx"
-    opts_coerce = SpecXlsxWriteOptions(
-        value_policy=SpecXlsxValuePolicy(integer_coerce="coerce")
+    opts_coerce = XlsxWriteOptionsSpec(
+        value_policy=XlsxValuePolicySpec(integer_coerce="coerce")
     )
     with XlsxWriter(path_file_coerce, write_options=opts_coerce) as writer:
         writer.write_sheet(
             df=df,
             sheet_name="S",
             cols_integer=["x"],
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
         )
 
     c_type_b3, c_value_b3, _ = read_cell(path_file_coerce, "A3")
@@ -139,7 +139,7 @@ def test_infer_numeric_uses_decimal_format_by_default(tmp_path: Path) -> None:
         writer.write_sheet(
             df=df,
             sheet_name="S",
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
         )
 
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
@@ -158,7 +158,7 @@ def test_scientific_format_trigger_for_extreme_values(tmp_path: Path) -> None:
         writer.write_sheet(
             df=df,
             sheet_name="S",
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
         )
 
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
@@ -177,8 +177,8 @@ def test_scientific_policy_scope_none_disables_scientific(tmp_path: Path) -> Non
         writer.write_sheet(
             df=df,
             sheet_name="S",
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
-            policy_scientific=SpecScientificPolicy(rule_scope="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
+            policy_scientific=ScientificPolicySpec(rule_scope="none"),
         )
 
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
@@ -197,8 +197,8 @@ def test_scientific_policy_scope_integer_applies_to_integer_cols(tmp_path: Path)
         writer.write_sheet(
             df=df,
             sheet_name="S",
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
-            policy_scientific=SpecScientificPolicy(
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
+            policy_scientific=ScientificPolicySpec(
                 rule_scope="integer",
                 thr_min=0.0001,
                 thr_max=1_000_000.0,
@@ -216,26 +216,26 @@ def test_row_chunk_policy_is_active_in_write_path(tmp_path: Path) -> None:
 
     df = pl.DataFrame({"x": [1, 2, 3]})
 
-    opts_bad = SpecXlsxWriteOptions(
-        row_chunk_policy=SpecXlsxRowChunkPolicy(fixed_size=0)
+    opts_bad = XlsxWriteOptionsSpec(
+        row_chunk_policy=XlsxRowChunkPolicySpec(fixed_size=0)
     )
     with XlsxWriter(tmp_path / "bad_chunk.xlsx", write_options=opts_bad) as writer:
         with pytest.raises(ValueError, match="row_chunk_policy"):
             writer.write_sheet(
                 df=df,
                 sheet_name="S",
-                policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+                policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
             )
 
-    opts_ok = SpecXlsxWriteOptions(
-        row_chunk_policy=SpecXlsxRowChunkPolicy(fixed_size=1)
+    opts_ok = XlsxWriteOptionsSpec(
+        row_chunk_policy=XlsxRowChunkPolicySpec(fixed_size=1)
     )
     path_file_ok = tmp_path / "ok_chunk.xlsx"
     with XlsxWriter(path_file_ok, write_options=opts_ok) as writer:
         writer.write_sheet(
             df=df,
             sheet_name="S",
-            policy_autofit=SpecAutofitCellsPolicy(rule_columns="none"),
+            policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
         )
 
     _, c_value, _ = read_cell(path_file_ok, "A4")

@@ -8,8 +8,8 @@ import pytest
 from axiomkit.io.xlsx import XlsxWriter  # noqa: E402
 from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.xlsx.spec import (  # noqa: E402
-    SpecSheetSlice,
-    ReportXlsx,
+    SheetSliceSpec,
+    XlsxReport,
 )
 
 
@@ -25,9 +25,9 @@ def test_xlsx_rs_report_types_align_spec(tmp_path: Path) -> None:
 
     assert isinstance(reports, tuple)
     assert len(reports) == 1
-    assert isinstance(reports[0], ReportXlsx)
+    assert isinstance(reports[0], XlsxReport)
     assert len(reports[0].sheets) == 1
-    assert isinstance(reports[0].sheets[0], SpecSheetSlice)
+    assert isinstance(reports[0].sheets[0], SheetSliceSpec)
 
 
 def test_xlsx_rs_writer_no_longer_accepts_addons(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal, TypeAlias
 
-from .spec import SpecCellFormat, SpecXlsxWriteOptions
+from .spec import CellFormatSpec, XlsxWriteOptionsSpec
 
 N_NROWS_EXCEL_MAX = 1_048_576
 N_NCOLS_EXCEL_MAX = 16_384
@@ -12,11 +12,11 @@ TUP_EXCEL_ILLEGAL = ("*", ":", "?", "/", "\\", "[", "]")
 # Strategy/Preference/Adjustable Parameters for XLSX I/O operations.
 
 LIT_FMT_KEYS = Literal["text", "integer", "decimal", "scientific", "header"]
-_cls_base_fmt_spec = SpecCellFormat(
+_cls_base_fmt_spec = CellFormatSpec(
     font_name="Times New Roman", font_size=11, border=1, align="left", valign="vcenter"
 )
 
-DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
+DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, CellFormatSpec] = MappingProxyType(
     {
         "text": _cls_base_fmt_spec,
         "header": _cls_base_fmt_spec.with_(bold=True, align="center"),
@@ -26,6 +26,6 @@ DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, SpecCellFormat] = MappingProxyType(
     }
 )
 
-DEFAULT_XLSX_WRITE_OPTIONS = SpecXlsxWriteOptions()
+DEFAULT_XLSX_WRITE_OPTIONS = XlsxWriteOptionsSpec()
 
 ColumnIdentifier: TypeAlias = str | int

@@ -9,9 +9,9 @@ use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet, Xl
 
 use crate::constant::N_LEN_EXCEL_SHEET_NAME_MAX;
 use crate::spec::{
-    EnumAutofitColumnsRule, EnumCellValue, EnumScientificScope, ReportXlsx, SpecAutofitCellsPolicy,
-    SpecCellFormat, SpecColumnFormatPlan, SpecScientificPolicy, SpecSheetSlice,
-    SpecXlsxValuePolicy, SpecXlsxWriteOptions,
+    AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, CellValue, ColumnFormatPlanSpec,
+    ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxReport, XlsxValuePolicySpec,
+    XlsxWriteOptionsSpec,
 };
 use crate::util::{
     apply_vertical_run_text_blankout, calculate_row_chunk_size, convert_cell_value,
@@ -22,7 +22,7 @@ use crate::util::{
 
 /// Per-sheet call options (aligned with Python `XlsxWriter.write_sheet` kwargs).
 #[derive(Default, Debug, Clone)]
-pub struct SpecXlsxSheetWriteOptions {
+pub struct XlsxSheetWriteOptionsSpec {
     /// Integer columns by name/index-string.
     pub cols_integer: Option<Vec<String>>,
     /// Decimal columns by name/index-string.
@@ -36,12 +36,12 @@ pub struct SpecXlsxSheetWriteOptions {
     /// Override writer-level keep-missing behavior.
     pub should_keep_missing_values: Option<bool>,
     /// Column autofit policy.
-    pub policy_autofit: SpecAutofitCellsPolicy,
+    pub policy_autofit: AutofitCellsPolicySpec,
     /// Scientific-format trigger policy.
-    pub policy_scientific: SpecScientificPolicy,
+    pub policy_scientific: ScientificPolicySpec,
 }
 
-pub struct SpecColumnFormatPlanOptions<'a> {
+pub struct ColumnFormatPlanOptionsSpec<'a> {
     /// Number of columns in current sheet slice.
     pub width_data: usize,
     /// Slice-local numeric column indices.
@@ -53,31 +53,31 @@ pub struct SpecColumnFormatPlanOptions<'a> {
     /// Slice-local scientific column indices.
     pub cols_idx_scientific: &'a [usize],
     /// Optional per-column format overrides.
-    pub cols_fmt_overrides: &'a BTreeMap<usize, SpecCellFormat>,
+    pub cols_fmt_overrides: &'a BTreeMap<usize, CellFormatSpec>,
     /// Base text format.
-    pub fmt_text: &'a SpecCellFormat,
+    pub fmt_text: &'a CellFormatSpec,
     /// Base integer format.
-    pub fmt_integer: &'a SpecCellFormat,
+    pub fmt_integer: &'a CellFormatSpec,
     /// Base decimal format.
-    pub fmt_decimal: &'a SpecCellFormat,
+    pub fmt_decimal: &'a CellFormatSpec,
     /// Base scientific format.
-    pub fmt_scientific: &'a SpecCellFormat,
+    pub fmt_scientific: &'a CellFormatSpec,
     /// Global write options.
-    pub write_options: &'a SpecXlsxWriteOptions,
+    pub write_options: &'a XlsxWriteOptionsSpec,
 }
 
 /// Stateful workbook writer.
 pub struct XlsxWriter {
     path_file_out: PathBuf,
     workbook: Workbook,
-    fmt_text: SpecCellFormat,
-    fmt_integer: SpecCellFormat,
-    fmt_decimal: SpecCellFormat,
-    fmt_scientific: SpecCellFormat,
-    fmt_header: SpecCellFormat,
-    write_options: SpecXlsxWriteOptions,
+    fmt_text: CellFormatSpec,
+    fmt_integer: CellFormatSpec,
+    fmt_decimal: CellFormatSpec,
+    fmt_scientific: CellFormatSpec,
+    fmt_header: CellFormatSpec,
+    write_options: XlsxWriteOptionsSpec,
     set_sheet_names_existing: BTreeSet<String>,
-    l_reports: Vec<ReportXlsx>,
+    l_reports: Vec<XlsxReport>,
     is_closed: bool,
 }
 
@@ -88,12 +88,12 @@ impl XlsxWriter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         path_file_out: PathBuf,
-        fmt_text: SpecCellFormat,
-        fmt_integer: SpecCellFormat,
-        fmt_decimal: SpecCellFormat,
-        fmt_scientific: SpecCellFormat,
-        fmt_header: SpecCellFormat,
-        write_options: SpecXlsxWriteOptions,
+        fmt_text: CellFormatSpec,
+        fmt_integer: CellFormatSpec,
+        fmt_decimal: CellFormatSpec,
+        fmt_scientific: CellFormatSpec,
+        fmt_header: CellFormatSpec,
+        write_options: XlsxWriteOptionsSpec,
     ) -> Self {
         Self {
             path_file_out,
@@ -116,7 +116,7 @@ impl XlsxWriter {
     }
 
     /// Return immutable snapshot of per-sheet write reports.
-    pub fn report(&self) -> Vec<ReportXlsx> {
+    pub fn report(&self) -> Vec<XlsxReport> {
         self.l_reports.clone()
     }
 
@@ -138,7 +138,7 @@ impl XlsxWriter {
         df_data: &DataFrame,
         sheet_name: &str,
         df_header: Option<&DataFrame>,
-        options: &SpecXlsxSheetWriteOptions,
+        options: &XlsxSheetWriteOptionsSpec,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
@@ -154,7 +154,7 @@ impl XlsxWriter {
         v_ipc_df: &[u8],
         sheet_name: &str,
         v_ipc_df_header: Option<&[u8]>,
-        options: &SpecXlsxSheetWriteOptions,
+        options: &XlsxSheetWriteOptionsSpec,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
@@ -173,7 +173,7 @@ impl XlsxWriter {
         df_data: &DataFrame,
         sheet_name: &str,
         df_header: Option<&DataFrame>,
-        options: &SpecXlsxSheetWriteOptions,
+        options: &XlsxSheetWriteOptionsSpec,
     ) -> Result<(), String> {
         validate_policy_autofit(&options.policy_autofit)?;
         validate_policy_scientific(&options.policy_scientific)?;
@@ -248,7 +248,7 @@ impl XlsxWriter {
 
         let n_rows_header = l_header_grid.len();
 
-        let mut report = ReportXlsx {
+        let mut report = XlsxReport {
             sheets: vec![],
             warnings: vec![],
         };
@@ -291,7 +291,7 @@ impl XlsxWriter {
                 sheet_slice.col_end_exclusive,
             );
 
-            let plan_col_formats = plan_column_formats(SpecColumnFormatPlanOptions {
+            let plan_col_formats = plan_column_formats(ColumnFormatPlanOptionsSpec {
                 width_data: sheet_slice.col_end_exclusive - sheet_slice.col_start_inclusive,
                 cols_idx_numeric: &l_cols_idx_numeric_slice,
                 cols_idx_integer: &l_cols_idx_integer_slice,
@@ -328,7 +328,7 @@ impl XlsxWriter {
 
             let should_autofit_columns = !matches!(
                 options.policy_autofit.rule_columns,
-                EnumAutofitColumnsRule::None
+                AutofitColumnsRule::None
             );
 
             if should_autofit_columns && !l_fmt_data_by_col.is_empty() {
@@ -341,7 +341,7 @@ impl XlsxWriter {
                         l_width_by_col_header[n_idx_col] = usize::max(
                             l_width_by_col_header[n_idx_col],
                             estimate_width_len(
-                                &EnumCellValue::String(value.clone()),
+                                &CellValue::String(value.clone()),
                                 false,
                                 false,
                                 false,
@@ -460,13 +460,13 @@ impl XlsxWriter {
 
                 for n_idx_col in 0..l_fmt_data_by_col.len() {
                     let n_width_recorded = match options.policy_autofit.rule_columns {
-                        EnumAutofitColumnsRule::Header => l_width_by_col_header[n_idx_col],
-                        EnumAutofitColumnsRule::Body => l_width_by_col_body[n_idx_col],
-                        EnumAutofitColumnsRule::All => usize::max(
+                        AutofitColumnsRule::Header => l_width_by_col_header[n_idx_col],
+                        AutofitColumnsRule::Body => l_width_by_col_body[n_idx_col],
+                        AutofitColumnsRule::All => usize::max(
                             l_width_by_col_header[n_idx_col],
                             l_width_by_col_body[n_idx_col],
                         ),
-                        EnumAutofitColumnsRule::None => l_width_by_col_header[n_idx_col],
+                        AutofitColumnsRule::None => l_width_by_col_header[n_idx_col],
                     };
                     let n_width_final =
                         usize::min(n_max, usize::max(n_min, n_width_recorded + n_pad));
@@ -476,7 +476,7 @@ impl XlsxWriter {
                 }
             }
 
-            report.sheets.push(SpecSheetSlice {
+            report.sheets.push(SheetSliceSpec {
                 sheet_name: sheet_name_unique,
                 row_start_inclusive: sheet_slice.row_start_inclusive,
                 row_end_exclusive: sheet_slice.row_end_exclusive,
@@ -519,22 +519,22 @@ impl XlsxWriter {
 ///
 /// Used by autofit inference logic.
 pub fn estimate_width_len(
-    value: &EnumCellValue,
+    value: &CellValue,
     is_numeric_col: bool,
     is_integer_col: bool,
     is_scientific_col: bool,
     should_keep_missing_values: bool,
-    value_policy: &SpecXlsxValuePolicy,
+    value_policy: &XlsxValuePolicySpec,
 ) -> usize {
     match value {
-        EnumCellValue::None => {
+        CellValue::None => {
             if should_keep_missing_values {
                 value_policy.missing_value_str.len()
             } else {
                 0
             }
         }
-        EnumCellValue::String(s) => {
+        CellValue::String(s) => {
             if s.is_empty() {
                 return 0;
             }
@@ -549,7 +549,7 @@ pub fn estimate_width_len(
             }
             estimate_unicode_string_width(s)
         }
-        EnumCellValue::Number(n) => {
+        CellValue::Number(n) => {
             if !is_numeric_col {
                 return estimate_unicode_string_width(&n.to_string());
             }
@@ -571,8 +571,8 @@ fn estimate_unicode_string_width(s: &str) -> usize {
 }
 
 /// Build per-column base/final format plans for current sheet slice.
-pub fn plan_column_formats(options: SpecColumnFormatPlanOptions<'_>) -> SpecColumnFormatPlan {
-    let SpecColumnFormatPlanOptions {
+pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFormatPlanSpec {
+    let ColumnFormatPlanOptionsSpec {
         width_data,
         cols_idx_numeric,
         cols_idx_integer,
@@ -623,7 +623,7 @@ pub fn plan_column_formats(options: SpecColumnFormatPlanOptions<'_>) -> SpecColu
         fmts_by_col.push(fmt_final);
     }
 
-    SpecColumnFormatPlan {
+    ColumnFormatPlanSpec {
         fmts_by_col,
         fmts_base_by_col,
     }
@@ -635,7 +635,7 @@ fn derive_dataframe_from_ipc_bytes(v_ipc_df: &[u8]) -> Result<DataFrame, String>
         .map_err(|err| format!("Failed to read IPC DataFrame bytes: {err}"))
 }
 
-fn validate_policy_autofit(policy_autofit: &SpecAutofitCellsPolicy) -> Result<(), String> {
+fn validate_policy_autofit(policy_autofit: &AutofitCellsPolicySpec) -> Result<(), String> {
     if policy_autofit.width_cell_min == 0 {
         return Err("policy_autofit.width_cell_min must be >= 1.".to_string());
     }
@@ -647,7 +647,7 @@ fn validate_policy_autofit(policy_autofit: &SpecAutofitCellsPolicy) -> Result<()
     Ok(())
 }
 
-fn validate_policy_scientific(policy_scientific: &SpecScientificPolicy) -> Result<(), String> {
+fn validate_policy_scientific(policy_scientific: &ScientificPolicySpec) -> Result<(), String> {
     if policy_scientific.thr_min < 0.0 {
         return Err("policy_scientific.thr_min must be >= 0.".to_string());
     }
@@ -687,10 +687,9 @@ fn derive_scientific_column_indices(
     cols_idx_numeric: &[usize],
     cols_idx_integer: &[usize],
     cols_idx_decimal_specified: &[usize],
-    policy_scientific: &SpecScientificPolicy,
+    policy_scientific: &ScientificPolicySpec,
 ) -> Result<Vec<usize>, String> {
-    if cols_idx_numeric.is_empty()
-        || matches!(policy_scientific.rule_scope, EnumScientificScope::None)
+    if cols_idx_numeric.is_empty() || matches!(policy_scientific.rule_scope, ScientificScope::None)
     {
         return Ok(vec![]);
     }
@@ -710,8 +709,8 @@ fn derive_scientific_column_indices(
     for n_idx_col in cols_idx_numeric {
         let is_integer_col = set_cols_idx_integer.contains(n_idx_col);
         let should_include = match policy_scientific.rule_scope {
-            EnumScientificScope::None => false,
-            EnumScientificScope::Decimal => {
+            ScientificScope::None => false,
+            ScientificScope::Decimal => {
                 if is_integer_col {
                     false
                 } else if is_decimal_explicit {
@@ -720,8 +719,8 @@ fn derive_scientific_column_indices(
                     true
                 }
             }
-            EnumScientificScope::Integer => is_integer_col,
-            EnumScientificScope::All => true,
+            ScientificScope::Integer => is_integer_col,
+            ScientificScope::All => true,
         };
         if !should_include {
             continue;
@@ -805,26 +804,24 @@ fn derive_header_text_from_any_value(value: AnyValue<'_>) -> String {
     }
 }
 
-fn derive_cell_value_from_any_value(value: AnyValue<'_>) -> EnumCellValue {
+fn derive_cell_value_from_any_value(value: AnyValue<'_>) -> CellValue {
     match value {
-        AnyValue::Null => EnumCellValue::None,
-        AnyValue::String(val) => EnumCellValue::String(val.to_string()),
-        AnyValue::StringOwned(val) => EnumCellValue::String(val.to_string()),
-        AnyValue::Boolean(val) => {
-            EnumCellValue::String(if val { "True" } else { "False" }.to_string())
-        }
-        AnyValue::UInt8(val) => EnumCellValue::Number(val as f64),
-        AnyValue::UInt16(val) => EnumCellValue::Number(val as f64),
-        AnyValue::UInt32(val) => EnumCellValue::Number(val as f64),
-        AnyValue::UInt64(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Int8(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Int16(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Int32(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Int64(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Int128(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Float32(val) => EnumCellValue::Number(val as f64),
-        AnyValue::Float64(val) => EnumCellValue::Number(val),
-        _ => EnumCellValue::String(value.to_string()),
+        AnyValue::Null => CellValue::None,
+        AnyValue::String(val) => CellValue::String(val.to_string()),
+        AnyValue::StringOwned(val) => CellValue::String(val.to_string()),
+        AnyValue::Boolean(val) => CellValue::String(if val { "True" } else { "False" }.to_string()),
+        AnyValue::UInt8(val) => CellValue::Number(val as f64),
+        AnyValue::UInt16(val) => CellValue::Number(val as f64),
+        AnyValue::UInt32(val) => CellValue::Number(val as f64),
+        AnyValue::UInt64(val) => CellValue::Number(val as f64),
+        AnyValue::Int8(val) => CellValue::Number(val as f64),
+        AnyValue::Int16(val) => CellValue::Number(val as f64),
+        AnyValue::Int32(val) => CellValue::Number(val as f64),
+        AnyValue::Int64(val) => CellValue::Number(val as f64),
+        AnyValue::Int128(val) => CellValue::Number(val as f64),
+        AnyValue::Float32(val) => CellValue::Number(val as f64),
+        AnyValue::Float64(val) => CellValue::Number(val),
+        _ => CellValue::String(value.to_string()),
     }
 }
 
@@ -927,16 +924,16 @@ fn write_cell_with_format(
     worksheet: &mut Worksheet,
     row_idx: usize,
     col_idx: usize,
-    value: &EnumCellValue,
+    value: &CellValue,
     format: &Format,
 ) -> Result<(), String> {
     match value {
-        EnumCellValue::None => {
+        CellValue::None => {
             worksheet
                 .write_blank(cast_row_num(row_idx)?, cast_col_num(col_idx)?, format)
                 .map_err(derive_xlsx_error_text)?;
         }
-        EnumCellValue::String(val) => {
+        CellValue::String(val) => {
             worksheet
                 .write_string_with_format(
                     cast_row_num(row_idx)?,
@@ -946,7 +943,7 @@ fn write_cell_with_format(
                 )
                 .map_err(derive_xlsx_error_text)?;
         }
-        EnumCellValue::Number(val) => {
+        CellValue::Number(val) => {
             worksheet
                 .write_number_with_format(
                     cast_row_num(row_idx)?,
@@ -960,7 +957,7 @@ fn write_cell_with_format(
     Ok(())
 }
 
-fn derive_rust_xlsx_format(spec: &SpecCellFormat) -> Format {
+fn derive_rust_xlsx_format(spec: &CellFormatSpec) -> Format {
     let mut format = Format::new();
 
     if let Some(val) = &spec.font_name {
