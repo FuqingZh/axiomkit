@@ -43,7 +43,7 @@ def _normalize_allowed_file_exts(
 
 
 @dataclass(frozen=True, slots=True)
-class SpecPath:
+class PathSpec:
     """Specification for validating path-like CLI inputs.
 
     Use this as the contract for :class:`ActionPath`. It encodes what kind of
@@ -59,7 +59,7 @@ class SpecPath:
     Examples:
         Explicit file rule with suffix constraints:
 
-        >>> spec = SpecPath(
+        >>> spec = PathSpec(
         ...     entry_kind="file",
         ...     allowed_file_exts=("tsv", "tsv.gz"),
         ...     should_exist=True,
@@ -67,7 +67,7 @@ class SpecPath:
 
         Output directory that may not exist yet:
 
-        >>> out_spec = SpecPath(
+        >>> out_spec = PathSpec(
         ...     entry_kind="dir",
         ...     should_exist=False,
         ...     is_writable=True,
@@ -107,7 +107,7 @@ class ActionPath(argparse.Action):
         >>> parser.add_argument(
         ...     "--report",
         ...     action=ActionPath.from_spec(
-        ...         spec=SpecPath(entry_kind="file", allowed_file_exts=("xlsx",))
+        ...         spec=PathSpec(entry_kind="file", allowed_file_exts=("xlsx",))
         ...     ),
         ... )
 
@@ -127,7 +127,7 @@ class ActionPath(argparse.Action):
         option_strings: list[str],
         dest: str,
         *,
-        spec: SpecPath | None = None,
+        spec: PathSpec | None = None,
         entry_kind: Literal["dir", "file", "exe"] = "file",
         allowed_file_exts: Iterable[str] | None = None,
         should_exist: bool = True,
@@ -140,7 +140,7 @@ class ActionPath(argparse.Action):
         Args:
             option_strings: Option strings received from argparse.
             dest: Namespace attribute name.
-            spec: Prebuilt ``SpecPath``; overrides other spec params when set.
+            spec: Prebuilt ``PathSpec``; overrides other spec params when set.
             entry_kind: Expected entry type when ``spec`` is not provided.
             allowed_file_exts: Allowed file extensions for file inputs.
             should_exist: Whether the path must already exist.
@@ -157,7 +157,7 @@ class ActionPath(argparse.Action):
         super().__init__(option_strings, dest, **kwargs)
 
         if spec is None:
-            spec = SpecPath(
+            spec = PathSpec(
                 entry_kind=entry_kind,
                 allowed_file_exts=_normalize_allowed_file_exts(
                     allowed_file_exts or ()
@@ -342,10 +342,10 @@ class ActionPath(argparse.Action):
         path = self._normalize_one(value=values, name=argument_name)
         setattr(namespace, self.dest, path)
 
-    # -------- convenience factories (avoid importing SpecPath explicitly) --------
+    # -------- convenience factories (avoid importing PathSpec explicitly) --------
     @classmethod
-    def from_spec(cls, spec: SpecPath) -> type[argparse.Action]:
-        """Factory returning a ``partial`` with a preset ``SpecPath``.
+    def from_spec(cls, spec: PathSpec) -> type[argparse.Action]:
+        """Factory returning a ``partial`` with a preset ``PathSpec``.
 
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
@@ -362,7 +362,7 @@ class ActionPath(argparse.Action):
             >>> parser.add_argument(
             ...     "--file_in",
             ...     action=ActionPath.from_spec(
-            ...         spec=SpecPath(kind_entry="file", allowed_file_exts=("parquet",))
+            ...         spec=PathSpec(kind_entry="file", allowed_file_exts=("parquet",))
             ...     ),
             ... )
         """
@@ -378,7 +378,7 @@ class ActionPath(argparse.Action):
         is_readable: bool = True,
         is_writable: bool = False,
     ) -> type[argparse.Action]:
-        """Convenience factory that builds ``SpecPath`` from keyword inputs.
+        """Convenience factory that builds ``PathSpec`` from keyword inputs.
 
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
@@ -405,7 +405,7 @@ class ActionPath(argparse.Action):
             ... )
         """
         return cls.from_spec(
-            spec=SpecPath(
+            spec=PathSpec(
                 entry_kind=entry_kind,
                 allowed_file_exts=tuple(
                     str(ext).lower().lstrip(".")
@@ -821,7 +821,7 @@ class ActionHexColor(argparse.Action):
 
 
 @dataclass(frozen=True, slots=True)
-class SpecNumericRange:
+class NumericRangeSpec:
     """Specification describing allowed numeric inputs.
 
     Attributes:
@@ -836,11 +836,11 @@ class SpecNumericRange:
     Examples:
         Strict positive integer:
 
-        >>> SpecNumericRange(value_kind="int", value_min=0, should_include_min=False)
+        >>> NumericRangeSpec(value_kind="int", value_min=0, should_include_min=False)
 
         Open-left, closed-right unit interval:
 
-        >>> SpecNumericRange(
+        >>> NumericRangeSpec(
         ...     value_kind="float",
         ...     value_min=0.0,
         ...     value_max=1.0,
@@ -866,7 +866,7 @@ class SpecNumericRange:
 class ActionNumericRange(argparse.Action):
     """Argparse action enforcing numeric value constraints.
 
-    Parses an option as int/float, validates it against ``SpecNumericRange``,
+    Parses an option as int/float, validates it against ``NumericRangeSpec``,
     and normalizes defaults during parser construction.
 
     Examples:
@@ -875,7 +875,7 @@ class ActionNumericRange(argparse.Action):
         >>> parser.add_argument(
         ...     "--learning_rate",
         ...     action=ActionNumericRange,
-        ...     spec=SpecNumericRange(value_kind="float", value_min=0, should_include_min=False),
+        ...     spec=NumericRangeSpec(value_kind="float", value_min=0, should_include_min=False),
         ... )
 
         Use convenience factories:
@@ -895,7 +895,7 @@ class ActionNumericRange(argparse.Action):
         option_strings: list[str],
         dest: str,
         *,
-        spec: SpecNumericRange,
+        spec: NumericRangeSpec,
         **kwargs: Any,
     ) -> None:
         """Construct a ActionNumericRange.
@@ -933,13 +933,13 @@ class ActionNumericRange(argparse.Action):
                 argument_name=f"{dest} (default)",
             )
 
-    # -------- convenience factories (avoid importing SpecNumericRange explicitly) --------
+    # -------- convenience factories (avoid importing NumericRangeSpec explicitly) --------
     @classmethod
     def from_spec(
         cls,
-        spec: SpecNumericRange,
+        spec: NumericRangeSpec,
     ) -> type[argparse.Action]:
-        """Core factory that uses an explicit ``SpecNumericRange``.
+        """Core factory that uses an explicit ``NumericRangeSpec``.
 
         Args:
             spec: Numeric range specification.
@@ -951,7 +951,7 @@ class ActionNumericRange(argparse.Action):
             >>> parser.add_argument(
             ...     "--threads",
             ...     action=ActionNumericRange.from_spec(
-            ...         spec=SpecNumericRange(value_kind="int", value_min=1)
+            ...         spec=NumericRangeSpec(value_kind="int", value_min=1)
             ...     ),
             ... )
         """
@@ -993,7 +993,7 @@ class ActionNumericRange(argparse.Action):
             ... )
         """
         return cls.from_spec(
-            spec=SpecNumericRange(
+            spec=NumericRangeSpec(
                 value_kind=value_kind,
                 value_min=value_min,
                 value_max=value_max,

@@ -2,8 +2,8 @@
 
 This module defines immutable descriptors used by parser registries:
 
-- ``SpecParam``: reusable argument spec.
-- ``SpecCommand``: subcommand spec.
+- ``ParamSpec``: reusable argument spec.
+- ``CommandSpec``: subcommand spec.
 
 These specs are pure data + callbacks. They do not mutate parser state by
 themselves; mutation happens when registries/materializers apply them.
@@ -20,7 +20,7 @@ from typing import Any
 from .base import ArgAdder
 
 
-class EnumGroupKey(StrEnum):
+class GroupKey(StrEnum):
     """Logical parser group keys used for help and organization.
 
     The key controls where a parameter appears in help output and how specs
@@ -40,25 +40,25 @@ class EnumGroupKey(StrEnum):
 
 
 DICT_ARG_GROUP_META = {
-    EnumGroupKey.CONTRACT: (
+    GroupKey.CONTRACT: (
         "Contract",
         "Upstream run contract: meta entrypoint, validation, and provenance.",
     ),
-    EnumGroupKey.EXECUTABLES: (
+    GroupKey.EXECUTABLES: (
         "Executables",
         "Paths to external executables (optional). If omitted, commands are resolved via PATH.",
     ),
-    EnumGroupKey.INPUTS: ("Inputs", "Input files and directories."),
-    EnumGroupKey.OUTPUTS: ("Outputs", "Output files and directories."),
-    EnumGroupKey.RULES: ("Rules", "Filtering and processing rules."),
-    EnumGroupKey.THRESHOLDS: ("Thresholds", "Cutoffs and threshold parameters."),
-    EnumGroupKey.SWITCHES: ("Switches", "Boolean flags and toggles."),
-    EnumGroupKey.PLOTS: ("Plots", "Plotting and graphics settings."),
-    EnumGroupKey.PERFORMANCE: (
+    GroupKey.INPUTS: ("Inputs", "Input files and directories."),
+    GroupKey.OUTPUTS: ("Outputs", "Output files and directories."),
+    GroupKey.RULES: ("Rules", "Filtering and processing rules."),
+    GroupKey.THRESHOLDS: ("Thresholds", "Cutoffs and threshold parameters."),
+    GroupKey.SWITCHES: ("Switches", "Boolean flags and toggles."),
+    GroupKey.PLOTS: ("Plots", "Plotting and graphics settings."),
+    GroupKey.PERFORMANCE: (
         "Performance",
         "Parallelism, memory, and performance tuning.",
     ),
-    EnumGroupKey.GENERAL: ("General", "General settings and defaults."),
+    GroupKey.GENERAL: ("General", "General settings and defaults."),
 }
 
 
@@ -91,7 +91,7 @@ def _infer_dest_from_id(base_id: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecParam:
+class ParamSpec:
     """Immutable parameter specification for parser materialization.
 
     Attributes:
@@ -107,7 +107,7 @@ class SpecParam:
             Callback that writes this parameter into a target ``ArgAdder``.
 
     Examples:
-        >>> spec = SpecParam(id="general.verbose")
+        >>> spec = ParamSpec(id="general.verbose")
         >>> spec.resolved_dest
         'verbose'
         >>> spec.resolved_flags
@@ -124,12 +124,12 @@ class SpecParam:
     dest: str | None = None
     flags: tuple[str, ...] | None = None
     help: str | None = None
-    group: EnumGroupKey = EnumGroupKey.GENERAL
+    group: GroupKey = GroupKey.GENERAL
     order: int = 0
     is_deprecated: bool = False
     replace_by: str | None = None
 
-    arg_builder: Callable[[ArgAdder, "SpecParam"], None] | None = None
+    arg_builder: Callable[[ArgAdder, "ParamSpec"], None] | None = None
 
     @property
     def base_id(self) -> str:
@@ -165,7 +165,7 @@ class SpecParam:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecCommand:
+class CommandSpec:
     """Immutable command specification for subparser generation.
 
     Attributes:
@@ -182,7 +182,7 @@ class SpecCommand:
             current command path.
 
     Examples:
-        >>> spec = SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
+        >>> spec = CommandSpec(id="run", help="Run", arg_builder=lambda p: p)
         >>> spec.id
         'run'
         >>> spec.group
@@ -195,7 +195,7 @@ class SpecCommand:
     group: str = "default"
     order: int = 0
     param_keys: tuple[str | StrEnum, ...] = ()
-    children: tuple["SpecCommand", ...] = ()
+    children: tuple["CommandSpec", ...] = ()
 
     @property
     def token(self) -> str:

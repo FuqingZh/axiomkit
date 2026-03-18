@@ -107,7 +107,7 @@ def _kill_process_if_running(proc: subprocess.Popen[Any]) -> None:
 ################################################################################
 # #region WorkerDistribution
 @dataclass(frozen=True)
-class ReportWorkerDistribution:
+class WorkerDistributionReport:
     workers: int
     threads_per_worker: int
 
@@ -119,7 +119,7 @@ def derive_worker_distribution(
     threads_per_worker_min: int = 2,
     threads_per_worker_max: int = 16,
     logger: ProtocolRunLogger | None = None,
-) -> ReportWorkerDistribution:
+) -> WorkerDistributionReport:
     """Derive worker/thread split under a total thread budget.
 
     Contract:
@@ -146,9 +146,9 @@ def derive_worker_distribution(
 
     Examples:
         >>> derive_worker_distribution(threads=32, threads_per_worker_min=2, threads_per_worker_max=16)
-        ReportWorkerDistribution(workers=2, threads_per_worker=16)
+        WorkerDistributionReport(workers=2, threads_per_worker=16)
         >>> derive_worker_distribution(threads=1, threads_per_worker_min=2, threads_per_worker_max=16)
-        ReportWorkerDistribution(workers=1, threads_per_worker=1)
+        WorkerDistributionReport(workers=1, threads_per_worker=1)
     """
     if threads < 1:
         raise ValueError(f"threads must be >= 1, got {threads}")
@@ -173,7 +173,7 @@ def derive_worker_distribution(
     logger.debug(
         f"Workers for `{title}`: {workers}, threads per worker: {threads_per_worker}"
     )
-    return ReportWorkerDistribution(
+    return WorkerDistributionReport(
         workers=workers,
         threads_per_worker=threads_per_worker,
     )
@@ -183,7 +183,7 @@ def derive_worker_distribution(
 ################################################################################
 # #region CommandRunner
 @dataclass(frozen=True)
-class ReportCmd:
+class CmdReport:
     return_code: int
     seconds: float
     hours: float
@@ -201,7 +201,7 @@ def run_cmd(
     timeout: float | None = None,
     logger: ProtocolRunLogger | None = None,
     should_write_tail_to_stderr: bool = True,
-) -> ReportCmd:
+) -> CmdReport:
     """Run one shell command and return a structured execution report.
 
     Args:
@@ -210,7 +210,7 @@ def run_cmd(
         title: Human-readable title for logs and diagnostics.
         file_log: Optional file path to stream full command output.
             If provided, parent directories are created automatically.
-        lines_tail: Number of trailing output lines kept in ``ReportCmd.tail``.
+        lines_tail: Number of trailing output lines kept in ``CmdReport.tail``.
             Also controls how many lines are printed to ``stderr`` on failures.
             Set to ``0`` to disable tail capture.
         timeout: Optional timeout in seconds passed to subprocess wait.
@@ -221,7 +221,7 @@ def run_cmd(
             ``stderr``. Disable in library-only integration scenarios.
 
     Returns:
-        ReportCmd: Structured execution report including return code, elapsed
+        CmdReport: Structured execution report including return code, elapsed
         time, normalized command, log file path, and output tail.
 
     Raises:
@@ -291,13 +291,13 @@ def execute_cmd(
     file_log: Path | None = None,
     lines_tail: int = 100,
     timeout: float | None = None,
-) -> ReportCmd:
+) -> CmdReport:
     """Execute one command with minimal side effects (internal helper).
 
     Technical behavior:
         - streams merged ``stdout/stderr`` to ``file_log`` when provided,
         - captures only trailing lines (bounded by ``lines_tail``),
-        - returns ``ReportCmd`` on success,
+        - returns ``CmdReport`` on success,
         - raises subprocess exceptions on failure/timeout.
 
     This helper intentionally does not write status logs and does not print to
@@ -311,7 +311,7 @@ def execute_cmd(
         timeout: Optional timeout in seconds.
 
     Returns:
-        ReportCmd: Structured execution report.
+        CmdReport: Structured execution report.
 
     Raises:
         subprocess.CalledProcessError: The command exits with non-zero code.
@@ -378,7 +378,7 @@ def execute_cmd(
                 output=tail_output,
             )
 
-        return ReportCmd(
+        return CmdReport(
             return_code=return_code,
             seconds=elapsed_seconds,
             hours=elapsed_seconds / 3600,
@@ -396,17 +396,17 @@ def execute_cmd(
 ################################################################################
 # #region PipeRunner
 @dataclass(frozen=True)
-class ReportPipeCmd:
+class PipeCmdReport:
     index: int
     cmd: list[str]
     return_code: int
 
 
 @dataclass(frozen=True)
-class ReportPipe:
+class PipeReport:
     return_code: int
     failed_indices: list[int]
-    steps: list[ReportPipeCmd]
+    steps: list[PipeCmdReport]
     seconds: float
     hours: float
     file_log: Path | None
@@ -421,7 +421,7 @@ def run_pipe(
     timeout: float | None = None,
     logger: ProtocolRunLogger | None = None,
     should_write_tail_to_stderr: bool = True,
-) -> ReportPipe:
+) -> PipeReport:
     """Run shell command pipeline(s): ``cmd1 | cmd2 | ...``.
 
     Supports one call shape:
@@ -456,7 +456,7 @@ def execute_pipe(
     file_log: Path | None = None,
     lines_tail: int = 100,
     timeout: float | None = None,
-) -> ReportPipe:
+) -> PipeReport:
     """Execute one command pipeline with pipefail-like failure behavior."""
     commands = [
         _normalize_cmd(
@@ -558,7 +558,7 @@ def execute_pipe(
                 thread.join(timeout=1.0)
 
             steps = [
-                ReportPipeCmd(
+                PipeCmdReport(
                     index=i + 1,
                     cmd=cmd,
                     return_code=rc,
@@ -587,7 +587,7 @@ def execute_pipe(
                     output=tail_output,
                 )
 
-            return ReportPipe(
+            return PipeReport(
                 return_code=0,
                 failed_indices=[],
                 steps=steps,
@@ -642,23 +642,23 @@ TResult = TypeVar("TResult")
 
 
 @dataclass(frozen=True, slots=True)
-class SpecReportJobDone[TResult]:
+class JobDoneRecord[TResult]:
     id: str
     payload: TResult
 
 
 @dataclass(frozen=True, slots=True)
-class SpecReportJobFailed:
+class JobFailedRecord:
     id: str
     msg_error: str
 
 
 @dataclass(frozen=True, slots=True)
-class ReportJobs[TResult]:
+class JobsReport[TResult]:
     cnt_done: int
     cnt_failed: int
-    jobs_done: list[SpecReportJobDone[TResult]]
-    jobs_failed: list[SpecReportJobFailed]
+    jobs_done: list[JobDoneRecord[TResult]]
+    jobs_failed: list[JobFailedRecord]
 
 
 def run_jobs(
@@ -672,7 +672,7 @@ def run_jobs(
     should_raise_on_failure: bool = True,
     file_failed_log: Path | None = None,
     logger: ProtocolRunLogger | None = None,
-) -> ReportJobs[TResult]:
+) -> JobsReport[TResult]:
     """Run jobs in a thread pool and collect failures.
 
     Args:
@@ -708,7 +708,7 @@ def run_jobs(
         ...     fn_worker=lambda n: n * n,
         ...     workers_max=2,
         ... )
-        ReportJobs(cnt_done=3, cnt_failed=0, jobs_done=[...], jobs_failed=[])
+        JobsReport(cnt_done=3, cnt_failed=0, jobs_done=[...], jobs_failed=[])
 
         Run external commands with ``run_cmd``:
 
@@ -766,10 +766,10 @@ def run_jobs(
 
     jobs = list(jobs)
     if not jobs:
-        return ReportJobs(cnt_done=0, cnt_failed=0, jobs_done=[], jobs_failed=[])
+        return JobsReport(cnt_done=0, cnt_failed=0, jobs_done=[], jobs_failed=[])
 
-    jobs_failed: list[SpecReportJobFailed] = []
-    jobs_done: list[SpecReportJobDone[TResult]] = []
+    jobs_failed: list[JobFailedRecord] = []
+    jobs_done: list[JobDoneRecord[TResult]] = []
     cnt_jobs_done = 0
     cnt_jobs_total = len(jobs)
     futures_by_job: dict[Future[TResult], TJob] = {}
@@ -784,11 +784,11 @@ def run_jobs(
             try:
                 result = future.result()
                 cnt_jobs_done += 1
-                jobs_done.append(SpecReportJobDone(id=job_id, payload=result))
+                jobs_done.append(JobDoneRecord(id=job_id, payload=result))
                 if cnt_jobs_done % 10 == 0 or cnt_jobs_done == cnt_jobs_total:
                     logger.info(f"[{title}] Completed: {cnt_jobs_done}/{cnt_jobs_total}")
             except Exception as e:
-                jobs_failed.append(SpecReportJobFailed(id=job_id, msg_error=str(e)))
+                jobs_failed.append(JobFailedRecord(id=job_id, msg_error=str(e)))
                 logger.error(f"[{title}] Failed {job_id}: {e}")
 
     except KeyboardInterrupt:
@@ -813,7 +813,7 @@ def run_jobs(
             except TypeError:
                 executor.shutdown(wait=False)
 
-    report = ReportJobs(
+    report = JobsReport(
         cnt_done=cnt_jobs_done,
         cnt_failed=len(jobs_failed),
         jobs_done=jobs_done,

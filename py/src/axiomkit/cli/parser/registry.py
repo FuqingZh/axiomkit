@@ -2,8 +2,8 @@
 
 This module is the stateful core of the parser package:
 
-- ``ParamRegistry`` stores and validates reusable ``SpecParam`` objects.
-- ``CommandRegistry`` stores ``SpecCommand`` objects and builds subparsers.
+- ``ParamRegistry`` stores and validates reusable ``ParamSpec`` objects.
+- ``CommandRegistry`` stores ``CommandSpec`` objects and builds subparsers.
 
 Both registries resolve canonical ids and materialize specs into parser objects.
 """
@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Protocol, Self, cast
 
 from .base import ArgAdder, CanonicalRegistry, SmartFormatter
-from .spec import EnumGroupKey, SpecCommand, SpecParam
+from .spec import GroupKey, CommandSpec, ParamSpec
 
 _RESERVED_PARAM_DESTS: frozenset[str] = frozenset(
     {
@@ -76,19 +76,19 @@ class ParserRegistry(Protocol):
 
     parser: argparse.ArgumentParser
 
-    def select_group(self, key: EnumGroupKey | str) -> ArgAdder: ...
+    def select_group(self, key: GroupKey | str) -> ArgAdder: ...
 
 
 class CommandRegistry:
     """Registry for command specifications.
 
-    This class stores root ``SpecCommand`` objects and indexes nested command
+    This class stores root ``CommandSpec`` objects and indexes nested command
     trees by canonical id.
 
     Examples:
         >>> reg = CommandRegistry()
         >>> _ = reg.register_command(
-        ...     SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
+        ...     CommandSpec(id="run", help="Run", arg_builder=lambda p: p)
         ... )
         >>> [spec.id for spec in reg.list_commands()]
         ['run']
@@ -96,10 +96,10 @@ class CommandRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty command registry."""
-        self._core: CanonicalRegistry[SpecCommand] = CanonicalRegistry.new()
-        self._roots: list[SpecCommand] = []
+        self._core: CanonicalRegistry[CommandSpec] = CanonicalRegistry.new()
+        self._roots: list[CommandSpec] = []
 
-    def register_command(self, spec: SpecCommand) -> Self:
+    def register_command(self, spec: CommandSpec) -> Self:
         """Register one command specification.
 
         Args:
@@ -115,7 +115,7 @@ class CommandRegistry:
         self._roots.append(spec)
         return self
 
-    def list_commands(self, should_sort: bool = True) -> list[SpecCommand]:
+    def list_commands(self, should_sort: bool = True) -> list[CommandSpec]:
         """List registered command specs.
 
         Args:
@@ -124,11 +124,11 @@ class CommandRegistry:
                 If ``False``, insertion order is preserved.
 
         Returns:
-            list[SpecCommand]: Registered command specifications.
+            list[CommandSpec]: Registered command specifications.
         """
         return list(self._iter_specs(self._roots, should_sort=should_sort))
 
-    def _register_recursive(self, spec: SpecCommand) -> None:
+    def _register_recursive(self, spec: CommandSpec) -> None:
         """Register one command node and all descendants."""
         self._core.register(spec)
         for child in spec.children:
@@ -136,10 +136,10 @@ class CommandRegistry:
 
     def _iter_specs(
         self,
-        specs: Sequence[SpecCommand],
+        specs: Sequence[CommandSpec],
         *,
         should_sort: bool,
-    ) -> Iterable[SpecCommand]:
+    ) -> Iterable[CommandSpec]:
         """Yield command specs depth-first."""
         items = list(specs)
         if should_sort:
@@ -150,10 +150,10 @@ class CommandRegistry:
 
     def _iter_level_specs(
         self,
-        specs: Sequence[SpecCommand],
+        specs: Sequence[CommandSpec],
         *,
         should_sort: bool,
-    ) -> list[SpecCommand]:
+    ) -> list[CommandSpec]:
         """Return sibling command specs for one tree level."""
         items = list(specs)
         if should_sort:
@@ -192,7 +192,7 @@ class CommandRegistry:
                 Factory that builds a ``ParserRegistry`` wrapper for each
                 command subparser.
             should_apply_param_keys:
-                Whether to materialize ``SpecCommand.param_keys``.
+                Whether to materialize ``CommandSpec.param_keys``.
 
         Returns:
             argparse._SubParsersAction: Subparsers action from argparse.
@@ -206,7 +206,7 @@ class CommandRegistry:
             >>> parser = argparse.ArgumentParser(prog="demo")
             >>> reg = CommandRegistry()
             >>> _ = reg.register_command(
-            ...     SpecCommand(id="run", help="Run", arg_builder=lambda p: p)
+            ...     CommandSpec(id="run", help="Run", arg_builder=lambda p: p)
             ... )
             >>> _ = reg.build_subparsers(parser)
             >>> ns = parser.parse_args(["run"])
@@ -233,7 +233,7 @@ class CommandRegistry:
         self,
         *,
         parser: argparse.ArgumentParser,
-        specs: Sequence[SpecCommand],
+        specs: Sequence[CommandSpec],
         title: str,
         public_dest: str,
         kind_formatter: type[argparse.HelpFormatter] | None,
@@ -310,13 +310,13 @@ class CommandRegistry:
 class ParamRegistry:
     """Registry for parameter specifications.
 
-    The registry stores ``SpecParam`` instances and can materialize selected
+    The registry stores ``ParamSpec`` instances and can materialize selected
     parameters into parser groups with collision checks.
 
     Examples:
         >>> reg = ParamRegistry()
         >>> _ = reg.register_params(
-        ...     SpecParam(id="general.flag", arg_builder=lambda g, s: s.add_argument(g))
+        ...     ParamSpec(id="general.flag", arg_builder=lambda g, s: s.add_argument(g))
         ... )
         >>> reg.select_param("general.flag").id
         'general.flag'
@@ -324,9 +324,9 @@ class ParamRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty parameter registry."""
-        self._core: CanonicalRegistry[SpecParam] = CanonicalRegistry.new()
+        self._core: CanonicalRegistry[ParamSpec] = CanonicalRegistry.new()
 
-    def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self:
+    def register_params(self, *specs: ParamSpec | Iterable[ParamSpec]) -> Self:
         """Register one or more parameter specifications.
 
         Args:
@@ -343,7 +343,7 @@ class ParamRegistry:
             ValueError: If id conflicts are detected.
         """
         for item in specs:
-            if isinstance(item, SpecParam):
+            if isinstance(item, ParamSpec):
                 self._core.register(item)
                 continue
 
@@ -352,7 +352,7 @@ class ParamRegistry:
 
         return self
 
-    def select_param(self, key: ParamKey) -> SpecParam:
+    def select_param(self, key: ParamKey) -> ParamSpec:
         """Select a parameter specification by canonical id.
 
         Args:
@@ -360,7 +360,7 @@ class ParamRegistry:
                 Canonical parameter id. Supports ``str`` and ``StrEnum``.
 
         Returns:
-            SpecParam: Resolved parameter specification.
+            ParamSpec: Resolved parameter specification.
 
         Raises:
             ValueError: If the key is unknown.
@@ -383,7 +383,7 @@ class ParamRegistry:
         *,
         group: str | None = None,
         should_sort: bool = True,
-    ) -> list[SpecParam]:
+    ) -> list[ParamSpec]:
         """List registered parameter specs with optional filtering.
 
         Args:
@@ -393,7 +393,7 @@ class ParamRegistry:
                 If ``False``, insertion order is preserved.
 
         Returns:
-            list[SpecParam]: Filtered parameter specs.
+            list[ParamSpec]: Filtered parameter specs.
         """
         if not should_sort:
             specs = self._core.list_specs(kind_sort="insertion")
@@ -452,7 +452,7 @@ class ParamRegistry:
                     stacklevel=2,
                 )
             if spec.arg_builder is None:
-                raise ValueError(f"`SpecParam` missing `arg_builder`: {spec.id!r}")
+                raise ValueError(f"`ParamSpec` missing `arg_builder`: {spec.id!r}")
 
             dest = spec.resolved_dest
             flags = spec.resolved_flags

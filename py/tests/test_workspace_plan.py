@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from axiomkit.workspace import SpecWorkspaceLayout, WorkspacePlan
+from axiomkit.workspace import WorkspaceLayoutSpec, WorkspacePlan
 
 
 def test_workspace_plan_apply_success(tmp_path: Path) -> None:
@@ -24,7 +24,7 @@ def test_workspace_plan_apply_success(tmp_path: Path) -> None:
 def test_workspace_plan_apply_rejects_invalid_spec(tmp_path: Path) -> None:
     cls_plan = WorkspacePlan(
         dir_root=tmp_path,
-        spec=SpecWorkspaceLayout(dirs={"out": "../escape"}),
+        spec=WorkspaceLayoutSpec(dirs={"out": "../escape"}),
     )
     assert not cls_plan.report_check.ok
     with pytest.raises(ValueError):
@@ -42,7 +42,7 @@ def test_workspace_plan_exposes_paths_after_apply(tmp_path: Path) -> None:
 
 
 def test_workspace_plan_supports_sequence_dirs(tmp_path: Path) -> None:
-    cls_spec = SpecWorkspaceLayout(dirs=("canonical", "derived", "meta", "tmp"))
+    cls_spec = WorkspaceLayoutSpec(dirs=("canonical", "derived", "meta", "tmp"))
     cls_plan = WorkspacePlan(dir_root=tmp_path / "workspace", spec=cls_spec)
     assert cls_plan.report_check.ok
 
@@ -53,7 +53,7 @@ def test_workspace_plan_supports_sequence_dirs(tmp_path: Path) -> None:
 
 
 def test_workspace_plan_supports_mapping_dirs(tmp_path: Path) -> None:
-    cls_spec = SpecWorkspaceLayout(
+    cls_spec = WorkspaceLayoutSpec(
         dirs={
             "canonical": "tables/canonical",
             "derived": "tables/derived",
@@ -72,4 +72,4 @@ def test_workspace_plan_supports_mapping_dirs(tmp_path: Path) -> None:
 
 def test_workspace_plan_rejects_plain_string_dirs(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="must not be a plain string"):
-        WorkspacePlan(dir_root=tmp_path, spec=SpecWorkspaceLayout(dirs="meta"))
+        WorkspacePlan(dir_root=tmp_path, spec=WorkspaceLayoutSpec(dirs="meta"))

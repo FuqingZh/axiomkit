@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from axiomkit._optional_deps import import_optional_attr
 
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
-from .spec import EnumGroupKey, SpecParam
+from .spec import GroupKey, ParamSpec
 
 __all__ = [
     "ActionCommandPrefix",
@@ -14,8 +14,8 @@ __all__ = [
     "ActionPath",
     "ParserBuilder",
     "CommandBuilder",
-    "SpecParam",
-    "EnumGroupKey",
+    "ParamSpec",
+    "GroupKey",
 ]
 
 if TYPE_CHECKING:

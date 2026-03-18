@@ -5,10 +5,10 @@ from enum import StrEnum
 
 import pytest
 
-from axiomkit.cli.parser import EnumGroupKey, ParserBuilder, SpecParam  # noqa: E402
+from axiomkit.cli.parser import GroupKey, ParserBuilder, ParamSpec  # noqa: E402
 
 
-class EnumParamKey(StrEnum):
+class ParamKey(StrEnum):
     EXE_RSCRIPT = "executables.rscript"
     THR_THREADS = "data_table.threads_dt"
 
@@ -20,15 +20,15 @@ def _build_demo_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 def _register_demo_params(app: ParserBuilder) -> None:
     app.register_params(
-        SpecParam(
+        ParamSpec(
             id="executables.rscript",
-            group=EnumGroupKey.EXECUTABLES,
+            group=GroupKey.EXECUTABLES,
             help="Path to Rscript executable",
             arg_builder=lambda g, s: s.add_argument(g, type=str),
         ),
-        SpecParam(
+        ParamSpec(
             id="data_table.threads_dt",
-            group=EnumGroupKey.PERFORMANCE,
+            group=GroupKey.PERFORMANCE,
             help="Thread count for data-table compute.",
             arg_builder=lambda g, s: s.add_argument(g, type=int),
         ),
@@ -71,10 +71,10 @@ def test_parser_builder_requires_param_registry_entries_for_param_keys() -> None
 def test_param_dest_must_not_shadow_command_metadata_fields() -> None:
     app = ParserBuilder(prog="demo")
     app.register_params(
-        SpecParam(
+        ParamSpec(
             id="general.cmd_meta",
             dest="_cmd_group",
-            group=EnumGroupKey.GENERAL,
+            group=GroupKey.GENERAL,
             arg_builder=lambda g, s: s.add_argument(g, type=str),
         )
     )
@@ -91,19 +91,19 @@ def test_param_dest_must_not_shadow_command_metadata_fields() -> None:
 
 def test_param_flag_collision_is_rejected() -> None:
     app = ParserBuilder(prog="demo")
-    app.select_group(EnumGroupKey.GENERAL).add_argument("--threads_dt", type=int)
+    app.select_group(GroupKey.GENERAL).add_argument("--threads_dt", type=int)
     app.register_params(
-        SpecParam(
+        ParamSpec(
             id="data_table.worker_threads",
             dest="worker_threads",
             flags=("--threads_dt",),
-            group=EnumGroupKey.GENERAL,
+            group=GroupKey.GENERAL,
             arg_builder=lambda g, s: s.add_argument(g, type=int),
         )
     )
 
     with pytest.raises(ValueError, match="flag already exists on parser"):
-        app.select_group(EnumGroupKey.GENERAL).extract_params("data_table.worker_threads")
+        app.select_group(GroupKey.GENERAL).extract_params("data_table.worker_threads")
 
 
 def test_extract_params_rejects_cross_group_param_keys() -> None:
@@ -111,15 +111,15 @@ def test_extract_params_rejects_cross_group_param_keys() -> None:
     _register_demo_params(app)
 
     with pytest.raises(ValueError, match="belongs to group"):
-        app.select_group(EnumGroupKey.INPUTS).extract_params("executables.rscript")
+        app.select_group(GroupKey.INPUTS).extract_params("executables.rscript")
 
 
 def test_deprecated_param_emits_warning() -> None:
     app = ParserBuilder(prog="demo")
     app.register_params(
-        SpecParam(
+        ParamSpec(
             id="general.legacy_threads",
-            group=EnumGroupKey.GENERAL,
+            group=GroupKey.GENERAL,
             is_deprecated=True,
             replace_by="data_table.threads_dt",
             arg_builder=lambda g, s: s.add_argument(g, type=int),
@@ -127,7 +127,7 @@ def test_deprecated_param_emits_warning() -> None:
     )
 
     with pytest.warns(UserWarning, match="Deprecated param"):
-        app.select_group(EnumGroupKey.GENERAL).extract_params("general.legacy_threads")
+        app.select_group(GroupKey.GENERAL).extract_params("general.legacy_threads")
 
 
 def test_fluent_dsl_supports_multi_command_grouped_build() -> None:
@@ -136,17 +136,17 @@ def test_fluent_dsl_supports_multi_command_grouped_build() -> None:
 
     (
         app.command("t_test", help="T-test command")
-        .group(EnumGroupKey.EXECUTABLES)
+        .group(GroupKey.EXECUTABLES)
         .extract_params("executables.rscript")
         .end()
-        .group(EnumGroupKey.INPUTS)
+        .group(GroupKey.INPUTS)
         .add_argument("--file-in", type=str, required=True)
         .end()
         .done()
     )
     (
         app.command("anova", help="ANOVA command")
-        .group(EnumGroupKey.PERFORMANCE)
+        .group(GroupKey.PERFORMANCE)
         .extract_params("data_table.threads_dt")
         .end()
         .done()
@@ -172,7 +172,7 @@ def test_fluent_dsl_extract_params_rejects_cross_group_param_keys() -> None:
 
     (
         app.command("demo", help="Demo command")
-        .group(EnumGroupKey.INPUTS)
+        .group(GroupKey.INPUTS)
         .extract_params("executables.rscript")
         .end()
         .done()
@@ -188,11 +188,11 @@ def test_extract_params_supports_str_enum_keys() -> None:
 
     (
         app.command("demo", help="Demo command")
-        .group(EnumGroupKey.EXECUTABLES)
-        .extract_params(EnumParamKey.EXE_RSCRIPT)
+        .group(GroupKey.EXECUTABLES)
+        .extract_params(ParamKey.EXE_RSCRIPT)
         .end()
-        .group(EnumGroupKey.PERFORMANCE)
-        .extract_params(EnumParamKey.THR_THREADS)
+        .group(GroupKey.PERFORMANCE)
+        .extract_params(ParamKey.THR_THREADS)
         .end()
         .done()
     )
@@ -238,7 +238,7 @@ def test_fluent_dsl_supports_nested_subcommands() -> None:
         app.command("go", help="Gene Ontology")
         .command("ontology", help="Ontology assets")
         .command("tidy", help="Build tidy outputs")
-        .group(EnumGroupKey.INPUTS)
+        .group(GroupKey.INPUTS)
         .add_argument("--file-in", type=str, required=True)
         .end()
         .done()
@@ -278,7 +278,7 @@ def test_nested_subcommands_support_extract_params() -> None:
         app.command("go", help="Gene Ontology")
         .command("ontology", help="Ontology assets")
         .command("tidy", help="Build tidy outputs")
-        .group(EnumGroupKey.EXECUTABLES)
+        .group(GroupKey.EXECUTABLES)
         .extract_params("executables.rscript")
         .end()
         .done()

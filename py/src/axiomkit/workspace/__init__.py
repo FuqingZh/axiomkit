@@ -1,9 +1,9 @@
 from .plan import (
-    SpecWorkspaceLayout,
+    WorkspaceLayoutSpec,
     WorkspacePlan,
 )
 
 __all__ = [
-    "SpecWorkspaceLayout",
+    "WorkspaceLayoutSpec",
     "WorkspacePlan",
 ]

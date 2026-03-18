@@ -7,7 +7,7 @@ from typing import Any, Generic, Self, TypeVar
 
 from .base import ArgAdder
 from .registry import CommandRegistry, ParamRegistry
-from .spec import EnumGroupKey, SpecCommand, SpecParam
+from .spec import GroupKey, CommandSpec, ParamSpec
 
 type ParamKey = str | StrEnum
 type ArgumentValueParser = Callable[[str], Any]
@@ -16,7 +16,7 @@ OwnerT = TypeVar("OwnerT")
 
 
 class ArgumentGroupHandler:
-    key: EnumGroupKey
+    key: GroupKey
     _adder: ArgAdder
     _parser_reg: ArgGroupRegistry
     _params: ParamRegistry
@@ -24,7 +24,7 @@ class ArgumentGroupHandler:
     def __init__(
         self,
         *,
-        key: EnumGroupKey,
+        key: GroupKey,
         _adder: ArgAdder,
         _parser_reg: ArgGroupRegistry,
         _params: ParamRegistry,
@@ -53,7 +53,7 @@ class ArgumentGroupHandler:
 class ArgGroupRegistry:
     parser: argparse.ArgumentParser
     params: ParamRegistry
-    _groups: dict[EnumGroupKey, ArgumentGroupHandler]
+    _groups: dict[GroupKey, ArgumentGroupHandler]
 
     def __init__(
         self,
@@ -62,7 +62,7 @@ class ArgGroupRegistry:
         params: ParamRegistry,
     ) -> None: ...
 
-    def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler: ...
+    def select_group(self, key: GroupKey | str) -> ArgumentGroupHandler: ...
 
 
 class CommandBuilder(Generic[OwnerT]):
@@ -82,8 +82,8 @@ class CommandBuilder(Generic[OwnerT]):
     @property
     def params(self) -> ParamRegistry: ...
     def assert_open(self) -> None: ...
-    def register_command(self, spec: SpecCommand) -> None: ...
-    def group(self, key: EnumGroupKey | str) -> GroupBuilder[OwnerT]: ...
+    def register_command(self, spec: CommandSpec) -> None: ...
+    def group(self, key: GroupKey | str) -> GroupBuilder[OwnerT]: ...
     def command(
         self,
         id: str,
@@ -104,7 +104,7 @@ class GroupBuilder(Generic[OwnerT]):
         self,
         *,
         command_builder: CommandBuilder[OwnerT],
-        key: EnumGroupKey,
+        key: GroupKey,
     ) -> None: ...
 
     def add_argument(
@@ -144,9 +144,9 @@ class ParserBuilder:
         commands: CommandRegistry | None = None,
     ) -> None: ...
 
-    def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler: ...
-    def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self: ...
-    def register_command(self, spec: SpecCommand) -> Self: ...
+    def select_group(self, key: GroupKey | str) -> ArgumentGroupHandler: ...
+    def register_params(self, *specs: ParamSpec | Iterable[ParamSpec]) -> Self: ...
+    def register_command(self, spec: CommandSpec) -> Self: ...
 
     def command(
         self,

@@ -2,7 +2,7 @@
 
 This module provides a thin layered API:
 
-- ``SpecParam`` and ``SpecCommand`` describe what to add.
+- ``ParamSpec`` and ``CommandSpec`` describe what to add.
 - ``ParamRegistry`` and ``CommandRegistry`` own registration/validation.
 - ``ParserBuilder`` materializes specs into an ``argparse.ArgumentParser``.
 
@@ -11,7 +11,7 @@ The runtime parse step intentionally stays with raw argparse:
     >>> app = ParserBuilder(prog="demo")
     >>> _ = (
     ...     app.command("run", help="Run")
-    ...     .group(EnumGroupKey.GENERAL)
+    ...     .group(GroupKey.GENERAL)
     ...     .add_argument("--dry-run", action="store_true")
     ...     .end()
     ...     .done()
@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from .base import SmartFormatter
 from .registry import CommandRegistry, ParamRegistry
-from .spec import DICT_ARG_GROUP_META, ArgAdder, EnumGroupKey, SpecCommand, SpecParam
+from .spec import DICT_ARG_GROUP_META, ArgAdder, GroupKey, CommandSpec, ParamSpec
 
 type ParamKey = str | StrEnum
 
@@ -44,7 +44,7 @@ class ArgumentGroupHandler:
 
     The handler provides two operations:
     - ``add_argument``: passthrough to the underlying argparse group.
-    - ``extract_params``: materialize registered ``SpecParam`` entries into
+    - ``extract_params``: materialize registered ``ParamSpec`` entries into
       this group in a validated way.
 
     Attributes:
@@ -54,7 +54,7 @@ class ArgumentGroupHandler:
         _params: Parameter registry used for lookup and application.
     """
 
-    key: EnumGroupKey
+    key: GroupKey
     _adder: ArgAdder
     _parser_reg: "ArgGroupRegistry"
     _params: "ParamRegistry"
@@ -90,13 +90,13 @@ class ArgumentGroupHandler:
         Examples:
             >>> app = ParserBuilder(prog="demo")
             >>> _ = app.register_params(
-            ...     SpecParam(
+            ...     ParamSpec(
             ...         id="executables.rscript",
-            ...         group=EnumGroupKey.EXECUTABLES,
+            ...         group=GroupKey.EXECUTABLES,
             ...         arg_builder=lambda g, s: s.add_argument(g, type=str),
             ...     )
             ... )
-            >>> _ = app.select_group(EnumGroupKey.EXECUTABLES).extract_params(
+            >>> _ = app.select_group(GroupKey.EXECUTABLES).extract_params(
             ...     "executables.rscript"
             ... )
             >>> True
@@ -126,7 +126,7 @@ class ArgGroupRegistry:
     """Manage grouped argparse argument sections.
 
     This registry lazily creates argparse argument groups and caches handlers
-    by ``EnumGroupKey``.
+    by ``GroupKey``.
 
     Examples:
         >>> parser = argparse.ArgumentParser(prog="demo")
@@ -150,9 +150,9 @@ class ArgGroupRegistry:
         """
         self.parser = parser
         self.params = params
-        self._groups: dict[EnumGroupKey, ArgumentGroupHandler] = {}
+        self._groups: dict[GroupKey, ArgumentGroupHandler] = {}
 
-    def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler:
+    def select_group(self, key: GroupKey | str) -> ArgumentGroupHandler:
         """Get or create a logical argument group.
 
         Args:
@@ -161,7 +161,7 @@ class ArgGroupRegistry:
         Returns:
             ArgumentGroupHandler: Cached or newly created group handler.
         """
-        if (group_key := EnumGroupKey(key)) not in self._groups:
+        if (group_key := GroupKey(key)) not in self._groups:
             title, desc = DICT_ARG_GROUP_META[group_key]
             group = self.parser.add_argument_group(title, description=desc)
             self._groups[group_key] = ArgumentGroupHandler(
@@ -178,13 +178,13 @@ class CommandBuilder:
     """Fluent command-scoped builder for grouped arguments.
 
     A ``CommandBuilder`` records group-level operations, then compiles them
-    into one ``SpecCommand`` when :meth:`done` is called.
+    into one ``CommandSpec`` when :meth:`done` is called.
 
     Examples:
         >>> app = ParserBuilder(prog="demo")
         >>> _ = (
         ...     app.command("run", help="Run")
-        ...     .group(EnumGroupKey.GENERAL)
+        ...     .group(GroupKey.GENERAL)
         ...     .add_argument("--dry-run", action="store_true")
         ...     .end()
         ...     .done()
@@ -229,7 +229,7 @@ class CommandBuilder:
         self._order = order
         self._param_keys = param_keys
         self.group_ops: list[Callable[[ArgGroupRegistry], None]] = []
-        self._children: list[SpecCommand] = []
+        self._children: list[CommandSpec] = []
         self.is_closed = False
         self._root._open_command_builders.append(self)
 
@@ -245,7 +245,7 @@ class CommandBuilder:
         """Expose the shared parameter registry from the parent scope."""
         return self._owner.params
 
-    def group(self, key: EnumGroupKey | str) -> "GroupBuilder":
+    def group(self, key: GroupKey | str) -> "GroupBuilder":
         """Enter a logical argument group context.
 
         Args:
@@ -255,9 +255,9 @@ class CommandBuilder:
             GroupBuilder: Group-scoped fluent builder.
         """
         self.assert_open()
-        return GroupBuilder(command_builder=self, key=EnumGroupKey(key))
+        return GroupBuilder(command_builder=self, key=GroupKey(key))
 
-    def register_command(self, spec: SpecCommand) -> None:
+    def register_command(self, spec: CommandSpec) -> None:
         """Register one nested child command spec."""
         self.assert_open()
         self._children.append(spec)
@@ -311,7 +311,7 @@ class CommandBuilder:
             return parser
 
         self._owner.register_command(
-            SpecCommand(
+            CommandSpec(
                 id=self._id,
                 help=self._help,
                 arg_builder=_build_args,
@@ -341,7 +341,7 @@ class CommandBuilder:
 class GroupBuilder:
     """Fluent group-scoped builder nested under ``CommandBuilder``."""
 
-    def __init__(self, *, command_builder: CommandBuilder, key: EnumGroupKey) -> None:
+    def __init__(self, *, command_builder: CommandBuilder, key: GroupKey) -> None:
         """Initialize a group builder.
 
         Args:
@@ -386,15 +386,15 @@ class GroupBuilder:
         Examples:
             >>> app = ParserBuilder(prog="demo")
             >>> _ = app.register_params(
-            ...     SpecParam(
+            ...     ParamSpec(
             ...         id="executables.rscript",
-            ...         group=EnumGroupKey.EXECUTABLES,
+            ...         group=GroupKey.EXECUTABLES,
             ...         arg_builder=lambda g, s: s.add_argument(g, type=str),
             ...     )
             ... )
             >>> _ = (
             ...     app.command("run", help="Run")
-            ...     .group(EnumGroupKey.EXECUTABLES)
+            ...     .group(GroupKey.EXECUTABLES)
             ...     .extract_params("executables.rscript")
             ...     .end()
             ...     .done()
@@ -452,15 +452,15 @@ class ParserBuilder:
         Fluent DSL with grouped reusable params:
         >>> app = ParserBuilder(prog="demo")
         >>> _ = app.register_params(
-        ...     SpecParam(
+        ...     ParamSpec(
         ...         id="executables.rscript",
-        ...         group=EnumGroupKey.EXECUTABLES,
+        ...         group=GroupKey.EXECUTABLES,
         ...         arg_builder=lambda g, s: s.add_argument(g, type=str),
         ...     )
         ... )
         >>> _ = (
         ...     app.command("run", help="Run demo")
-        ...     .group(EnumGroupKey.EXECUTABLES)
+        ...     .group(GroupKey.EXECUTABLES)
         ...     .extract_params("executables.rscript")
         ...     .end()
         ...     .done()
@@ -508,7 +508,7 @@ class ParserBuilder:
         self._groups = ArgGroupRegistry(parser=self.parser, params=self.params)
         self._open_command_builders: list[CommandBuilder] = []
 
-    def select_group(self, key: EnumGroupKey | str) -> ArgumentGroupHandler:
+    def select_group(self, key: GroupKey | str) -> ArgumentGroupHandler:
         """Select a logical argument group from the underlying registry.
 
         Args:
@@ -519,7 +519,7 @@ class ParserBuilder:
         """
         return self._groups.select_group(key)
 
-    def register_params(self, *specs: SpecParam | Iterable[SpecParam]) -> Self:
+    def register_params(self, *specs: ParamSpec | Iterable[ParamSpec]) -> Self:
         """Register one or more parameter specifications.
 
         Args:
@@ -535,7 +535,7 @@ class ParserBuilder:
         self.params.register_params(*specs)
         return self
 
-    def register_command(self, spec: SpecCommand) -> Self:
+    def register_command(self, spec: CommandSpec) -> Self:
         """Register one command specification.
 
         Args:
@@ -581,7 +581,7 @@ class ParserBuilder:
             >>> app = ParserBuilder(prog="demo")
             >>> _ = (
             ...     app.command("run", help="Run")
-            ...     .group(EnumGroupKey.GENERAL)
+            ...     .group(GroupKey.GENERAL)
             ...     .add_argument("--dry-run", action="store_true")
             ...     .end()
             ...     .done()
@@ -625,7 +625,7 @@ class ParserBuilder:
             should_require_command: Whether command selection is mandatory.
             should_include_group_in_help: Whether to prefix help by command group.
             should_sort_specs: Whether command specs are sorted.
-            should_apply_param_keys: Whether ``SpecCommand.param_keys`` are materialized.
+            should_apply_param_keys: Whether ``CommandSpec.param_keys`` are materialized.
 
         Returns:
             argparse.ArgumentParser: The underlying parser.

@@ -98,14 +98,14 @@ _PT_NAME_KEYS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
-class SpecFastaHeader:
+class FastaHeaderRecord:
     id: str
     symbol: str
     name: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class SpecHeaderParsingRule:
+class HeaderParsingRuleSpec:
     """
     private header rule, e.g.
     pattern = re.compile(r"^CUSTOM\\|(?P<id>[^|]+)\\|(?P<symbol>[^|]+)$")
@@ -118,21 +118,21 @@ class SpecHeaderParsingRule:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecMwResult:
+class MwRecord:
     mw_kda: float | None
     cnt_sanitized_chars: int
     cnt_replaced_chars: int
     is_empty_after_sanitize: bool
 
 
-L_FALLBACK_HEADER_PARSING_RULES: list[SpecHeaderParsingRule] = [
-    SpecHeaderParsingRule(pattern=_RE_UNIPROT),
-    SpecHeaderParsingRule(pattern=_RE_NCBI_GI_REF),
-    SpecHeaderParsingRule(pattern=_RE_NCBI_GI_SPTR),
-    SpecHeaderParsingRule(pattern=_RE_NCBI_GI_ONLY, symbol_group=""),
-    SpecHeaderParsingRule(pattern=_RE_IPI),
-    SpecHeaderParsingRule(pattern=_RE_GNL),
-    SpecHeaderParsingRule(pattern=_RE_OTHERS),
+L_FALLBACK_HEADER_PARSING_RULES: list[HeaderParsingRuleSpec] = [
+    HeaderParsingRuleSpec(pattern=_RE_UNIPROT),
+    HeaderParsingRuleSpec(pattern=_RE_NCBI_GI_REF),
+    HeaderParsingRuleSpec(pattern=_RE_NCBI_GI_SPTR),
+    HeaderParsingRuleSpec(pattern=_RE_NCBI_GI_ONLY, symbol_group=""),
+    HeaderParsingRuleSpec(pattern=_RE_IPI),
+    HeaderParsingRuleSpec(pattern=_RE_GNL),
+    HeaderParsingRuleSpec(pattern=_RE_OTHERS),
 ]
 # #endregion
 ################################################################################
@@ -140,7 +140,7 @@ L_FALLBACK_HEADER_PARSING_RULES: list[SpecHeaderParsingRule] = [
 
 
 # #tag FastaHeader
-def _extract_header_info(header: dict[str, Any]) -> SpecFastaHeader:
+def _extract_header_info(header: dict[str, Any]) -> FastaHeaderRecord:
     """
     Best-effort mapping from Pyteomics parse() dict to (ID, Name).
 
@@ -169,12 +169,12 @@ def _extract_header_info(header: dict[str, Any]) -> SpecFastaHeader:
             name_compound = obj_value.strip()
             break
 
-    return SpecFastaHeader(id=id_parsed, symbol=symbol_compound, name=name_compound)
+    return FastaHeaderRecord(id=id_parsed, symbol=symbol_compound, name=name_compound)
 
 
 def _parse_header_with_rules(
-    header: str, rules_fallback: Sequence[SpecHeaderParsingRule]
-) -> SpecFastaHeader:
+    header: str, rules_fallback: Sequence[HeaderParsingRuleSpec]
+) -> FastaHeaderRecord:
     """Parse header using fallback rules."""
     id_parsed = symbol_compound = name_compound = ""
     for _rule in rules_fallback:
@@ -201,22 +201,22 @@ def _parse_header_with_rules(
             # First match wins: avoid extra regex work and accidental overrides.
             break
 
-    return SpecFastaHeader(id=id_parsed, symbol=symbol_compound, name=name_compound)
+    return FastaHeaderRecord(id=id_parsed, symbol=symbol_compound, name=name_compound)
 
 
 def parse_fasta_header(
     header: str | None,
-    rules_fallback: Sequence[SpecHeaderParsingRule],
-) -> SpecFastaHeader:
+    rules_fallback: Sequence[HeaderParsingRuleSpec],
+) -> FastaHeaderRecord:
     """
     Parse a FASTA header with Pyteomics priority, and private-rule backfill.
     """
     if header is None:
-        return SpecFastaHeader(id="", symbol="", name="")
+        return FastaHeaderRecord(id="", symbol="", name="")
 
     header = header.strip()
     # 1) Pyteomics first.
-    spec_header_parsed = SpecFastaHeader(id="", symbol="", name="")
+    spec_header_parsed = FastaHeaderRecord(id="", symbol="", name="")
     try:
         header_info = cast(dict[str, Any], pt_fasta.parse(header, flavor="auto"))
         spec_header_parsed = _extract_header_info(header_info)
@@ -233,7 +233,7 @@ def parse_fasta_header(
     if is_fallback_rules_needed and rules_fallback:
         spec_header_fallback = _parse_header_with_rules(header, rules_fallback)
     else:
-        spec_header_fallback = SpecFastaHeader(id="", symbol="", name="")
+        spec_header_fallback = FastaHeaderRecord(id="", symbol="", name="")
 
     # 3) Merge with Pyteomics priority.
     if (
@@ -244,14 +244,14 @@ def parse_fasta_header(
         or spec_header_fallback.symbol
         or spec_header_fallback.name
     ):
-        return SpecFastaHeader(
+        return FastaHeaderRecord(
             id=spec_header_parsed.id or spec_header_fallback.id or header,
             symbol=spec_header_parsed.symbol or spec_header_fallback.symbol,
             name=spec_header_parsed.name or spec_header_fallback.name,
         )
 
     # 4) Last resort: keep original header as ID.
-    return SpecFastaHeader(id=header, symbol="", name="")
+    return FastaHeaderRecord(id=header, symbol="", name="")
 
 
 # #tag Gene
@@ -279,19 +279,19 @@ def _sanitize_protein_sequence(seq: str) -> tuple[str, int, int]:
     return seq_sanitized, cnt_removed_chars, cnt_replaced_chars
 
 
-def calculate_mw_kda(seq: str) -> SpecMwResult:
+def calculate_mw_kda(seq: str) -> MwRecord:
     seq_sanitized, cnt_removed_chars, cnt_replaced_chars = _sanitize_protein_sequence(
         seq
     )
     if not seq_sanitized:
-        return SpecMwResult(
+        return MwRecord(
             mw_kda=None,
             cnt_sanitized_chars=cnt_removed_chars,
             cnt_replaced_chars=cnt_replaced_chars,
             is_empty_after_sanitize=True,
         )
     mw_da = molecular_weight(seq_sanitized, seq_type="protein")
-    return SpecMwResult(
+    return MwRecord(
         mw_kda=round(mw_da / 1000.0, 3),
         cnt_sanitized_chars=cnt_removed_chars,
         cnt_replaced_chars=cnt_replaced_chars,
@@ -321,7 +321,7 @@ def _write_rows_to_parquet(
 def read_fasta(
     files_in: list[os.PathLike[str]] | list[str] | os.PathLike[str] | str,
     *,
-    rules_fallback: Sequence[SpecHeaderParsingRule] | None | Literal[False] = None,
+    rules_fallback: Sequence[HeaderParsingRuleSpec] | None | Literal[False] = None,
     should_include_sequence: bool = False,
     should_deduplicate: bool = True,
     dir_tmp: Path | str | None = None,
@@ -340,7 +340,7 @@ def read_fasta(
     Args:
         files_in (list[os.PathLike[str]] | list[str] | os.PathLike[str] | str):
             One or more FASTA file paths.
-        rules_fallback (Sequence[SpecHeaderParsingRule] | None | Literal[False], optional):
+        rules_fallback (Sequence[HeaderParsingRuleSpec] | None | Literal[False], optional):
             Header parsing fallback rules. Use ``None`` to apply the module defaults,
             or ``False`` to disable fallbacks.
             Defaults to None.
@@ -433,7 +433,7 @@ def read_fasta(
                         protein_id_parsed,
                         e,
                     )
-                    spec_mw_result = SpecMwResult(
+                    spec_mw_result = MwRecord(
                         mw_kda=None,
                         cnt_sanitized_chars=0,
                         cnt_replaced_chars=0,

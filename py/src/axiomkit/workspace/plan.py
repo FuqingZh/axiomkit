@@ -50,7 +50,7 @@ class WorkspacePaths:
 
 
 @dataclass(frozen=True, slots=True)
-class SpecWorkspaceLayout:
+class WorkspaceLayoutSpec:
     """Workspace layout contract with normalized directory mappings."""
 
     dirs: Sequence[str] | Mapping[str, str] = DEFAULT_WORKSPACE_DIRS
@@ -97,14 +97,14 @@ class SpecWorkspaceLayout:
 
 
 @dataclass(frozen=True, slots=True)
-class ReportWorkspaceCheck:
+class WorkspaceCheckReport:
     ok: bool
     errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class ReportWorkspaceApply:
+class WorkspaceApplyReport:
     ok: bool
     paths: WorkspacePaths
     created: tuple[Path, ...] = ()
@@ -123,17 +123,17 @@ class WorkspacePlan:
         self,
         dir_root: Path,
         *,
-        spec: SpecWorkspaceLayout | None = None,
+        spec: WorkspaceLayoutSpec | None = None,
     ) -> None:
-        self.spec = spec or SpecWorkspaceLayout()
+        self.spec = spec or WorkspaceLayoutSpec()
         errors = list(self.spec.validate())
         self.paths = self.spec.to_paths(dir_root=dir_root)
-        self.report_check = ReportWorkspaceCheck(
+        self.report_check = WorkspaceCheckReport(
             ok=not errors,
             errors=tuple(errors),
         )
 
-    def apply(self) -> ReportWorkspaceApply:
+    def apply(self) -> WorkspaceApplyReport:
         if not self.report_check.ok:
             raise ValueError(
                 "Workspace plan is invalid:\n"
@@ -158,7 +158,7 @@ class WorkspacePlan:
             except Exception as exc:
                 errors.append(f"{path}: {exc}")
 
-        return ReportWorkspaceApply(
+        return WorkspaceApplyReport(
             ok=not errors,
             paths=self.paths,
             created=tuple(created_paths),
