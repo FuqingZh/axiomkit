@@ -28,7 +28,7 @@ repository workflow.
 | `calculate_` | deterministic numeric calculation | numeric result |
 | `derive_` | derive structure, fields, or non-scalar artifacts | structural result |
 | `estimate_` | approximate numeric value | approximation allowed |
-| `infer_` | infer discrete label, enum, or categorical property | discrete result only |
+| `infer_` | infer latent property, classification, schema guess, or structured interpretation from incomplete evidence | not for plain boolean checks or direct numeric computation |
 
 ### Construction
 
@@ -42,7 +42,7 @@ repository workflow.
 
 | Prefix | Use | Notes |
 | --- | --- | --- |
-| `parse_` | text, headers, or lightweight metadata to structure | parsing to structure |
+| `parse_` | textual or syntactic representation to structured form | parsing to structure |
 | `decode_` | encoded representation to raw value | encoded to raw |
 | `encode_` | raw value to encoded representation | raw to encoded |
 
@@ -86,7 +86,7 @@ repository workflow.
 | --- | --- | --- |
 | `copy_` | copy or migrate objects or filesystem resources | object or filesystem copying |
 | `read_` | read and parse into an object | materialized read |
-| `scan_` | lazy, lightweight, or metadata-first read | avoid full materialization by default |
+| `scan_` | lazy, deferred, or metadata-first access | use when the API intentionally avoids full materialization by default |
 | `sink_` | truly streaming write without full materialization | streaming output only |
 | `write_` | serialize and write an object | non-streaming persistence |
 
@@ -97,23 +97,38 @@ repository workflow.
 | `prepare_` | preparation step |
 | `run_` | main workflow step |
 | `finalize_` | finalization step |
-| `render_` | presentation rendering |
-| `report_` | reporting output |
+| `summarize_` | reduce data or structure into a concise overview, aggregate description, or summary table |
+| `plot_` | construct a plot or plotting object from data or specification |
+| `render_` | render an already-defined presentation object or spec for display without implicit persistence |
+| `report_` | assemble a human-oriented report artifact such as text, markdown, HTML, or tabular review output without implicit persistence |
 
 ## Naming Boundaries
 
 | Boundary | Use | Avoid |
 | --- | --- | --- |
-| `infer_` | discrete results such as `Enum` or `Literal[...]`; if multiple fields are needed, return a clearly named `Spec*` with discrete fields | plain boolean predicates |
+| `infer_` | evidence-based interpretation, classification, schema guess, or structured inference result | plain boolean predicates, direct numeric computation, or pure structural reshaping without uncertainty |
 | `is_` / `should_` | `is_` for factual `bool` checks; `should_` for policy decisions | using `infer_` for boolean checks |
 | `calculate_` / `derive_` | `calculate_` for numeric statistics or measurements; `derive_` for structure, fields, or schemas | mixing numeric outputs into `derive_` without structural intent |
 | `create_` / `generate_` | `create_` for a single object; `generate_` for batch or sequence output | using `generate_` for one-off construction |
-| `read_` / `scan_` | `read_` for materialized parsing; `scan_` for lazy, lightweight, or metadata-first access | materializing the primary payload by default in `scan_` |
+| `read_` / `scan_` | `read_` for materialized parsing; `scan_` for lazy, deferred, or metadata-first access | materializing the primary payload by default in `scan_` |
 | `write_` / `sink_` | `write_` for ordinary serialization and persistence; `sink_` for truly streaming output | using `sink_` for non-streaming writes |
 | `select_` / `filter_` | `select_` for projection or reordering; `filter_` for predicates | mixing projection into `filter_` or predicates into `select_` |
-| `sanitize_` | repair invalid input so it can be processed | business filtering or row dropping |
+| `sanitize_` | minimally repair invalid input so it can be processed while preserving semantics when possible | business filtering, row dropping, or destructive rewriting hidden behind `sanitize_` |
 | `center_` / `scale_` / `standardize_` / `normalize_` | prefer the specific transform name when semantics are clear | defaulting to `normalize_` when a more precise prefix fits |
-| `validate_` | strong validation; light I/O such as existence checks is acceptable | heavy I/O that belongs in `read_` or `write_` |
+| `validate_` | strong validation; metadata-only or existence-level checks are acceptable | full payload parsing or materialization that belongs in `read_` or `scan_` |
+| `summarize_` / `report_` | `summarize_` reduces source data into an overview; `report_` assembles a human-facing review artifact | using `report_` as a catch-all for low-level serialization or raw aggregation |
+
+## Type Naming
+
+Prefer domain-first type names. Let the name answer what the object is, then
+use a suffix only when a role word adds real semantic value.
+
+- Prefer `*Spec`, `*Report`, `*Builder`, `*Buffer`, and `*Record` suffixes.
+- Prefer domain words such as `Kind`, `Mode`, `State`, `Level`, or `Format`
+  over mechanical `*Enum` names when they express the closed set naturally.
+- Omit `Enum` entirely when the domain name is already clear enough.
+- Avoid prefix forms such as `Spec*`, `Report*`, `Buffer*`, or `Record*`
+  unless a generated-code or tooling constraint explicitly requires them.
 
 ## Public Method Boundaries
 
@@ -123,7 +138,8 @@ the prefix rules above.
 
 - `close()`: canonical resource termination or commit method
 - `run()`: main execution entry for runnable objects
-- `render()` / `report()`: produce presentation objects without implicit writes
+- `render()`: produce display or presentation output without implicit writes
+- `report()`: produce a human-oriented summary or report artifact without implicit writes
 - `build()`: allowed as the terminal method on `*Builder` types
 - `from_*()` / `make()`: allowed as classmethod factories
 - `add_*`, `select_*`, `group()`, `command()`, `done()`, `end()`, `with_*`:
@@ -134,6 +150,10 @@ Prefer module-level functions over generic public methods such as:
 - `save`, `load`, `export`, `dump`
 - `execute`, `start`, `stop`, `finish`, `shutdown`, `dispose`
 - `process`, `do`, `get`, `show`
+
+At module scope, prefer `create_`, `generate_`, `derive_`, `plan_`, or other
+semantic prefixes over `build_...`. Reserve `build()` primarily for the
+terminal method on `*Builder` types.
 
 Language-level protocol essentials are allowed where applicable.
 
@@ -158,11 +178,13 @@ Internal names are a readability aid, not a rigid contract.
   `set_...`, and `fn_...` when they improve clarity.
 - For local variables, prefer clear domain names; short container hints such as
   `df_...`, `dt_...`, or `map_...` are optional when they materially improve
-  scan speed.
+  scan speed. Do not cargo-cult container prefixes onto already-clear names.
 - Avoid generic names such as `obj`, `tmp`, `x`, or `value` when a concrete
   role is available.
-- Loop variables may use short transient prefixes such as `_sheet`, `_name`,
-  `.sheet`, or `.name`, but do not force them when a plain semantic name reads
+- In Python and Rust, short transient loop placeholders such as `_sheet` or
+  `_name` are acceptable when intentionally temporary.
+- In R, `.sheet` or `.name` placeholders are acceptable in the same role.
+- Do not force marker prefixes when a plain semantic loop variable reads
   better.
 
 ## Public-facing Schema and Header Naming
@@ -176,6 +198,10 @@ Internal names are a readability aid, not a rigid contract.
 
 ## Workflow
 
+- Keep the business-critical path shallow, direct, and linearly readable.
+- Do not introduce wrapper layers whose only effect is renaming or argument
+  forwarding without narrowing semantics, stabilizing contracts, or reducing
+  duplication.
 - Keep API changes minimal and explicit.
 - Add or update tests with each behavior change.
 - Keep docs and examples in sync with public API.
