@@ -35,27 +35,27 @@ impl CopyReport {
 
     /// Machine-readable counters.
     pub fn to_dict(&self) -> BTreeMap<String, u64> {
-        let mut dict_counts = BTreeMap::new();
-        dict_counts.insert("cnt_matched".to_string(), self.cnt_matched);
-        dict_counts.insert("cnt_scanned".to_string(), self.cnt_scanned);
-        dict_counts.insert("cnt_copied".to_string(), self.cnt_copied);
-        dict_counts.insert("cnt_skipped".to_string(), self.cnt_skipped);
-        dict_counts.insert("cnt_errors".to_string(), self.error_count() as u64);
-        dict_counts.insert("cnt_warnings".to_string(), self.warning_count() as u64);
-        dict_counts
+        let mut counts = BTreeMap::new();
+        counts.insert("cnt_matched".to_string(), self.cnt_matched);
+        counts.insert("cnt_scanned".to_string(), self.cnt_scanned);
+        counts.insert("cnt_copied".to_string(), self.cnt_copied);
+        counts.insert("cnt_skipped".to_string(), self.cnt_skipped);
+        counts.insert("cnt_errors".to_string(), self.error_count() as u64);
+        counts.insert("cnt_warnings".to_string(), self.warning_count() as u64);
+        counts
     }
 
     /// Human-readable one-line summary.
     pub fn format(&self, prefix: &str) -> String {
-        let dict_counts = self.to_dict();
+        let counts = self.to_dict();
         format!(
             "{prefix} matched={} scanned={} copied={} skipped={} errors={} warnings={}",
-            dict_counts["cnt_matched"],
-            dict_counts["cnt_scanned"],
-            dict_counts["cnt_copied"],
-            dict_counts["cnt_skipped"],
-            dict_counts["cnt_errors"],
-            dict_counts["cnt_warnings"]
+            counts["cnt_matched"],
+            counts["cnt_scanned"],
+            counts["cnt_copied"],
+            counts["cnt_skipped"],
+            counts["cnt_errors"],
+            counts["cnt_warnings"]
         )
     }
 }
@@ -87,9 +87,9 @@ impl CopyReportBuilder {
     /// Increment one or more named counters by `value`.
     ///
     /// Unknown names are ignored intentionally to keep call-sites concise.
-    pub fn add_counts(&mut self, field_names: &[&str], value: u64) {
-        for field_name in field_names {
-            match *field_name {
+    pub fn add_counts(&mut self, fields: &[&str], value: u64) {
+        for _field in fields {
+            match *_field {
                 "cnt_matched" => self.cnt_matched += value,
                 "cnt_scanned" => self.cnt_scanned += value,
                 "cnt_copied" => self.cnt_copied += value,
@@ -157,13 +157,13 @@ mod tests {
             errors: vec![],
         };
 
-        let dict_counts = report.to_dict();
-        assert_eq!(dict_counts["cnt_matched"], 5);
-        assert_eq!(dict_counts["cnt_scanned"], 8);
-        assert_eq!(dict_counts["cnt_copied"], 3);
-        assert_eq!(dict_counts["cnt_skipped"], 2);
-        assert_eq!(dict_counts["cnt_errors"], 0);
-        assert_eq!(dict_counts["cnt_warnings"], 1);
+        let counts = report.to_dict();
+        assert_eq!(counts["cnt_matched"], 5);
+        assert_eq!(counts["cnt_scanned"], 8);
+        assert_eq!(counts["cnt_copied"], 3);
+        assert_eq!(counts["cnt_skipped"], 2);
+        assert_eq!(counts["cnt_errors"], 0);
+        assert_eq!(counts["cnt_warnings"], 1);
 
         let txt = report.format("[COPY]");
         assert_eq!(

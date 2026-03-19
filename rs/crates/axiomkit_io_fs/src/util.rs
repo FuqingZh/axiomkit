@@ -60,30 +60,30 @@ fn _compile(
     match rule_pattern {
         CopyPatternMode::Literal => Ok(Some(TypeCopyPatternSeq::Literal(patterns.to_vec()))),
         CopyPatternMode::Glob => {
-            let mut l_glob = Vec::with_capacity(patterns.len());
-            for pattern in patterns {
-                let matcher = Glob::new(pattern)
+            let mut glob_matchers = Vec::with_capacity(patterns.len());
+            for _pattern in patterns {
+                let matcher = Glob::new(_pattern)
                     .map_err(|e| {
                         CopyTreeError::InvalidPattern(format!(
                             "Invalid pattern in include/exclude: {e}"
                         ))
                     })?
                     .compile_matcher();
-                l_glob.push(matcher);
+                glob_matchers.push(matcher);
             }
-            Ok(Some(TypeCopyPatternSeq::Glob(l_glob)))
+            Ok(Some(TypeCopyPatternSeq::Glob(glob_matchers)))
         }
         CopyPatternMode::Regex => {
-            let mut l_regex = Vec::with_capacity(patterns.len());
-            for pattern in patterns {
-                let regex = Regex::new(pattern).map_err(|e| {
+            let mut regexes = Vec::with_capacity(patterns.len());
+            for _pattern in patterns {
+                let regex = Regex::new(_pattern).map_err(|e| {
                     CopyTreeError::InvalidPattern(format!(
                         "Invalid pattern in include/exclude: {e}"
                     ))
                 })?;
-                l_regex.push(regex);
+                regexes.push(regex);
             }
-            Ok(Some(TypeCopyPatternSeq::Regex(l_regex)))
+            Ok(Some(TypeCopyPatternSeq::Regex(regexes)))
         }
     }
 }
@@ -223,8 +223,8 @@ pub(crate) fn validate_destination_path_safety(
             )
         })?;
     let mut path_cursor = path_dir_dst_root_abs.clone();
-    for part_rel in path_parent_rel.components() {
-        path_cursor.push(part_rel.as_os_str());
+    for _part_rel in path_parent_rel.components() {
+        path_cursor.push(_part_rel.as_os_str());
         match fs::symlink_metadata(&path_cursor) {
             Ok(meta_cursor) => {
                 if meta_cursor.file_type().is_symlink() {
@@ -275,13 +275,13 @@ pub(crate) fn should_error_broken_symlink(
 pub(crate) fn should_skip_dir_conflict(
     path_dst: &Path,
     rule_conflict: CopyDirectoryConflictStrategy,
-    builder_cp_report: &mut CopyReportBuilder,
+    report_builder: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
         return false;
     }
     if path_dst.is_file() {
-        builder_cp_report.add_error(
+        report_builder.add_error(
             path_dst.to_path_buf(),
             format!(
                 "Destination is a file, expected directory: {}",
@@ -293,11 +293,11 @@ pub(crate) fn should_skip_dir_conflict(
 
     match rule_conflict {
         CopyDirectoryConflictStrategy::Skip => {
-            builder_cp_report.add_skipped();
+            report_builder.add_skipped();
             true
         }
         CopyDirectoryConflictStrategy::Error => {
-            builder_cp_report.add_error(
+            report_builder.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
@@ -310,13 +310,13 @@ pub(crate) fn should_skip_dir_conflict(
 pub(crate) fn should_skip_file_conflict(
     path_dst: &Path,
     rule_conflict: CopyFileConflictStrategy,
-    builder_cp_report: &mut CopyReportBuilder,
+    report_builder: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
         return false;
     }
     if path_dst.is_dir() {
-        builder_cp_report.add_error(
+        report_builder.add_error(
             path_dst.to_path_buf(),
             format!("Destination is a directory: {}", path_dst.display()),
         );
@@ -325,11 +325,11 @@ pub(crate) fn should_skip_file_conflict(
 
     match rule_conflict {
         CopyFileConflictStrategy::Skip => {
-            builder_cp_report.add_skipped();
+            report_builder.add_skipped();
             true
         }
         CopyFileConflictStrategy::Error => {
-            builder_cp_report.add_error(
+            report_builder.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
@@ -342,12 +342,12 @@ pub(crate) fn should_skip_file_conflict(
 pub(crate) fn create_symbolic_link(
     path_src: &Path,
     path_dst: &Path,
-    builder_cp_report: &mut CopyReportBuilder,
+    report_builder: &mut CopyReportBuilder,
 ) {
     let target = match fs::read_link(path_src) {
         Ok(v) => v,
         Err(e) => {
-            builder_cp_report.add_error(path_dst.to_path_buf(), e.to_string());
+            report_builder.add_error(path_dst.to_path_buf(), e.to_string());
             return;
         }
     };
@@ -356,8 +356,8 @@ pub(crate) fn create_symbolic_link(
     {
         use std::os::unix::fs::symlink;
         match symlink(&target, path_dst) {
-            Ok(_) => builder_cp_report.add_copied(),
-            Err(e) => builder_cp_report.add_error(path_dst.to_path_buf(), e.to_string()),
+            Ok(_) => report_builder.add_copied(),
+            Err(e) => report_builder.add_error(path_dst.to_path_buf(), e.to_string()),
         }
     }
     #[cfg(windows)]
@@ -369,14 +369,14 @@ pub(crate) fn create_symbolic_link(
             symlink_file(&target, path_dst)
         };
         match res {
-            Ok(_) => builder_cp_report.add_copied(),
-            Err(e) => builder_cp_report.add_error(path_dst.to_path_buf(), e.to_string()),
+            Ok(_) => report_builder.add_copied(),
+            Err(e) => report_builder.add_error(path_dst.to_path_buf(), e.to_string()),
         }
     }
     #[cfg(not(any(unix, windows)))]
     {
         let _ = target;
-        builder_cp_report.add_error(
+        report_builder.add_error(
             path_dst.to_path_buf(),
             "Symbolic links are unsupported on this platform".to_string(),
         );
@@ -384,44 +384,44 @@ pub(crate) fn create_symbolic_link(
 }
 
 pub(crate) fn copy_file_with_metadata(
-    path_file_src: &Path,
-    path_file_dst: &Path,
+    file_src_path: &Path,
+    file_dst_path: &Path,
 ) -> Result<(), io::Error> {
-    fs::copy(path_file_src, path_file_dst)?;
+    fs::copy(file_src_path, file_dst_path)?;
     #[cfg(target_os = "linux")]
     {
-        apply_metadata_linux(path_file_src, path_file_dst)?;
+        apply_metadata_linux(file_src_path, file_dst_path)?;
     }
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
-fn apply_metadata_linux(path_file_src: &Path, path_file_dst: &Path) -> Result<(), io::Error> {
+fn apply_metadata_linux(file_src_path: &Path, file_dst_path: &Path) -> Result<(), io::Error> {
     use filetime::{FileTime, set_file_times};
 
-    let stat_src = fs::metadata(path_file_src)?;
-    fs::set_permissions(path_file_dst, stat_src.permissions())?;
+    let src_metadata = fs::metadata(file_src_path)?;
+    fs::set_permissions(file_dst_path, src_metadata.permissions())?;
 
-    let file_time_access = FileTime::from_last_access_time(&stat_src);
-    let file_time_modify = FileTime::from_last_modification_time(&stat_src);
-    set_file_times(path_file_dst, file_time_access, file_time_modify)?;
+    let file_time_access = FileTime::from_last_access_time(&src_metadata);
+    let file_time_modify = FileTime::from_last_modification_time(&src_metadata);
+    set_file_times(file_dst_path, file_time_access, file_time_modify)?;
 
-    copy_xattrs_linux(path_file_src, path_file_dst);
+    copy_xattrs_linux(file_src_path, file_dst_path);
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
-fn copy_xattrs_linux(path_file_src: &Path, path_file_dst: &Path) {
-    let iter_xattr_names = match xattr::list(path_file_src) {
+fn copy_xattrs_linux(file_src_path: &Path, file_dst_path: &Path) {
+    let iter_xattr_names = match xattr::list(file_src_path) {
         Ok(v) => v,
         Err(_) => return,
     };
 
-    for name in iter_xattr_names {
-        let Some(raw_value) = xattr::get(path_file_src, &name).ok().flatten() else {
+    for _name in iter_xattr_names {
+        let Some(raw_value) = xattr::get(file_src_path, &_name).ok().flatten() else {
             continue;
         };
-        let _ = xattr::set(path_file_dst, &name, &raw_value);
+        let _ = xattr::set(file_dst_path, &_name, &raw_value);
     }
 }
 
@@ -440,13 +440,13 @@ pub(crate) fn is_depth_within_limit(
 }
 
 pub(crate) fn calculate_worker_limit(workers_max: Option<usize>) -> usize {
-    let n_cpu = std::thread::available_parallelism()
+    let cpu_count = std::thread::available_parallelism()
         .map(|v| v.get())
         .unwrap_or(1);
 
     match workers_max {
-        Some(n) => n.clamp(1, n_cpu),
-        None => n_cpu.clamp(1, 8),
+        Some(count) => count.clamp(1, cpu_count),
+        None => cpu_count.clamp(1, 8),
     }
 }
 

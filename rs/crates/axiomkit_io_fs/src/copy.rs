@@ -21,34 +21,34 @@ use crate::util::{
 
 #[derive(Debug, Clone)]
 struct DirEntryRecord {
-    path_dir_src_sub: PathBuf,
-    name_dir: String,
-    if_is_symlink: bool,
+    dir_src_path: PathBuf,
+    dir_name: String,
+    is_symlink: bool,
 }
 
 #[derive(Debug, Clone)]
 struct FileEntryRecord {
-    path_file_src: PathBuf,
-    name_file: String,
-    if_is_symlink: bool,
+    file_src_path: PathBuf,
+    file_name: String,
+    is_symlink: bool,
 }
 
 #[derive(Debug, Clone)]
 struct CopyTaskFileSpec {
-    path_file_src: PathBuf,
-    path_file_dst: PathBuf,
+    file_src_path: PathBuf,
+    file_dst_path: PathBuf,
 }
 
 #[derive(Debug)]
 struct CopyContext {
-    path_dir_src: PathBuf,
-    path_dir_dst: PathBuf,
-    spec_cp_options: CopyOptionsSpec,
-    spec_cp_pats: CopyPatternsSpec,
+    dir_src_path: PathBuf,
+    dir_dst_path: PathBuf,
+    copy_options: CopyOptionsSpec,
+    copy_patterns: CopyPatternsSpec,
     workers_max: usize,
-    builder_cp_report: CopyReportBuilder,
-    set_visited_dirs: HashSet<(u64, u64)>,
-    l_tasks_file_copy: Vec<CopyTaskFileSpec>,
+    report_builder: CopyReportBuilder,
+    visited_dirs: HashSet<(u64, u64)>,
+    file_copy_tasks: Vec<CopyTaskFileSpec>,
 }
 
 /// Copy a directory tree from `dir_source` to `dir_destination`.
@@ -73,19 +73,19 @@ struct CopyContext {
 pub fn copy_tree<P, Q>(
     dir_source: P,
     dir_destination: Q,
-    spec_cp_options: CopyOptionsSpec,
+    copy_options: CopyOptionsSpec,
 ) -> Result<CopyReport, CopyTreeError>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
 {
-    let enum_rule_depth_limit = spec_cp_options.rule_depth_limit;
-    if spec_cp_options.depth_limit == Some(0) {
+    let rule_depth_limit = copy_options.rule_depth_limit;
+    if copy_options.depth_limit == Some(0) {
         return Err(CopyTreeError::InvalidDepthLimit(
             "Arg `depth_limit` must be >= 1 or None.".to_string(),
         ));
     }
-    if spec_cp_options.depth_limit.is_none() && enum_rule_depth_limit == CopyDepthLimitMode::Exact {
+    if copy_options.depth_limit.is_none() && rule_depth_limit == CopyDepthLimitMode::Exact {
         return Err(CopyTreeError::InvalidDepthLimit(
             "`depth_limit` is required when depth_mode='exact'.".to_string(),
         ));
@@ -119,153 +119,148 @@ where
         });
     }
 
-    let spec_cp_pats = CopyPatternsSpec::from_raw(
-        spec_cp_options.patterns_include_files.as_deref(),
-        spec_cp_options.patterns_exclude_files.as_deref(),
-        spec_cp_options.patterns_include_dirs.as_deref(),
-        spec_cp_options.patterns_exclude_dirs.as_deref(),
-        spec_cp_options.rule_pattern,
+    let copy_patterns = CopyPatternsSpec::from_raw(
+        copy_options.patterns_include_files.as_deref(),
+        copy_options.patterns_exclude_files.as_deref(),
+        copy_options.patterns_include_dirs.as_deref(),
+        copy_options.patterns_exclude_dirs.as_deref(),
+        copy_options.rule_pattern,
     )?;
-    let workers_max = calculate_worker_limit(spec_cp_options.workers_max);
+    let workers_max = calculate_worker_limit(copy_options.workers_max);
 
-    let mut spec_cp_ctx = CopyContext {
-        path_dir_src: path_dir_src.clone(),
-        path_dir_dst,
-        spec_cp_options,
-        spec_cp_pats,
+    let mut copy_ctx = CopyContext {
+        dir_src_path: path_dir_src.clone(),
+        dir_dst_path: path_dir_dst,
+        copy_options,
+        copy_patterns,
         workers_max,
-        builder_cp_report: CopyReportBuilder::default(),
-        set_visited_dirs: HashSet::new(),
-        l_tasks_file_copy: Vec::new(),
+        report_builder: CopyReportBuilder::default(),
+        visited_dirs: HashSet::new(),
+        file_copy_tasks: Vec::new(),
     };
 
-    walk_directory(&path_dir_src, 0, &mut spec_cp_ctx);
-    flush_file_copy_tasks(&mut spec_cp_ctx);
-    Ok(spec_cp_ctx.builder_cp_report.build())
+    walk_directory(&path_dir_src, 0, &mut copy_ctx);
+    flush_file_copy_tasks(&mut copy_ctx);
+    Ok(copy_ctx.report_builder.build())
 }
 
-fn should_error_unsafe_destination_path(path_dst: &Path, spec_cp_ctx: &mut CopyContext) -> bool {
-    if let Err(message) = validate_destination_path_safety(path_dst, &spec_cp_ctx.path_dir_dst) {
-        spec_cp_ctx
-            .builder_cp_report
+fn should_error_unsafe_destination_path(path_dst: &Path, copy_ctx: &mut CopyContext) -> bool {
+    if let Err(message) = validate_destination_path_safety(path_dst, &copy_ctx.dir_dst_path) {
+        copy_ctx
+            .report_builder
             .add_error(path_dst.to_path_buf(), message);
         return true;
     }
     false
 }
 
-fn flush_file_copy_tasks(spec_cp_ctx: &mut CopyContext) {
-    let l_tasks_file_copy = std::mem::take(&mut spec_cp_ctx.l_tasks_file_copy);
-    if l_tasks_file_copy.is_empty() {
+fn flush_file_copy_tasks(copy_ctx: &mut CopyContext) {
+    let file_copy_tasks = std::mem::take(&mut copy_ctx.file_copy_tasks);
+    if file_copy_tasks.is_empty() {
         return;
     }
 
-    let apply_results = |l_results: Vec<(PathBuf, Result<(), String>)>,
-                         builder_cp_report: &mut CopyReportBuilder| {
-        for (path_file_dst, res_copy) in l_results {
-            match res_copy {
-                Ok(_) => builder_cp_report.add_copied(),
-                Err(msg) => builder_cp_report.add_error(path_file_dst, msg),
+    let apply_results = |results: Vec<(PathBuf, Result<(), String>)>,
+                         report_builder: &mut CopyReportBuilder| {
+        for _result in results {
+            let (path_dst, copy_result) = _result;
+            match copy_result {
+                Ok(_) => report_builder.add_copied(),
+                Err(message) => report_builder.add_error(path_dst, message),
             }
         }
     };
 
-    if spec_cp_ctx.workers_max <= 1 {
-        let l_results = l_tasks_file_copy
+    if copy_ctx.workers_max <= 1 {
+        let results = file_copy_tasks
             .into_iter()
-            .map(|spec_task| {
-                let res_copy = validate_destination_path_safety(
-                    &spec_task.path_file_dst,
-                    &spec_cp_ctx.path_dir_dst,
-                )
-                .and_then(|_| {
-                    copy_file_with_metadata(&spec_task.path_file_src, &spec_task.path_file_dst)
-                        .map_err(|e| e.to_string())
-                });
-                (spec_task.path_file_dst, res_copy)
+            .map(|task| {
+                let copy_result =
+                    validate_destination_path_safety(&task.file_dst_path, &copy_ctx.dir_dst_path)
+                        .and_then(|_| {
+                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
+                                .map_err(|e| e.to_string())
+                        });
+                (task.file_dst_path, copy_result)
             })
             .collect::<Vec<_>>();
-        apply_results(l_results, &mut spec_cp_ctx.builder_cp_report);
+        apply_results(results, &mut copy_ctx.report_builder);
         return;
     }
 
     let thread_pool = ThreadPoolBuilder::new()
-        .num_threads(spec_cp_ctx.workers_max)
+        .num_threads(copy_ctx.workers_max)
         .build();
     let Ok(thread_pool) = thread_pool else {
-        spec_cp_ctx.builder_cp_report.add_warning(format!(
+        copy_ctx.report_builder.add_warning(format!(
             "Failed to initialize thread pool (workers={}); fallback to serial copy.",
-            spec_cp_ctx.workers_max
+            copy_ctx.workers_max
         ));
-        let l_results = l_tasks_file_copy
+        let results = file_copy_tasks
             .into_iter()
-            .map(|spec_task| {
-                let res_copy = validate_destination_path_safety(
-                    &spec_task.path_file_dst,
-                    &spec_cp_ctx.path_dir_dst,
-                )
-                .and_then(|_| {
-                    copy_file_with_metadata(&spec_task.path_file_src, &spec_task.path_file_dst)
-                        .map_err(|e| e.to_string())
-                });
-                (spec_task.path_file_dst, res_copy)
+            .map(|task| {
+                let copy_result =
+                    validate_destination_path_safety(&task.file_dst_path, &copy_ctx.dir_dst_path)
+                        .and_then(|_| {
+                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
+                                .map_err(|e| e.to_string())
+                        });
+                (task.file_dst_path, copy_result)
             })
             .collect::<Vec<_>>();
-        apply_results(l_results, &mut spec_cp_ctx.builder_cp_report);
+        apply_results(results, &mut copy_ctx.report_builder);
         return;
     };
 
-    let l_results = thread_pool.install(|| {
-        let path_dir_dst_root = spec_cp_ctx.path_dir_dst.clone();
-        l_tasks_file_copy
+    let results = thread_pool.install(|| {
+        let dir_dst_root = copy_ctx.dir_dst_path.clone();
+        file_copy_tasks
             .into_par_iter()
-            .map(|spec_task| {
-                let res_copy =
-                    validate_destination_path_safety(&spec_task.path_file_dst, &path_dir_dst_root)
-                        .and_then(|_| {
-                            copy_file_with_metadata(
-                                &spec_task.path_file_src,
-                                &spec_task.path_file_dst,
-                            )
-                            .map_err(|e| e.to_string())
-                        });
-                (spec_task.path_file_dst, res_copy)
+            .map(|task| {
+                let copy_result =
+                    validate_destination_path_safety(&task.file_dst_path, &dir_dst_root).and_then(
+                        |_| {
+                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
+                                .map_err(|e| e.to_string())
+                        },
+                    );
+                (task.file_dst_path, copy_result)
             })
             .collect::<Vec<_>>()
     });
-    apply_results(l_results, &mut spec_cp_ctx.builder_cp_report);
+    apply_results(results, &mut copy_ctx.report_builder);
 }
 
-fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut CopyContext) {
-    let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
-    if enum_rule_symlink == CopySymlinkStrategy::Dereference {
+fn walk_directory(path_root: &Path, depth_relative: usize, copy_ctx: &mut CopyContext) {
+    let rule_symlink = copy_ctx.copy_options.rule_symlink;
+    if rule_symlink == CopySymlinkStrategy::Dereference {
         if let Ok(stat_root) = fs::metadata(path_root) {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
-                let tuple_dirs_identifier = (stat_root.dev(), stat_root.ino());
-                if !spec_cp_ctx.set_visited_dirs.insert(tuple_dirs_identifier) {
-                    spec_cp_ctx
-                        .builder_cp_report
+                let dir_identifier = (stat_root.dev(), stat_root.ino());
+                if !copy_ctx.visited_dirs.insert(dir_identifier) {
+                    copy_ctx
+                        .report_builder
                         .add_warning(format!("Symlink loop detected: {}", path_root.display()));
                     return;
                 }
             }
         } else {
-            spec_cp_ctx
-                .builder_cp_report
+            copy_ctx
+                .report_builder
                 .add_warning(format!("Failed to stat directory: {}", path_root.display()));
             return;
         }
     }
 
-    let mut l_dirs: Vec<DirEntryRecord> = Vec::new();
-    let mut l_files: Vec<FileEntryRecord> = Vec::new();
+    let mut dirs: Vec<DirEntryRecord> = Vec::new();
+    let mut files: Vec<FileEntryRecord> = Vec::new();
 
     let iter_entries = match fs::read_dir(path_root) {
         Ok(iter) => iter,
         Err(e) => {
-            spec_cp_ctx.builder_cp_report.add_warning(format!(
+            copy_ctx.report_builder.add_warning(format!(
                 "Failed to read directory {} ({e})",
                 path_root.display()
             ));
@@ -277,7 +272,7 @@ fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut C
         let entry = match _entry_res {
             Ok(v) => v,
             Err(e) => {
-                spec_cp_ctx.builder_cp_report.add_warning(format!(
+                copy_ctx.report_builder.add_warning(format!(
                     "Failed to read directory entry under {} ({e})",
                     path_root.display()
                 ));
@@ -286,304 +281,294 @@ fn walk_directory(path_root: &Path, n_depth_relative: usize, spec_cp_ctx: &mut C
         };
 
         let path_entry = entry.path();
-        let c_name = entry.file_name().to_string_lossy().to_string();
-        let cfg_file_type = match entry.file_type() {
+        let entry_name = entry.file_name().to_string_lossy().to_string();
+        let file_type = match entry.file_type() {
             Ok(v) => v,
             Err(e) => {
-                spec_cp_ctx
-                    .builder_cp_report
+                copy_ctx
+                    .report_builder
                     .add_warning(format!("Failed to inspect {} ({e})", path_entry.display()));
                 continue;
             }
         };
 
-        let b_is_symlink = cfg_file_type.is_symlink();
-        let b_is_dir = cfg_file_type.is_dir() || (b_is_symlink && path_entry.is_dir());
-        if b_is_dir {
-            l_dirs.push(DirEntryRecord {
-                path_dir_src_sub: path_entry,
-                name_dir: c_name,
-                if_is_symlink: b_is_symlink,
+        let is_symlink = file_type.is_symlink();
+        let is_dir = file_type.is_dir() || (is_symlink && path_entry.is_dir());
+        if is_dir {
+            dirs.push(DirEntryRecord {
+                dir_src_path: path_entry,
+                dir_name: entry_name,
+                is_symlink,
             });
-        } else if cfg_file_type.is_file() || b_is_symlink {
-            l_files.push(FileEntryRecord {
-                path_file_src: path_entry,
-                name_file: c_name,
-                if_is_symlink: b_is_symlink,
+        } else if file_type.is_file() || is_symlink {
+            files.push(FileEntryRecord {
+                file_src_path: path_entry,
+                file_name: entry_name,
+                is_symlink,
             });
         } else {
-            spec_cp_ctx
-                .builder_cp_report
+            copy_ctx
+                .report_builder
                 .add_warning(format!("Special file skipped: {}", path_entry.display()));
         }
     }
 
-    l_dirs.sort_by(|a, b| a.name_dir.cmp(&b.name_dir));
-    l_files.sort_by(|a, b| a.name_file.cmp(&b.name_file));
+    dirs.sort_by(|a, b| a.dir_name.cmp(&b.dir_name));
+    files.sort_by(|a, b| a.file_name.cmp(&b.file_name));
 
-    if spec_cp_ctx.spec_cp_pats.patterns_include_dirs.is_some()
-        || spec_cp_ctx.spec_cp_pats.patterns_exclude_dirs.is_some()
+    if copy_ctx.copy_patterns.patterns_include_dirs.is_some()
+        || copy_ctx.copy_patterns.patterns_exclude_dirs.is_some()
     {
-        let enum_rule_pattern = spec_cp_ctx.spec_cp_options.rule_pattern;
-        l_dirs.retain(|d| {
+        let rule_pattern = copy_ctx.copy_options.rule_pattern;
+        dirs.retain(|d| {
             !should_exclude_by_patterns(
-                &d.name_dir,
-                spec_cp_ctx.spec_cp_pats.patterns_include_dirs.as_ref(),
-                spec_cp_ctx.spec_cp_pats.patterns_exclude_dirs.as_ref(),
-                enum_rule_pattern,
+                &d.dir_name,
+                copy_ctx.copy_patterns.patterns_include_dirs.as_ref(),
+                copy_ctx.copy_patterns.patterns_exclude_dirs.as_ref(),
+                rule_pattern,
             )
         });
     }
 
-    let depth_limit = spec_cp_ctx.spec_cp_options.depth_limit;
-    if depth_limit.is_some_and(|n| n_depth_relative >= n) {
-        l_dirs.clear();
+    let depth_limit = copy_ctx.copy_options.depth_limit;
+    if depth_limit.is_some_and(|limit| depth_relative >= limit) {
+        dirs.clear();
     }
 
-    for _dir_entry in l_dirs {
-        let path_next = _dir_entry.path_dir_src_sub.clone();
-        let b_should_descend = handle_dir_entry(_dir_entry, n_depth_relative + 1, spec_cp_ctx);
-        if b_should_descend {
-            walk_directory(&path_next, n_depth_relative + 1, spec_cp_ctx);
+    for _dir_entry in dirs {
+        let path_next = _dir_entry.dir_src_path.clone();
+        let should_descend = handle_dir_entry(_dir_entry, depth_relative + 1, copy_ctx);
+        if should_descend {
+            walk_directory(&path_next, depth_relative + 1, copy_ctx);
         }
     }
 
-    for _file_entry in l_files {
-        handle_file_entry(_file_entry, n_depth_relative + 1, spec_cp_ctx);
+    for _file_entry in files {
+        handle_file_entry(_file_entry, depth_relative + 1, copy_ctx);
     }
 }
 
 fn handle_dir_entry(
-    spec_dir_entry: DirEntryRecord,
+    dir_entry: DirEntryRecord,
     depth_value: usize,
-    spec_cp_ctx: &mut CopyContext,
+    copy_ctx: &mut CopyContext,
 ) -> bool {
-    let depth_limit = spec_cp_ctx.spec_cp_options.depth_limit;
-    let enum_rule_depth_limit = spec_cp_ctx.spec_cp_options.rule_depth_limit;
-    let b_depth_within = is_depth_within_limit(depth_value, depth_limit, enum_rule_depth_limit);
+    let depth_limit = copy_ctx.copy_options.depth_limit;
+    let rule_depth_limit = copy_ctx.copy_options.rule_depth_limit;
+    let is_depth_within = is_depth_within_limit(depth_value, depth_limit, rule_depth_limit);
 
-    let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
-    let enum_rule_conflict_dir = spec_cp_ctx.spec_cp_options.rule_conflict_dir;
-    let enum_rule_conflict_file = spec_cp_ctx.spec_cp_options.rule_conflict_file;
-    let should_keep_tree = spec_cp_ctx.spec_cp_options.should_keep_tree;
-    let should_dry_run = spec_cp_ctx.spec_cp_options.should_dry_run;
+    let rule_symlink = copy_ctx.copy_options.rule_symlink;
+    let rule_conflict_dir = copy_ctx.copy_options.rule_conflict_dir;
+    let rule_conflict_file = copy_ctx.copy_options.rule_conflict_file;
+    let should_keep_tree = copy_ctx.copy_options.should_keep_tree;
+    let should_dry_run = copy_ctx.copy_options.should_dry_run;
 
-    if spec_dir_entry.if_is_symlink {
-        if enum_rule_symlink == CopySymlinkStrategy::SkipSymlinks {
-            if should_keep_tree && b_depth_within {
-                spec_cp_ctx
-                    .builder_cp_report
+    if dir_entry.is_symlink {
+        if rule_symlink == CopySymlinkStrategy::SkipSymlinks {
+            if should_keep_tree && is_depth_within {
+                copy_ctx
+                    .report_builder
                     .add_counts(&["cnt_scanned", "cnt_matched", "cnt_skipped"], 1);
             }
             return false;
         }
 
-        if should_error_broken_symlink(&spec_dir_entry.path_dir_src_sub, enum_rule_symlink) {
-            spec_cp_ctx.builder_cp_report.add_error(
-                spec_dir_entry.path_dir_src_sub.clone(),
-                format!(
-                    "Broken symlink: {}",
-                    spec_dir_entry.path_dir_src_sub.display()
-                ),
+        if should_error_broken_symlink(&dir_entry.dir_src_path, rule_symlink) {
+            copy_ctx.report_builder.add_error(
+                dir_entry.dir_src_path.clone(),
+                format!("Broken symlink: {}", dir_entry.dir_src_path.display()),
             );
-            if should_keep_tree && b_depth_within {
-                spec_cp_ctx
-                    .builder_cp_report
+            if should_keep_tree && is_depth_within {
+                copy_ctx
+                    .report_builder
                     .add_counts(&["cnt_scanned", "cnt_matched"], 1);
             }
             return false;
         }
 
-        if enum_rule_symlink == CopySymlinkStrategy::CopySymlinks {
-            if !b_depth_within {
+        if rule_symlink == CopySymlinkStrategy::CopySymlinks {
+            if !is_depth_within {
                 return false;
             }
-            spec_cp_ctx
-                .builder_cp_report
+            copy_ctx
+                .report_builder
                 .add_counts(&["cnt_scanned", "cnt_matched"], 1);
 
             if should_keep_tree {
                 let path_dir_dst_sub = derive_destination_path(
-                    &spec_dir_entry.path_dir_src_sub,
-                    &spec_dir_entry.name_dir,
-                    &spec_cp_ctx.path_dir_src,
-                    &spec_cp_ctx.path_dir_dst,
+                    &dir_entry.dir_src_path,
+                    &dir_entry.dir_name,
+                    &copy_ctx.dir_src_path,
+                    &copy_ctx.dir_dst_path,
                     should_keep_tree,
                 );
-                if should_error_unsafe_destination_path(&path_dir_dst_sub, spec_cp_ctx) {
+                if should_error_unsafe_destination_path(&path_dir_dst_sub, copy_ctx) {
                     return false;
                 }
 
                 if should_skip_dir_conflict(
                     &path_dir_dst_sub,
-                    enum_rule_conflict_dir,
-                    &mut spec_cp_ctx.builder_cp_report,
+                    rule_conflict_dir,
+                    &mut copy_ctx.report_builder,
                 ) {
                     return false;
                 }
 
-                if enum_rule_conflict_dir == CopyDirectoryConflictStrategy::Merge {
-                    spec_cp_ctx.builder_cp_report.add_warning(format!(
+                if rule_conflict_dir == CopyDirectoryConflictStrategy::Merge {
+                    copy_ctx.report_builder.add_warning(format!(
                         "Merge not applicable to symlink: {}",
                         path_dir_dst_sub.display()
                     ));
-                    spec_cp_ctx.builder_cp_report.add_skipped();
+                    copy_ctx.report_builder.add_skipped();
                     return false;
                 }
 
                 if should_dry_run {
-                    spec_cp_ctx.builder_cp_report.add_skipped();
+                    copy_ctx.report_builder.add_skipped();
                     return false;
                 }
 
                 create_symbolic_link(
-                    &spec_dir_entry.path_dir_src_sub,
+                    &dir_entry.dir_src_path,
                     &path_dir_dst_sub,
-                    &mut spec_cp_ctx.builder_cp_report,
+                    &mut copy_ctx.report_builder,
                 );
                 return false;
             }
 
-            let path_file_dst = spec_cp_ctx.path_dir_dst.join(&spec_dir_entry.name_dir);
-            if should_error_unsafe_destination_path(&path_file_dst, spec_cp_ctx) {
+            let path_file_dst = copy_ctx.dir_dst_path.join(&dir_entry.dir_name);
+            if should_error_unsafe_destination_path(&path_file_dst, copy_ctx) {
                 return false;
             }
             if should_skip_file_conflict(
                 &path_file_dst,
-                enum_rule_conflict_file,
-                &mut spec_cp_ctx.builder_cp_report,
+                rule_conflict_file,
+                &mut copy_ctx.report_builder,
             ) {
                 return false;
             }
 
             if should_dry_run {
-                spec_cp_ctx.builder_cp_report.add_skipped();
+                copy_ctx.report_builder.add_skipped();
                 return false;
             }
 
             create_symbolic_link(
-                &spec_dir_entry.path_dir_src_sub,
+                &dir_entry.dir_src_path,
                 &path_file_dst,
-                &mut spec_cp_ctx.builder_cp_report,
+                &mut copy_ctx.report_builder,
             );
             return false;
         }
     }
 
-    if should_keep_tree && b_depth_within {
-        spec_cp_ctx
-            .builder_cp_report
+    if should_keep_tree && is_depth_within {
+        copy_ctx
+            .report_builder
             .add_counts(&["cnt_scanned", "cnt_matched"], 1);
         let path_dir_dst_sub = derive_destination_path(
-            &spec_dir_entry.path_dir_src_sub,
-            &spec_dir_entry.name_dir,
-            &spec_cp_ctx.path_dir_src,
-            &spec_cp_ctx.path_dir_dst,
+            &dir_entry.dir_src_path,
+            &dir_entry.dir_name,
+            &copy_ctx.dir_src_path,
+            &copy_ctx.dir_dst_path,
             should_keep_tree,
         );
-        if should_error_unsafe_destination_path(&path_dir_dst_sub, spec_cp_ctx) {
+        if should_error_unsafe_destination_path(&path_dir_dst_sub, copy_ctx) {
             return false;
         }
 
         if should_skip_dir_conflict(
             &path_dir_dst_sub,
-            enum_rule_conflict_dir,
-            &mut spec_cp_ctx.builder_cp_report,
+            rule_conflict_dir,
+            &mut copy_ctx.report_builder,
         ) {
             return false;
         }
 
         if should_dry_run {
-            spec_cp_ctx.builder_cp_report.add_skipped();
+            copy_ctx.report_builder.add_skipped();
         } else if let Err(e) = fs::create_dir_all(&path_dir_dst_sub) {
-            spec_cp_ctx
-                .builder_cp_report
+            copy_ctx
+                .report_builder
                 .add_error(path_dir_dst_sub, e.to_string());
             return false;
         } else {
-            spec_cp_ctx.builder_cp_report.add_copied();
+            copy_ctx.report_builder.add_copied();
         }
     }
 
     true
 }
 
-fn handle_file_entry(
-    spec_file_entry: FileEntryRecord,
-    depth_value: usize,
-    spec_cp_ctx: &mut CopyContext,
-) {
-    let depth_limit = spec_cp_ctx.spec_cp_options.depth_limit;
-    let enum_rule_depth_limit = spec_cp_ctx.spec_cp_options.rule_depth_limit;
-    if !is_depth_within_limit(depth_value, depth_limit, enum_rule_depth_limit) {
+fn handle_file_entry(file_entry: FileEntryRecord, depth_value: usize, copy_ctx: &mut CopyContext) {
+    let depth_limit = copy_ctx.copy_options.depth_limit;
+    let rule_depth_limit = copy_ctx.copy_options.rule_depth_limit;
+    if !is_depth_within_limit(depth_value, depth_limit, rule_depth_limit) {
         return;
     }
 
-    spec_cp_ctx.builder_cp_report.add_scanned();
+    copy_ctx.report_builder.add_scanned();
 
-    let enum_rule_pattern = spec_cp_ctx.spec_cp_options.rule_pattern;
+    let rule_pattern = copy_ctx.copy_options.rule_pattern;
     if should_exclude_by_patterns(
-        &spec_file_entry.name_file,
-        spec_cp_ctx.spec_cp_pats.patterns_include_files.as_ref(),
-        spec_cp_ctx.spec_cp_pats.patterns_exclude_files.as_ref(),
-        enum_rule_pattern,
+        &file_entry.file_name,
+        copy_ctx.copy_patterns.patterns_include_files.as_ref(),
+        copy_ctx.copy_patterns.patterns_exclude_files.as_ref(),
+        rule_pattern,
     ) {
         return;
     }
-    spec_cp_ctx.builder_cp_report.add_matched();
+    copy_ctx.report_builder.add_matched();
 
-    let enum_rule_symlink = spec_cp_ctx.spec_cp_options.rule_symlink;
-    if spec_file_entry.if_is_symlink {
-        if enum_rule_symlink == CopySymlinkStrategy::SkipSymlinks {
-            spec_cp_ctx.builder_cp_report.add_skipped();
+    let rule_symlink = copy_ctx.copy_options.rule_symlink;
+    if file_entry.is_symlink {
+        if rule_symlink == CopySymlinkStrategy::SkipSymlinks {
+            copy_ctx.report_builder.add_skipped();
             return;
         }
 
-        if should_error_broken_symlink(&spec_file_entry.path_file_src, enum_rule_symlink) {
-            spec_cp_ctx.builder_cp_report.add_error(
-                spec_file_entry.path_file_src.clone(),
-                format!(
-                    "Broken symlink: {}",
-                    spec_file_entry.path_file_src.display()
-                ),
+        if should_error_broken_symlink(&file_entry.file_src_path, rule_symlink) {
+            copy_ctx.report_builder.add_error(
+                file_entry.file_src_path.clone(),
+                format!("Broken symlink: {}", file_entry.file_src_path.display()),
             );
             return;
         }
     }
-    if !spec_file_entry.if_is_symlink {
-        let meta_file_src = match fs::symlink_metadata(&spec_file_entry.path_file_src) {
+    if !file_entry.is_symlink {
+        let metadata_src = match fs::symlink_metadata(&file_entry.file_src_path) {
             Ok(v) => v,
             Err(e) => {
-                spec_cp_ctx
-                    .builder_cp_report
-                    .add_error(spec_file_entry.path_file_src.clone(), e.to_string());
+                copy_ctx
+                    .report_builder
+                    .add_error(file_entry.file_src_path.clone(), e.to_string());
                 return;
             }
         };
-        if !meta_file_src.file_type().is_file() {
-            spec_cp_ctx.builder_cp_report.add_warning(format!(
+        if !metadata_src.file_type().is_file() {
+            copy_ctx.report_builder.add_warning(format!(
                 "Special file skipped: {}",
-                spec_file_entry.path_file_src.display()
+                file_entry.file_src_path.display()
             ));
-            spec_cp_ctx.builder_cp_report.add_skipped();
+            copy_ctx.report_builder.add_skipped();
             return;
         }
-    } else if enum_rule_symlink == CopySymlinkStrategy::Dereference {
-        let meta_file_src_target = match fs::metadata(&spec_file_entry.path_file_src) {
+    } else if rule_symlink == CopySymlinkStrategy::Dereference {
+        let metadata_target = match fs::metadata(&file_entry.file_src_path) {
             Ok(v) => v,
             Err(e) => {
-                spec_cp_ctx
-                    .builder_cp_report
-                    .add_error(spec_file_entry.path_file_src.clone(), e.to_string());
+                copy_ctx
+                    .report_builder
+                    .add_error(file_entry.file_src_path.clone(), e.to_string());
                 return;
             }
         };
-        if !meta_file_src_target.file_type().is_file() {
-            spec_cp_ctx.builder_cp_report.add_warning(format!(
+        if !metadata_target.file_type().is_file() {
+            copy_ctx.report_builder.add_warning(format!(
                 "Special file target skipped: {}",
-                spec_file_entry.path_file_src.display()
+                file_entry.file_src_path.display()
             ));
-            spec_cp_ctx.builder_cp_report.add_skipped();
+            copy_ctx.report_builder.add_skipped();
             return;
         }
     }
@@ -592,26 +577,26 @@ fn handle_file_entry(
     {
         use std::os::unix::fs::MetadataExt;
 
-        if !spec_file_entry.if_is_symlink
-            && let Ok(stat_src) = fs::metadata(&spec_file_entry.path_file_src)
+        if !file_entry.is_symlink
+            && let Ok(stat_src) = fs::metadata(&file_entry.file_src_path)
             && stat_src.nlink() > 1
         {
-            spec_cp_ctx.builder_cp_report.add_warning(format!(
+            copy_ctx.report_builder.add_warning(format!(
                 "Hard link detected: {}",
-                spec_file_entry.path_file_src.display()
+                file_entry.file_src_path.display()
             ));
         }
     }
 
-    let should_keep_tree = spec_cp_ctx.spec_cp_options.should_keep_tree;
+    let should_keep_tree = copy_ctx.copy_options.should_keep_tree;
     let path_file_dst = derive_destination_path(
-        &spec_file_entry.path_file_src,
-        &spec_file_entry.name_file,
-        &spec_cp_ctx.path_dir_src,
-        &spec_cp_ctx.path_dir_dst,
+        &file_entry.file_src_path,
+        &file_entry.file_name,
+        &copy_ctx.dir_src_path,
+        &copy_ctx.dir_dst_path,
         should_keep_tree,
     );
-    if should_error_unsafe_destination_path(&path_file_dst, spec_cp_ctx) {
+    if should_error_unsafe_destination_path(&path_file_dst, copy_ctx) {
         return;
     }
 
@@ -619,38 +604,38 @@ fn handle_file_entry(
         && let Some(path_parent_dst) = path_file_dst.parent()
         && let Err(e) = fs::create_dir_all(path_parent_dst)
     {
-        spec_cp_ctx
-            .builder_cp_report
+        copy_ctx
+            .report_builder
             .add_error(path_file_dst, e.to_string());
         return;
     }
 
-    let enum_rule_conflict_file = spec_cp_ctx.spec_cp_options.rule_conflict_file;
+    let rule_conflict_file = copy_ctx.copy_options.rule_conflict_file;
     if should_skip_file_conflict(
         &path_file_dst,
-        enum_rule_conflict_file,
-        &mut spec_cp_ctx.builder_cp_report,
+        rule_conflict_file,
+        &mut copy_ctx.report_builder,
     ) {
         return;
     }
 
-    if spec_cp_ctx.spec_cp_options.should_dry_run {
-        spec_cp_ctx.builder_cp_report.add_skipped();
+    if copy_ctx.copy_options.should_dry_run {
+        copy_ctx.report_builder.add_skipped();
         return;
     }
 
-    if spec_file_entry.if_is_symlink && enum_rule_symlink == CopySymlinkStrategy::CopySymlinks {
+    if file_entry.is_symlink && rule_symlink == CopySymlinkStrategy::CopySymlinks {
         create_symbolic_link(
-            &spec_file_entry.path_file_src,
+            &file_entry.file_src_path,
             &path_file_dst,
-            &mut spec_cp_ctx.builder_cp_report,
+            &mut copy_ctx.report_builder,
         );
         return;
     }
 
-    spec_cp_ctx.l_tasks_file_copy.push(CopyTaskFileSpec {
-        path_file_src: spec_file_entry.path_file_src,
-        path_file_dst,
+    copy_ctx.file_copy_tasks.push(CopyTaskFileSpec {
+        file_src_path: file_entry.file_src_path,
+        file_dst_path: path_file_dst,
     });
 }
 
@@ -671,11 +656,11 @@ mod tests {
 
     impl TestDir {
         fn new() -> Self {
-            let n = SystemTime::now()
+            let timestamp_nanos = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("clock")
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!("axiomkit_fs_test_{n}"));
+            let path = std::env::temp_dir().join(format!("axiomkit_fs_test_{timestamp_nanos}"));
             std::fs::create_dir_all(&path).expect("create test dir");
             Self { path }
         }
@@ -725,13 +710,13 @@ mod tests {
         write_text(&src.join("a/file1.txt"), "a");
         write_text(&src.join("a/file1.md"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             should_keep_tree: false,
             patterns_include_files: Some(vec!["*.txt".to_string()]),
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("root.txt").exists());
         assert!(dst.join("file1.txt").exists());
@@ -747,13 +732,13 @@ mod tests {
         write_text(&src.join("root.txt"), "root");
         write_text(&src.join("a/file1.txt"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             depth_limit: Some(1),
             rule_depth_limit: CopyDepthLimitMode::Exact,
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("root.txt").exists());
         assert!(!dst.join("a/file1.txt").exists());
@@ -784,12 +769,12 @@ mod tests {
         write_text(&src.join("root.txt"), "root");
         symlink(src.join("root.txt"), src.join("link_root.txt")).expect("create symlink");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             rule_symlink: CopySymlinkStrategy::CopySymlinks,
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("link_root.txt").is_symlink());
     }
@@ -804,13 +789,13 @@ mod tests {
         write_text(&src.join("report_02.csv"), "ok");
         write_text(&src.join("note.txt"), "txt");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             patterns_include_files: Some(vec![r"^report_\d+\.csv$".to_string()]),
             rule_pattern: CopyPatternMode::Regex,
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("report_01.csv").exists());
         assert!(dst.join("report_02.csv").exists());
@@ -827,14 +812,14 @@ mod tests {
         write_text(&src.join("report_skip.csv"), "skip");
         write_text(&src.join("other.csv"), "other");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             patterns_include_files: Some(vec![r"^report_.*\.csv$".to_string()]),
             patterns_exclude_files: Some(vec![r"^report_skip\.csv$".to_string()]),
             rule_pattern: CopyPatternMode::Regex,
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("report_keep.csv").exists());
         assert!(!dst.join("report_skip.csv").exists());
@@ -848,13 +833,13 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["(".to_string()]),
             rule_pattern: CopyPatternMode::Regex,
             ..CopyOptionsSpec::default()
         };
 
-        let err = copy_tree(&src, &dst, spec_cp_options).expect_err("invalid regex must fail");
+        let err = copy_tree(&src, &dst, copy_options).expect_err("invalid regex must fail");
         assert!(matches!(err, CopyTreeError::InvalidPattern(_)));
     }
 
@@ -867,13 +852,13 @@ mod tests {
         write_text(&src.join("file1.txt"), "1");
         write_text(&src.join("filea.txt"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["file[0-9].txt".to_string()]),
             rule_pattern: CopyPatternMode::Glob,
             ..CopyOptionsSpec::default()
         };
 
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("file1.txt").exists());
         assert!(!dst.join("filea.txt").exists());
@@ -886,13 +871,13 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             patterns_include_files: Some(vec!["[".to_string()]),
             rule_pattern: CopyPatternMode::Glob,
             ..CopyOptionsSpec::default()
         };
 
-        let err = copy_tree(&src, &dst, spec_cp_options).expect_err("invalid glob must fail");
+        let err = copy_tree(&src, &dst, copy_options).expect_err("invalid glob must fail");
         assert!(matches!(err, CopyTreeError::InvalidPattern(_)));
     }
 
@@ -924,27 +909,27 @@ mod tests {
         let tmp = TestDir::new();
         let src = tmp.path().join("src");
         let dst = tmp.path().join("dst");
-        let path_file_src = src.join("meta.txt");
-        write_text(&path_file_src, "meta");
+        let path_src_file = src.join("meta.txt");
+        write_text(&path_src_file, "meta");
 
-        std::fs::set_permissions(&path_file_src, std::fs::Permissions::from_mode(0o640))
+        std::fs::set_permissions(&path_src_file, std::fs::Permissions::from_mode(0o640))
             .expect("set permissions");
         set_file_times(
-            &path_file_src,
+            &path_src_file,
             FileTime::from_unix_time(1_700_000_010, 0),
             FileTime::from_unix_time(1_700_000_020, 0),
         )
         .expect("set times");
 
-        let c_xattr_name = "user.axiomkit_fs_test";
-        let b_if_has_xattr = xattr::set(&path_file_src, c_xattr_name, b"meta_value").is_ok();
+        let xattr_name = "user.axiomkit_fs_test";
+        let has_xattr = xattr::set(&path_src_file, xattr_name, b"meta_value").is_ok();
 
         let report = copy_tree(&src, &dst, CopyOptionsSpec::default()).expect("copy tree");
         assert_eq!(report.error_count(), 0);
 
-        let path_file_dst = dst.join("meta.txt");
-        let stat_src = std::fs::metadata(&path_file_src).expect("src metadata");
-        let stat_dst = std::fs::metadata(&path_file_dst).expect("dst metadata");
+        let path_dst_file = dst.join("meta.txt");
+        let stat_src = std::fs::metadata(&path_src_file).expect("src metadata");
+        let stat_dst = std::fs::metadata(&path_dst_file).expect("dst metadata");
         assert_eq!(
             stat_src.permissions().mode() & 0o777,
             stat_dst.permissions().mode() & 0o777
@@ -954,8 +939,8 @@ mod tests {
             FileTime::from_last_modification_time(&stat_dst)
         );
 
-        if b_if_has_xattr {
-            let raw_value_dst = xattr::get(&path_file_dst, c_xattr_name)
+        if has_xattr {
+            let raw_value_dst = xattr::get(&path_dst_file, xattr_name)
                 .expect("get dst xattr")
                 .expect("xattr exists");
             assert_eq!(raw_value_dst, b"meta_value");
@@ -972,11 +957,11 @@ mod tests {
         write_text(&src.join("b.txt"), "b");
         write_text(&src.join("c.txt"), "c");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             workers_max: Some(1),
             ..CopyOptionsSpec::default()
         };
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
 
         assert_eq!(report.error_count(), 0);
         assert_eq!(report.cnt_copied, 3);
@@ -992,11 +977,11 @@ mod tests {
         let dst = tmp.path().join("dst");
         write_text(&src.join("a.txt"), "a");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             workers_max: Some(0),
             ..CopyOptionsSpec::default()
         };
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
 
         assert_eq!(report.error_count(), 0);
         assert!(dst.join("a.txt").exists());
@@ -1035,11 +1020,11 @@ mod tests {
         std::fs::create_dir_all(&outside).expect("create outside");
         symlink(&outside, dst.join("escape")).expect("create escape symlink");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             rule_conflict_dir: CopyDirectoryConflictStrategy::Merge,
             ..CopyOptionsSpec::default()
         };
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree returns report");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree returns report");
 
         assert!(report.error_count() >= 1);
         assert!(!outside.join("file.txt").exists());
@@ -1060,11 +1045,11 @@ mod tests {
         std::fs::create_dir_all(&outside).expect("create outside");
         symlink(outside.join("out.txt"), dst.join("a.txt")).expect("create dst symlink");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             rule_conflict_file: CopyFileConflictStrategy::Overwrite,
             ..CopyOptionsSpec::default()
         };
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree returns report");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree returns report");
 
         assert!(report.error_count() >= 1);
         assert!(!outside.join("out.txt").exists());
@@ -1082,11 +1067,11 @@ mod tests {
         std::fs::create_dir_all(&src).expect("create src");
         symlink("/dev/null", src.join("null_dev")).expect("create symlink to /dev/null");
 
-        let spec_cp_options = CopyOptionsSpec {
+        let copy_options = CopyOptionsSpec {
             rule_symlink: CopySymlinkStrategy::Dereference,
             ..CopyOptionsSpec::default()
         };
-        let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+        let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
 
         assert!(report.warning_count() >= 1);
         assert!(
@@ -1101,47 +1086,49 @@ mod tests {
 
     #[test]
     fn copy_tree_fuzz_like_randomized_inputs_no_panic() {
-        fn derive_name(seed: u64, n_idx: usize) -> String {
+        fn derive_name(seed: u64, idx: usize) -> String {
             let mut value = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            value ^= (n_idx as u64).wrapping_mul(0x9E3779B97F4A7C15);
+            value ^= (idx as u64).wrapping_mul(0x9E3779B97F4A7C15);
             format!("f_{:016x}.txt", value)
         }
 
-        for n_seed in 0_u64..40 {
+        for _seed in 0_u64..40 {
+            let seed = _seed;
             let tmp = TestDir::new();
             let src = tmp.path().join("src");
             let dst = tmp.path().join("dst");
 
-            for n_idx in 0..12 {
-                let name = derive_name(n_seed, n_idx);
-                if n_idx % 3 == 0 {
+            for _idx in 0..12 {
+                let idx = _idx;
+                let name = derive_name(seed, idx);
+                if idx % 3 == 0 {
                     write_text(&src.join("a").join(name), "x");
-                } else if n_idx % 3 == 1 {
+                } else if idx % 3 == 1 {
                     write_text(&src.join("b").join("c").join(name), "x");
                 } else {
                     write_text(&src.join(name), "x");
                 }
             }
 
-            let mut spec_cp_options = CopyOptionsSpec::default();
-            match n_seed % 3 {
+            let mut copy_options = CopyOptionsSpec::default();
+            match seed % 3 {
                 0 => {
-                    spec_cp_options.rule_pattern = CopyPatternMode::Literal;
-                    spec_cp_options.patterns_include_files = Some(vec!["f_".to_string()]);
+                    copy_options.rule_pattern = CopyPatternMode::Literal;
+                    copy_options.patterns_include_files = Some(vec!["f_".to_string()]);
                 }
                 1 => {
-                    spec_cp_options.rule_pattern = CopyPatternMode::Glob;
-                    spec_cp_options.patterns_include_files = Some(vec!["*.txt".to_string()]);
-                    spec_cp_options.patterns_exclude_dirs = Some(vec!["b".to_string()]);
+                    copy_options.rule_pattern = CopyPatternMode::Glob;
+                    copy_options.patterns_include_files = Some(vec!["*.txt".to_string()]);
+                    copy_options.patterns_exclude_dirs = Some(vec!["b".to_string()]);
                 }
                 _ => {
-                    spec_cp_options.rule_pattern = CopyPatternMode::Regex;
-                    spec_cp_options.patterns_include_files =
+                    copy_options.rule_pattern = CopyPatternMode::Regex;
+                    copy_options.patterns_include_files =
                         Some(vec![r"^f_[0-9a-f]+\.txt$".to_string()]);
                 }
             }
 
-            let report = copy_tree(&src, &dst, spec_cp_options).expect("copy tree");
+            let report = copy_tree(&src, &dst, copy_options).expect("copy tree");
             assert_eq!(report.error_count(), 0);
         }
     }

@@ -21,10 +21,10 @@ struct PySpecCopyError {
 }
 
 impl From<CopyErrorRecord> for PySpecCopyError {
-    fn from(spec_error: CopyErrorRecord) -> Self {
+    fn from(error_record: CopyErrorRecord) -> Self {
         Self {
-            path: spec_error.path.to_string_lossy().to_string(),
-            exception: spec_error.exception,
+            path: error_record.path.to_string_lossy().to_string(),
+            exception: error_record.exception,
         }
     }
 }
@@ -76,14 +76,14 @@ impl PyReportCopy {
     }
 
     fn to_dict(&self) -> BTreeMap<String, u64> {
-        let mut dict_counts = BTreeMap::new();
-        dict_counts.insert("cnt_matched".to_string(), self.cnt_matched);
-        dict_counts.insert("cnt_scanned".to_string(), self.cnt_scanned);
-        dict_counts.insert("cnt_copied".to_string(), self.cnt_copied);
-        dict_counts.insert("cnt_skipped".to_string(), self.cnt_skipped);
-        dict_counts.insert("cnt_errors".to_string(), self.error_count() as u64);
-        dict_counts.insert("cnt_warnings".to_string(), self.warning_count() as u64);
-        dict_counts
+        let mut counts = BTreeMap::new();
+        counts.insert("cnt_matched".to_string(), self.cnt_matched);
+        counts.insert("cnt_scanned".to_string(), self.cnt_scanned);
+        counts.insert("cnt_copied".to_string(), self.cnt_copied);
+        counts.insert("cnt_skipped".to_string(), self.cnt_skipped);
+        counts.insert("cnt_errors".to_string(), self.error_count() as u64);
+        counts.insert("cnt_warnings".to_string(), self.warning_count() as u64);
+        counts
     }
 
     #[pyo3(signature = (prefix = "[COPY]"))]
@@ -219,7 +219,7 @@ fn copy_tree_py(
     should_keep_tree: bool,
     should_dry_run: bool,
 ) -> PyResult<PyReportCopy> {
-    let spec_cp_options = CopyOptionsSpec {
+    let copy_options = CopyOptionsSpec {
         patterns_include_files,
         patterns_exclude_files,
         patterns_include_dirs,
@@ -235,9 +235,9 @@ fn copy_tree_py(
         should_dry_run,
     };
 
-    let report_copy = py.allow_threads(|| copy_tree(dir_source, dir_destination, spec_cp_options));
-    let report_copy = report_copy.map_err(map_copy_tree_error)?;
-    Ok(PyReportCopy::from(report_copy))
+    let report = py.allow_threads(|| copy_tree(dir_source, dir_destination, copy_options));
+    let report = report.map_err(map_copy_tree_error)?;
+    Ok(PyReportCopy::from(report))
 }
 
 #[pymodule]
