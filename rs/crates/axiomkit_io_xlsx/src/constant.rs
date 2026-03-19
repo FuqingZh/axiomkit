@@ -39,7 +39,7 @@ pub enum ColumnIdentifier {
 
 /// Build default named format presets used by [`crate::writer::XlsxWriter`].
 pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
-    let cfg_base_fmt_spec = CellFormatSpec {
+    let base_format_spec = CellFormatSpec {
         font_name: Some("Times New Roman".to_string()),
         font_size: Some(11),
         border: Some(1),
@@ -48,39 +48,39 @@ pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
         ..Default::default()
     };
 
-    let mut dict_fmt = BTreeMap::new();
-    dict_fmt.insert("text".to_string(), cfg_base_fmt_spec.clone());
-    dict_fmt.insert(
+    let mut formats = BTreeMap::new();
+    formats.insert("text".to_string(), base_format_spec.clone());
+    formats.insert(
         "header".to_string(),
-        cfg_base_fmt_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatSpec {
             bold: Some(true),
             align: Some("center".to_string()),
             ..Default::default()
         }),
     );
-    dict_fmt.insert(
+    formats.insert(
         "integer".to_string(),
-        cfg_base_fmt_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatSpec {
             num_format: Some("0".to_string()),
             ..Default::default()
         }),
     );
-    dict_fmt.insert(
+    formats.insert(
         "decimal".to_string(),
-        cfg_base_fmt_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatSpec {
             num_format: Some("0.0000".to_string()),
             ..Default::default()
         }),
     );
-    dict_fmt.insert(
+    formats.insert(
         "scientific".to_string(),
-        cfg_base_fmt_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatSpec {
             num_format: Some("0.00E+0".to_string()),
             ..Default::default()
         }),
     );
 
-    dict_fmt
+    formats
 }
 
 /// Build default write options.

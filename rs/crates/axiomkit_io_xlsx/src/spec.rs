@@ -94,70 +94,70 @@ impl CellFormatSpec {
 
     /// Convert format into key-value map compatible with xlsxwriter properties.
     pub fn to_xlsxwriter(&self) -> BTreeMap<String, CellFormatValue> {
-        let mut dict_fmt = BTreeMap::new();
+        let mut format_map = BTreeMap::new();
 
         if let Some(value) = &self.font_name {
-            dict_fmt.insert(
+            format_map.insert(
                 "font_name".to_string(),
                 CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = self.font_size {
-            dict_fmt.insert("font_size".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("font_size".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.bold {
-            dict_fmt.insert("bold".to_string(), CellFormatValue::Boolean(value));
+            format_map.insert("bold".to_string(), CellFormatValue::Boolean(value));
         }
         if let Some(value) = self.italic {
-            dict_fmt.insert("italic".to_string(), CellFormatValue::Boolean(value));
+            format_map.insert("italic".to_string(), CellFormatValue::Boolean(value));
         }
 
         if let Some(value) = &self.align {
-            dict_fmt.insert("align".to_string(), CellFormatValue::String(value.clone()));
+            format_map.insert("align".to_string(), CellFormatValue::String(value.clone()));
         }
         if let Some(value) = &self.valign {
-            dict_fmt.insert("valign".to_string(), CellFormatValue::String(value.clone()));
+            format_map.insert("valign".to_string(), CellFormatValue::String(value.clone()));
         }
         if let Some(value) = self.border {
-            dict_fmt.insert("border".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("border".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.text_wrap {
-            dict_fmt.insert("text_wrap".to_string(), CellFormatValue::Boolean(value));
+            format_map.insert("text_wrap".to_string(), CellFormatValue::Boolean(value));
         }
 
         if let Some(value) = self.top {
-            dict_fmt.insert("top".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("top".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.bottom {
-            dict_fmt.insert("bottom".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("bottom".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.left {
-            dict_fmt.insert("left".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("left".to_string(), CellFormatValue::Integer(value));
         }
         if let Some(value) = self.right {
-            dict_fmt.insert("right".to_string(), CellFormatValue::Integer(value));
+            format_map.insert("right".to_string(), CellFormatValue::Integer(value));
         }
 
         if let Some(value) = &self.num_format {
-            dict_fmt.insert(
+            format_map.insert(
                 "num_format".to_string(),
                 CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = &self.bg_color {
-            dict_fmt.insert(
+            format_map.insert(
                 "bg_color".to_string(),
                 CellFormatValue::String(value.clone()),
             );
         }
         if let Some(value) = &self.font_color {
-            dict_fmt.insert(
+            format_map.insert(
                 "font_color".to_string(),
                 CellFormatValue::String(value.clone()),
             );
         }
 
-        dict_fmt
+        format_map
     }
 }
 

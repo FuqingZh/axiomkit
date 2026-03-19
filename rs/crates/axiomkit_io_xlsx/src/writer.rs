@@ -76,8 +76,8 @@ pub struct XlsxWriter {
     fmt_scientific: CellFormatSpec,
     fmt_header: CellFormatSpec,
     write_options: XlsxWriteOptionsSpec,
-    set_sheet_names_existing: BTreeSet<String>,
-    l_reports: Vec<XlsxReport>,
+    existing_sheet_names: BTreeSet<String>,
+    reports: Vec<XlsxReport>,
     is_closed: bool,
 }
 
@@ -104,8 +104,8 @@ impl XlsxWriter {
             fmt_scientific,
             fmt_header,
             write_options,
-            set_sheet_names_existing: BTreeSet::new(),
-            l_reports: Vec::new(),
+            existing_sheet_names: BTreeSet::new(),
+            reports: Vec::new(),
             is_closed: false,
         }
     }
@@ -117,7 +117,7 @@ impl XlsxWriter {
 
     /// Return immutable snapshot of per-sheet write reports.
     pub fn report(&self) -> Vec<XlsxReport> {
-        self.l_reports.clone()
+        self.reports.clone()
     }
 
     /// Flush workbook to disk. Idempotent.
@@ -151,17 +151,17 @@ impl XlsxWriter {
     /// `v_ipc_df` and optional `v_ipc_df_header` must be valid Polars IPC payloads.
     pub fn write_sheet_from_ipc_bytes(
         &mut self,
-        v_ipc_df: &[u8],
+        ipc_df: &[u8],
         sheet_name: &str,
-        v_ipc_df_header: Option<&[u8]>,
+        ipc_df_header: Option<&[u8]>,
         options: &XlsxSheetWriteOptionsSpec,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
         }
 
-        let df_data = derive_dataframe_from_ipc_bytes(v_ipc_df)?;
-        let df_header = match v_ipc_df_header {
+        let df_data = derive_dataframe_from_ipc_bytes(ipc_df)?;
+        let df_header = match ipc_df_header {
             Some(val) => Some(derive_dataframe_from_ipc_bytes(val)?),
             None => None,
         };
@@ -183,124 +183,125 @@ impl XlsxWriter {
             .unwrap_or(self.write_options.keep_missing_values);
         let value_policy = self.write_options.value_policy.clone();
 
-        let l_colnames_df: Vec<String> = df_data
+        let col_names: Vec<String> = df_data
             .get_column_names_str()
             .into_iter()
             .map(ToString::to_string)
             .collect();
-        validate_unique_columns(&l_colnames_df)?;
+        validate_unique_columns(&col_names)?;
 
-        let n_width_df = l_colnames_df.len();
-        let n_height_df = df_data.height();
+        let width_df = col_names.len();
+        let height_df = df_data.height();
 
-        let mut l_header_grid = vec![l_colnames_df.clone()];
+        let mut header_grid = vec![col_names.clone()];
         if let Some(df_header_custom) = df_header {
-            let l_header_cols: Vec<String> = df_header_custom
+            let header_cols: Vec<String> = df_header_custom
                 .get_column_names_str()
                 .into_iter()
                 .map(ToString::to_string)
                 .collect();
-            validate_unique_columns(&l_header_cols)?;
+            validate_unique_columns(&header_cols)?;
 
-            let n_header_height = df_header_custom.height();
-            if n_header_height == 0 {
+            let header_height = df_header_custom.height();
+            if header_height == 0 {
                 return Err(
                     "df_header must have >= 1 row (0-row header is not allowed).".to_string(),
                 );
             }
-            let n_header_width = df_header_custom.width();
-            if n_header_width != n_width_df {
+            let header_width = df_header_custom.width();
+            if header_width != width_df {
                 return Err("df_header.width must equal df.width.".to_string());
             }
 
-            l_header_grid = derive_string_grid_from_dataframe(df_header_custom)?;
+            header_grid = derive_string_grid_from_dataframe(df_header_custom)?;
         }
 
-        let l_cols_idx_numeric = if self.write_options.infer_numeric_cols {
+        let cols_idx_numeric = if self.write_options.infer_numeric_cols {
             derive_numeric_column_indices(df_data)
         } else {
             vec![]
         };
 
-        let l_cols_idx_integer_inferred = if self.write_options.infer_integer_cols {
-            derive_integer_column_indices(df_data, &l_cols_idx_numeric)
+        let cols_idx_integer_inferred = if self.write_options.infer_integer_cols {
+            derive_integer_column_indices(df_data, &cols_idx_numeric)
         } else {
             vec![]
         };
 
-        let l_cols_idx_integer_specified =
-            select_sorted_indices_from_refs(&l_colnames_df, options.cols_integer.as_deref())?;
-        let l_cols_idx_decimal_specified =
-            select_sorted_indices_from_refs(&l_colnames_df, options.cols_decimal.as_deref())?;
+        let cols_idx_integer_specified =
+            select_sorted_indices_from_refs(&col_names, options.cols_integer.as_deref())?;
+        let cols_idx_decimal_specified =
+            select_sorted_indices_from_refs(&col_names, options.cols_decimal.as_deref())?;
 
-        let l_cols_idx_integer = if l_cols_idx_integer_specified.is_empty() {
-            l_cols_idx_integer_inferred
+        let cols_idx_integer = if cols_idx_integer_specified.is_empty() {
+            cols_idx_integer_inferred
         } else {
-            l_cols_idx_integer_specified
+            cols_idx_integer_specified
         };
-        let l_cols_idx_scientific = derive_scientific_column_indices(
+        let cols_idx_scientific = derive_scientific_column_indices(
             df_data,
-            &l_cols_idx_numeric,
-            &l_cols_idx_integer,
-            &l_cols_idx_decimal_specified,
+            &cols_idx_numeric,
+            &cols_idx_integer,
+            &cols_idx_decimal_specified,
             &options.policy_scientific,
         )?;
 
-        let n_rows_header = l_header_grid.len();
+        let header_row_count = header_grid.len();
 
         let mut report = XlsxReport {
             sheets: vec![],
             warnings: vec![],
         };
 
-        let l_sheet_parts = plan_sheet_slices(
-            n_height_df,
-            n_width_df,
-            n_rows_header,
+        let sheet_slices = plan_sheet_slices(
+            height_df,
+            width_df,
+            header_row_count,
             &sanitize_sheet_name(sheet_name, "_"),
             &mut report,
         )?;
 
-        let n_row_freeze = options.row_freeze.unwrap_or(n_rows_header);
+        let row_freeze = options.row_freeze.unwrap_or(header_row_count);
 
-        for sheet_slice in l_sheet_parts {
+        for _sheet_slice in sheet_slices {
+            let sheet_slice = _sheet_slice;
             let sheet_name_unique = self.derive_unique_sheet_name(&sheet_slice.sheet_name);
             let worksheet = self.workbook.add_worksheet();
             worksheet
                 .set_name(&sheet_name_unique)
                 .map_err(derive_xlsx_error_text)?;
 
-            let l_cols_idx_numeric_slice = derive_slice_indices(
-                &l_cols_idx_numeric,
+            let cols_idx_numeric_slice = derive_slice_indices(
+                &cols_idx_numeric,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let l_cols_idx_integer_slice = derive_slice_indices(
-                &l_cols_idx_integer,
+            let cols_idx_integer_slice = derive_slice_indices(
+                &cols_idx_integer,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let l_cols_idx_decimal_slice = derive_slice_indices(
-                &l_cols_idx_decimal_specified,
+            let cols_idx_decimal_slice = derive_slice_indices(
+                &cols_idx_decimal_specified,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let l_cols_idx_scientific_slice = derive_slice_indices(
-                &l_cols_idx_scientific,
+            let cols_idx_scientific_slice = derive_slice_indices(
+                &cols_idx_scientific,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
 
-            let plan_col_formats = plan_column_formats(ColumnFormatPlanOptionsSpec {
+            let column_format_plan = plan_column_formats(ColumnFormatPlanOptionsSpec {
                 width_data: sheet_slice.col_end_exclusive - sheet_slice.col_start_inclusive,
-                cols_idx_numeric: &l_cols_idx_numeric_slice,
-                cols_idx_integer: &l_cols_idx_integer_slice,
-                cols_idx_decimal: if l_cols_idx_decimal_slice.is_empty() {
+                cols_idx_numeric: &cols_idx_numeric_slice,
+                cols_idx_integer: &cols_idx_integer_slice,
+                cols_idx_decimal: if cols_idx_decimal_slice.is_empty() {
                     None
                 } else {
-                    Some(&l_cols_idx_decimal_slice)
+                    Some(&cols_idx_decimal_slice)
                 },
-                cols_idx_scientific: &l_cols_idx_scientific_slice,
+                cols_idx_scientific: &cols_idx_scientific_slice,
                 cols_fmt_overrides: &BTreeMap::new(),
                 fmt_text: &self.fmt_text,
                 fmt_integer: &self.fmt_integer,
@@ -309,37 +310,39 @@ impl XlsxWriter {
                 write_options: &self.write_options,
             });
 
-            let l_fmt_data_by_col: Vec<Format> = plan_col_formats
+            let data_formats_by_col: Vec<Format> = column_format_plan
                 .fmts_by_col
                 .iter()
                 .map(derive_rust_xlsx_format)
                 .collect();
             let fmt_header = derive_rust_xlsx_format(&self.fmt_header);
 
-            let l_header_grid_slice = l_header_grid
+            let header_grid_slice = header_grid
                 .iter()
                 .map(|row| {
                     row[sheet_slice.col_start_inclusive..sheet_slice.col_end_exclusive].to_vec()
                 })
                 .collect::<Vec<_>>();
 
-            let mut l_width_by_col_header = vec![0usize; l_fmt_data_by_col.len()];
-            let mut l_width_by_col_body = vec![0usize; l_fmt_data_by_col.len()];
+            let mut header_widths_by_col = vec![0usize; data_formats_by_col.len()];
+            let mut body_widths_by_col = vec![0usize; data_formats_by_col.len()];
 
             let should_autofit_columns = !matches!(
                 options.policy_autofit.rule_columns,
                 AutofitColumnsRule::None
             );
 
-            if should_autofit_columns && !l_fmt_data_by_col.is_empty() {
-                for n_idx_col in 0..l_fmt_data_by_col.len() {
-                    for row in &l_header_grid_slice {
-                        let value = &row[n_idx_col];
+            if should_autofit_columns && !data_formats_by_col.is_empty() {
+                for _col_idx in 0..data_formats_by_col.len() {
+                    let col_idx = _col_idx;
+                    for _row in &header_grid_slice {
+                        let row = _row;
+                        let value = &row[col_idx];
                         if value.is_empty() {
                             continue;
                         }
-                        l_width_by_col_header[n_idx_col] = usize::max(
-                            l_width_by_col_header[n_idx_col],
+                        header_widths_by_col[col_idx] = usize::max(
+                            header_widths_by_col[col_idx],
                             estimate_width_len(
                                 &CellValue::String(value.clone()),
                                 false,
@@ -355,54 +358,55 @@ impl XlsxWriter {
 
             write_header(
                 worksheet,
-                l_header_grid_slice,
+                header_grid_slice,
                 options.should_merge_header,
                 &fmt_header,
             )?;
 
             worksheet
-                .set_freeze_panes(
-                    cast_row_num(n_row_freeze)?,
-                    cast_col_num(options.col_freeze)?,
-                )
+                .set_freeze_panes(cast_row_num(row_freeze)?, cast_col_num(options.col_freeze)?)
                 .map_err(derive_xlsx_error_text)?;
 
-            let set_cols_idx_numeric: BTreeSet<usize> =
-                l_cols_idx_numeric_slice.iter().copied().collect();
-            let set_cols_idx_integer: BTreeSet<usize> =
-                l_cols_idx_integer_slice.iter().copied().collect();
-            let set_cols_idx_scientific: BTreeSet<usize> =
-                l_cols_idx_scientific_slice.iter().copied().collect();
+            let numeric_cols_idx: BTreeSet<usize> =
+                cols_idx_numeric_slice.iter().copied().collect();
+            let integer_cols_idx: BTreeSet<usize> =
+                cols_idx_integer_slice.iter().copied().collect();
+            let scientific_cols_idx: BTreeSet<usize> =
+                cols_idx_scientific_slice.iter().copied().collect();
 
-            let mut l_cols_slice = Vec::with_capacity(l_fmt_data_by_col.len());
-            let n_rows_data_this_sheet =
+            let mut cols_slice = Vec::with_capacity(data_formats_by_col.len());
+            let rows_data_in_sheet =
                 sheet_slice.row_end_exclusive - sheet_slice.row_start_inclusive;
-            for n_idx_col_abs in sheet_slice.col_start_inclusive..sheet_slice.col_end_exclusive {
-                l_cols_slice.push(df_data.get_columns()[n_idx_col_abs].slice(
-                    sheet_slice.row_start_inclusive as i64,
-                    n_rows_data_this_sheet,
-                ));
+            for _col_idx_abs in sheet_slice.col_start_inclusive..sheet_slice.col_end_exclusive {
+                let col_idx_abs = _col_idx_abs;
+                cols_slice.push(
+                    df_data.get_columns()[col_idx_abs]
+                        .slice(sheet_slice.row_start_inclusive as i64, rows_data_in_sheet),
+                );
             }
-            let n_rows_chunk = calculate_row_chunk_size(
-                l_fmt_data_by_col.len(),
+            let rows_chunk = calculate_row_chunk_size(
+                data_formats_by_col.len(),
                 &self.write_options.row_chunk_policy,
             );
-            if n_rows_chunk == 0 {
+            if rows_chunk == 0 {
                 return Err("row_chunk_policy resolved to 0 rows; expected >= 1.".to_string());
             }
-            let l_row_chunks = generate_row_chunks(n_rows_data_this_sheet, n_rows_chunk);
+            let row_chunks = generate_row_chunks(rows_data_in_sheet, rows_chunk);
 
-            let mut n_rows_seen_for_autofit = 0usize;
-            for (n_row_chunk_start, n_rows_chunk_len) in l_row_chunks {
-                let n_row_chunk_end = n_row_chunk_start + n_rows_chunk_len;
-                for n_row_local in n_row_chunk_start..n_row_chunk_end {
-                    for (n_idx_col, col) in l_cols_slice.iter().enumerate() {
-                        let is_numeric_col = set_cols_idx_numeric.contains(&n_idx_col);
-                        let is_integer_col = set_cols_idx_integer.contains(&n_idx_col);
-                        let is_scientific_col = set_cols_idx_scientific.contains(&n_idx_col);
+            let mut rows_seen_for_autofit = 0usize;
+            for _row_chunk in row_chunks {
+                let (row_chunk_start, row_chunk_len) = _row_chunk;
+                let row_chunk_end = row_chunk_start + row_chunk_len;
+                for _row_local in row_chunk_start..row_chunk_end {
+                    let row_local = _row_local;
+                    for _col in cols_slice.iter().enumerate() {
+                        let (col_idx, col) = _col;
+                        let is_numeric_col = numeric_cols_idx.contains(&col_idx);
+                        let is_integer_col = integer_cols_idx.contains(&col_idx);
+                        let is_scientific_col = scientific_cols_idx.contains(&col_idx);
 
                         let value_raw = derive_cell_value_from_any_value(
-                            col.get(n_row_local)
+                            col.get(row_local)
                                 .map_err(|err| format!("Failed to access cell value: {err}"))?,
                         );
                         let value = convert_cell_value(
@@ -415,11 +419,11 @@ impl XlsxWriter {
 
                         if should_autofit_columns
                             && (options.policy_autofit.height_body_inferred_max.is_none()
-                                || n_rows_seen_for_autofit
+                                || rows_seen_for_autofit
                                     < options.policy_autofit.height_body_inferred_max.unwrap_or(0))
                         {
-                            l_width_by_col_body[n_idx_col] = usize::max(
-                                l_width_by_col_body[n_idx_col],
+                            body_widths_by_col[col_idx] = usize::max(
+                                body_widths_by_col[col_idx],
                                 estimate_width_len(
                                     &value,
                                     is_numeric_col,
@@ -433,45 +437,47 @@ impl XlsxWriter {
 
                         write_cell_with_format(
                             worksheet,
-                            n_rows_header + n_row_local,
-                            n_idx_col,
+                            header_row_count + row_local,
+                            col_idx,
                             &value,
-                            &l_fmt_data_by_col[n_idx_col],
+                            &data_formats_by_col[col_idx],
                         )?;
                     }
 
                     if should_autofit_columns
                         && (options.policy_autofit.height_body_inferred_max.is_none()
-                            || n_rows_seen_for_autofit
+                            || rows_seen_for_autofit
                                 < options.policy_autofit.height_body_inferred_max.unwrap_or(0))
                     {
-                        n_rows_seen_for_autofit += 1;
+                        rows_seen_for_autofit += 1;
                     }
                 }
             }
 
-            if should_autofit_columns && !l_fmt_data_by_col.is_empty() {
-                let n_min = usize::max(1, options.policy_autofit.width_cell_min);
-                let n_max = usize::min(
+            if should_autofit_columns && !data_formats_by_col.is_empty() {
+                let width_min = usize::max(1, options.policy_autofit.width_cell_min);
+                let width_max = usize::min(
                     255,
-                    usize::max(n_min, options.policy_autofit.width_cell_max),
+                    usize::max(width_min, options.policy_autofit.width_cell_max),
                 );
-                let n_pad = options.policy_autofit.width_cell_padding;
+                let width_padding = options.policy_autofit.width_cell_padding;
 
-                for n_idx_col in 0..l_fmt_data_by_col.len() {
-                    let n_width_recorded = match options.policy_autofit.rule_columns {
-                        AutofitColumnsRule::Header => l_width_by_col_header[n_idx_col],
-                        AutofitColumnsRule::Body => l_width_by_col_body[n_idx_col],
-                        AutofitColumnsRule::All => usize::max(
-                            l_width_by_col_header[n_idx_col],
-                            l_width_by_col_body[n_idx_col],
-                        ),
-                        AutofitColumnsRule::None => l_width_by_col_header[n_idx_col],
+                for _col_idx in 0..data_formats_by_col.len() {
+                    let col_idx = _col_idx;
+                    let width_recorded = match options.policy_autofit.rule_columns {
+                        AutofitColumnsRule::Header => header_widths_by_col[col_idx],
+                        AutofitColumnsRule::Body => body_widths_by_col[col_idx],
+                        AutofitColumnsRule::All => {
+                            usize::max(header_widths_by_col[col_idx], body_widths_by_col[col_idx])
+                        }
+                        AutofitColumnsRule::None => header_widths_by_col[col_idx],
                     };
-                    let n_width_final =
-                        usize::min(n_max, usize::max(n_min, n_width_recorded + n_pad));
+                    let width_final = usize::min(
+                        width_max,
+                        usize::max(width_min, width_recorded + width_padding),
+                    );
                     worksheet
-                        .set_column_width(cast_col_num(n_idx_col)?, n_width_final as f64)
+                        .set_column_width(cast_col_num(col_idx)?, width_final as f64)
                         .map_err(derive_xlsx_error_text)?;
                 }
             }
@@ -485,13 +491,13 @@ impl XlsxWriter {
             });
         }
 
-        self.l_reports.push(report);
+        self.reports.push(report);
         Ok(())
     }
 
     fn derive_unique_sheet_name(&mut self, name: &str) -> String {
-        if !self.set_sheet_names_existing.contains(name) {
-            self.set_sheet_names_existing.insert(name.to_string());
+        if !self.existing_sheet_names.contains(name) {
+            self.existing_sheet_names.insert(name.to_string());
             return name.to_string();
         }
 
@@ -500,17 +506,17 @@ impl XlsxWriter {
             .take(usize::max(1, N_LEN_EXCEL_SHEET_NAME_MAX - 3))
             .collect();
 
-        let mut n_idx = 2usize;
+        let mut idx = 2usize;
         loop {
-            let candidate: String = format!("{base_name}__{n_idx}")
+            let candidate: String = format!("{base_name}__{idx}")
                 .chars()
                 .take(N_LEN_EXCEL_SHEET_NAME_MAX)
                 .collect();
-            if !self.set_sheet_names_existing.contains(&candidate) {
-                self.set_sheet_names_existing.insert(candidate.clone());
+            if !self.existing_sheet_names.contains(&candidate) {
+                self.existing_sheet_names.insert(candidate.clone());
                 return candidate;
             }
-            n_idx += 1;
+            idx += 1;
         }
     }
 }
@@ -565,9 +571,9 @@ pub fn estimate_width_len(
 }
 
 fn estimate_unicode_string_width(s: &str) -> usize {
-    let n_ascii = s.chars().filter(|chr| chr.is_ascii()).count();
-    let n_non_ascii = s.chars().count().saturating_sub(n_ascii);
-    n_ascii + (n_non_ascii as f64 * 1.6).round() as usize
+    let ascii_count = s.chars().filter(|chr| chr.is_ascii()).count();
+    let non_ascii_count = s.chars().count().saturating_sub(ascii_count);
+    ascii_count + (non_ascii_count as f64 * 1.6).round() as usize
 }
 
 /// Build per-column base/final format plans for current sheet slice.
@@ -586,24 +592,25 @@ pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFo
         write_options,
     } = options;
 
-    let set_cols_idx_numeric: BTreeSet<usize> = cols_idx_numeric.iter().copied().collect();
-    let set_cols_idx_integer: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
-    let set_cols_idx_decimal: Option<BTreeSet<usize>> =
+    let numeric_cols_idx: BTreeSet<usize> = cols_idx_numeric.iter().copied().collect();
+    let integer_cols_idx: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
+    let decimal_cols_idx: Option<BTreeSet<usize>> =
         cols_idx_decimal.map(|vals| vals.iter().copied().collect());
-    let set_cols_idx_scientific: BTreeSet<usize> = cols_idx_scientific.iter().copied().collect();
+    let scientific_cols_idx: BTreeSet<usize> = cols_idx_scientific.iter().copied().collect();
 
     let mut fmts_base_by_col = Vec::with_capacity(width_data);
     let mut fmts_by_col = Vec::with_capacity(width_data);
 
-    for col_idx in 0..width_data {
-        let mut fmt_base = if set_cols_idx_scientific.contains(&col_idx) {
+    for _col_idx in 0..width_data {
+        let col_idx = _col_idx;
+        let mut fmt_base = if scientific_cols_idx.contains(&col_idx) {
             fmt_scientific.clone()
-        } else if set_cols_idx_integer.contains(&col_idx) {
+        } else if integer_cols_idx.contains(&col_idx) {
             fmt_integer.clone()
-        } else if set_cols_idx_decimal
+        } else if decimal_cols_idx
             .as_ref()
-            .map_or(set_cols_idx_numeric.contains(&col_idx), |set_idx| {
-                set_idx.contains(&col_idx)
+            .map_or(numeric_cols_idx.contains(&col_idx), |indices| {
+                indices.contains(&col_idx)
             })
         {
             fmt_decimal.clone()
@@ -629,8 +636,8 @@ pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFo
     }
 }
 
-fn derive_dataframe_from_ipc_bytes(v_ipc_df: &[u8]) -> Result<DataFrame, String> {
-    IpcReader::new(Cursor::new(v_ipc_df))
+fn derive_dataframe_from_ipc_bytes(ipc_df: &[u8]) -> Result<DataFrame, String> {
+    IpcReader::new(Cursor::new(ipc_df))
         .finish()
         .map_err(|err| format!("Failed to read IPC DataFrame bytes: {err}"))
 }
@@ -664,9 +671,9 @@ fn derive_numeric_column_indices(df: &DataFrame) -> Vec<usize> {
     df.get_columns()
         .iter()
         .enumerate()
-        .filter_map(|(n_idx, c_col)| {
-            if c_col.dtype().is_numeric() {
-                Some(n_idx)
+        .filter_map(|(idx, col)| {
+            if col.dtype().is_numeric() {
+                Some(idx)
             } else {
                 None
             }
@@ -678,7 +685,7 @@ fn derive_integer_column_indices(df: &DataFrame, cols_idx_numeric: &[usize]) -> 
     cols_idx_numeric
         .iter()
         .copied()
-        .filter(|n_idx| df.get_columns()[*n_idx].dtype().is_integer())
+        .filter(|idx| df.get_columns()[*idx].dtype().is_integer())
         .collect()
 }
 
@@ -694,27 +701,28 @@ fn derive_scientific_column_indices(
         return Ok(vec![]);
     }
 
-    let set_cols_idx_integer: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
-    let set_cols_idx_decimal_specified: BTreeSet<usize> =
+    let integer_cols_idx: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
+    let decimal_cols_idx_specified: BTreeSet<usize> =
         cols_idx_decimal_specified.iter().copied().collect();
-    let is_decimal_explicit = !set_cols_idx_decimal_specified.is_empty();
+    let is_decimal_explicit = !decimal_cols_idx_specified.is_empty();
 
-    let n_rows_sample_max = match policy_scientific.height_body_inferred_max {
-        Some(n_max) => usize::min(df.height(), n_max),
+    let rows_sample_max = match policy_scientific.height_body_inferred_max {
+        Some(max_rows) => usize::min(df.height(), max_rows),
         None => df.height(),
     };
-    let l_cols = df.get_columns();
+    let cols = df.get_columns();
 
-    let mut l_cols_idx_scientific = Vec::new();
-    for n_idx_col in cols_idx_numeric {
-        let is_integer_col = set_cols_idx_integer.contains(n_idx_col);
+    let mut scientific_cols = Vec::new();
+    for _col_idx in cols_idx_numeric {
+        let col_idx = *_col_idx;
+        let is_integer_col = integer_cols_idx.contains(&col_idx);
         let should_include = match policy_scientific.rule_scope {
             ScientificScope::None => false,
             ScientificScope::Decimal => {
                 if is_integer_col {
                     false
                 } else if is_decimal_explicit {
-                    set_cols_idx_decimal_specified.contains(n_idx_col)
+                    decimal_cols_idx_specified.contains(&col_idx)
                 } else {
                     true
                 }
@@ -726,22 +734,23 @@ fn derive_scientific_column_indices(
             continue;
         }
 
-        let col = &l_cols[*n_idx_col];
+        let col = &cols[col_idx];
         let mut should_use_scientific = false;
-        for n_idx_row in 0..n_rows_sample_max {
+        for _row_idx in 0..rows_sample_max {
+            let row_idx = _row_idx;
             let value = col
-                .get(n_idx_row)
+                .get(row_idx)
                 .map_err(|err| format!("Failed to inspect scientific trigger value: {err}"))?;
-            let Some(n_value) = derive_f64_from_any_value(value) else {
+            let Some(value_num) = derive_f64_from_any_value(value) else {
                 continue;
             };
-            if !n_value.is_finite() {
+            if !value_num.is_finite() {
                 continue;
             }
 
-            let n_abs = n_value.abs();
-            if n_abs >= policy_scientific.thr_max
-                || (n_abs > 0.0 && n_abs < policy_scientific.thr_min)
+            let value_abs = value_num.abs();
+            if value_abs >= policy_scientific.thr_max
+                || (value_abs > 0.0 && value_abs < policy_scientific.thr_min)
             {
                 should_use_scientific = true;
                 break;
@@ -749,11 +758,11 @@ fn derive_scientific_column_indices(
         }
 
         if should_use_scientific {
-            l_cols_idx_scientific.push(*n_idx_col);
+            scientific_cols.push(col_idx);
         }
     }
 
-    Ok(l_cols_idx_scientific)
+    Ok(scientific_cols)
 }
 
 fn derive_f64_from_any_value(value: AnyValue<'_>) -> Option<f64> {
@@ -776,21 +785,23 @@ fn derive_f64_from_any_value(value: AnyValue<'_>) -> Option<f64> {
 }
 
 fn derive_string_grid_from_dataframe(df: &DataFrame) -> Result<Vec<Vec<String>>, String> {
-    let n_height = df.height();
-    let n_width = df.width();
-    let l_cols = df.get_columns();
+    let height = df.height();
+    let width = df.width();
+    let cols = df.get_columns();
 
-    let mut l_grid = vec![vec![String::new(); n_width]; n_height];
-    for (_idx_row, _val_row) in l_grid.iter_mut().enumerate() {
-        for (_idx_col, _val_cell) in _val_row.iter_mut().enumerate() {
-            let value = l_cols[_idx_col]
-                .get(_idx_row)
+    let mut grid = vec![vec![String::new(); width]; height];
+    for _row in grid.iter_mut().enumerate() {
+        let (row_idx, row_values) = _row;
+        for _cell in row_values.iter_mut().enumerate() {
+            let (col_idx, cell_value) = _cell;
+            let value = cols[col_idx]
+                .get(row_idx)
                 .map_err(|err| format!("Failed to read header cell value: {err}"))?;
-            *_val_cell = derive_header_text_from_any_value(value);
+            *cell_value = derive_header_text_from_any_value(value);
         }
     }
 
-    Ok(l_grid)
+    Ok(grid)
 }
 
 fn derive_header_text_from_any_value(value: AnyValue<'_>) -> String {
@@ -871,13 +882,12 @@ fn write_header(
     }
 
     apply_vertical_run_text_blankout(&mut header_grid);
-    let dict_horizontal_merges_by_row = plan_horizontal_merges(&header_grid);
-    let dict_horizontal_merge_tracker =
-        derive_horizontal_merge_tracker(&dict_horizontal_merges_by_row);
+    let horizontal_merges_by_row = plan_horizontal_merges(&header_grid);
+    let horizontal_merge_tracker = derive_horizontal_merge_tracker(&horizontal_merges_by_row);
 
     for (row_idx, row_values) in header_grid.iter().enumerate() {
         for (col_idx, cell_value) in row_values.iter().enumerate() {
-            if dict_horizontal_merge_tracker
+            if horizontal_merge_tracker
                 .get(&(row_idx, col_idx))
                 .copied()
                 .unwrap_or(false)
@@ -901,8 +911,9 @@ fn write_header(
             }
         }
 
-        if let Some(l_merges) = dict_horizontal_merges_by_row.get(&row_idx) {
-            for merge in l_merges {
+        if let Some(merges) = horizontal_merges_by_row.get(&row_idx) {
+            for _merge in merges {
+                let merge = _merge;
                 worksheet
                     .merge_range(
                         cast_row_num(row_idx)?,

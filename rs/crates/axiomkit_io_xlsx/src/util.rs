@@ -146,19 +146,20 @@ pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut dict_pos: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-    for (n_idx, c_name) in columns.iter().enumerate() {
-        dict_pos.entry(c_name).or_default().push(n_idx);
+    let mut positions_by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for _idx_name in columns.iter().enumerate() {
+        let (idx, name) = _idx_name;
+        positions_by_name.entry(name).or_default().push(idx);
     }
 
-    let c_msg = dict_pos
+    let message = positions_by_name
         .iter()
-        .filter_map(|(c_name, l_pos)| {
-            if l_pos.len() > 1 {
+        .filter_map(|(name, positions)| {
+            if positions.len() > 1 {
                 Some(format!(
-                    "{c_name:?} x{} at indices {:?}",
-                    l_pos.len(),
-                    l_pos
+                    "{name:?} x{} at indices {:?}",
+                    positions.len(),
+                    positions
                 ))
             } else {
                 None
@@ -167,7 +168,7 @@ pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
         .collect::<Vec<_>>()
         .join("; ");
 
-    Err(format!("Duplicate column names detected: {c_msg}"))
+    Err(format!("Duplicate column names detected: {message}"))
 }
 
 /// Resolve mixed refs (`name` or numeric string index) to sorted unique indices.
@@ -179,20 +180,21 @@ pub fn select_sorted_indices_from_refs(
         return Ok(vec![]);
     };
 
-    let mut set_idx = BTreeSet::new();
-    for ref_col in refs {
-        if let Ok(n_idx) = ref_col.parse::<usize>() {
-            set_idx.insert(n_idx);
+    let mut indices = BTreeSet::new();
+    for _ref_col in refs {
+        let ref_col = _ref_col;
+        if let Ok(idx) = ref_col.parse::<usize>() {
+            indices.insert(idx);
             continue;
         }
 
-        let Some(n_idx) = columns.iter().position(|c_name| c_name == ref_col) else {
+        let Some(idx) = columns.iter().position(|name| name == ref_col) else {
             return Err(format!("Column not found: {ref_col:?}"));
         };
-        set_idx.insert(n_idx);
+        indices.insert(idx);
     }
 
-    Ok(set_idx.into_iter().collect())
+    Ok(indices.into_iter().collect())
 }
 
 // #endregion
@@ -201,8 +203,8 @@ pub fn select_sorted_indices_from_refs(
 
 /// Derive row chunk size from dataframe width and chunk policy.
 pub fn calculate_row_chunk_size(width_df: usize, policy: &XlsxRowChunkPolicySpec) -> usize {
-    if let Some(n_fixed_size) = policy.fixed_size {
-        return n_fixed_size;
+    if let Some(fixed_size) = policy.fixed_size {
+        return fixed_size;
     }
     if width_df >= policy.width_large {
         return policy.size_large;
@@ -215,14 +217,14 @@ pub fn calculate_row_chunk_size(width_df: usize, policy: &XlsxRowChunkPolicySpec
 
 /// Generate `(row_start, row_len)` chunks for `n_rows_total`.
 pub fn generate_row_chunks(n_rows_total: usize, size_rows_chunk: usize) -> Vec<(usize, usize)> {
-    let mut l_chunks = Vec::new();
-    let mut n_row_cursor = 0;
-    while n_row_cursor < n_rows_total {
-        let n_rows_per_chunk = usize::min(size_rows_chunk, n_rows_total - n_row_cursor);
-        l_chunks.push((n_row_cursor, n_rows_per_chunk));
-        n_row_cursor += n_rows_per_chunk;
+    let mut chunks = Vec::new();
+    let mut row_cursor = 0;
+    while row_cursor < n_rows_total {
+        let rows_per_chunk = usize::min(size_rows_chunk, n_rows_total - row_cursor);
+        chunks.push((row_cursor, rows_per_chunk));
+        row_cursor += rows_per_chunk;
     }
-    l_chunks
+    chunks
 }
 
 // #endregion
@@ -231,16 +233,19 @@ pub fn generate_row_chunks(n_rows_total: usize, size_rows_chunk: usize) -> Vec<(
 
 /// Replace invalid chars and trim to valid Excel sheet name.
 pub fn sanitize_sheet_name(name: &str, replace_to: &str) -> String {
-    let mut c_name = name.to_string();
-    for c_illegal in TUP_EXCEL_ILLEGAL {
-        c_name = c_name.replace(c_illegal, replace_to);
+    let mut sheet_name = name.to_string();
+    for _illegal in TUP_EXCEL_ILLEGAL {
+        sheet_name = sheet_name.replace(_illegal, replace_to);
     }
-    c_name = c_name.trim().to_string();
-    if c_name.is_empty() {
-        c_name = "Sheet".to_string();
+    sheet_name = sheet_name.trim().to_string();
+    if sheet_name.is_empty() {
+        sheet_name = "Sheet".to_string();
     }
 
-    c_name.chars().take(N_LEN_EXCEL_SHEET_NAME_MAX).collect()
+    sheet_name
+        .chars()
+        .take(N_LEN_EXCEL_SHEET_NAME_MAX)
+        .collect()
 }
 
 /// Split logical dataframe range into Excel-compliant sheet slices.
@@ -255,82 +260,84 @@ pub fn plan_sheet_slices(
         return Err("height_header must be >= 1.".to_string());
     }
 
-    let n_rows_data_max = N_NROWS_EXCEL_MAX
+    let max_data_rows = N_NROWS_EXCEL_MAX
         .checked_sub(height_header)
         .ok_or_else(|| {
             format!("Header too tall: height_header={height_header} exceeds Excel limit.")
         })?;
 
-    if n_rows_data_max == 0 {
+    if max_data_rows == 0 {
         return Err(format!(
             "Header too tall: height_header={height_header} exceeds Excel limit."
         ));
     }
 
-    let mut l_col_slices = Vec::new();
-    let mut n_col_start = 0;
-    while n_col_start < width_df {
-        let n_col_end = usize::min(width_df, n_col_start + N_NCOLS_EXCEL_MAX);
-        l_col_slices.push((n_col_start, n_col_end));
-        n_col_start = n_col_end;
+    let mut col_slices = Vec::new();
+    let mut col_start = 0;
+    while col_start < width_df {
+        let col_end = usize::min(width_df, col_start + N_NCOLS_EXCEL_MAX);
+        col_slices.push((col_start, col_end));
+        col_start = col_end;
     }
 
-    let mut l_row_slices = Vec::new();
-    let mut n_row_start = 0;
-    while n_row_start < height_df {
-        let n_row_end = usize::min(height_df, n_row_start + n_rows_data_max);
-        l_row_slices.push((n_row_start, n_row_end));
-        n_row_start = n_row_end;
+    let mut row_slices = Vec::new();
+    let mut row_start = 0;
+    while row_start < height_df {
+        let row_end = usize::min(height_df, row_start + max_data_rows);
+        row_slices.push((row_start, row_end));
+        row_start = row_end;
     }
 
-    if l_row_slices.is_empty() {
-        l_row_slices.push((0, 0));
+    if row_slices.is_empty() {
+        row_slices.push((0, 0));
     }
 
-    let n_parts_total = l_col_slices.len() * l_row_slices.len();
+    let parts_total = col_slices.len() * row_slices.len();
 
-    let mut l_sheet_parts = Vec::new();
-    let mut n_idx_part = 1;
-    for (col_start, col_end) in &l_col_slices {
-        for (row_start, row_end) in &l_row_slices {
-            let c_part_sheet_name = if n_parts_total == 1 {
+    let mut sheet_slices = Vec::new();
+    let mut part_idx = 1;
+    for _col_slice in &col_slices {
+        let (col_start, col_end) = _col_slice;
+        for _row_slice in &row_slices {
+            let (row_start, row_end) = _row_slice;
+            let part_sheet_name = if parts_total == 1 {
                 sheet_name.to_string()
             } else {
-                create_sheet_identifier(sheet_name, n_idx_part)
+                create_sheet_identifier(sheet_name, part_idx)
             };
 
-            l_sheet_parts.push(SheetSliceSpec {
-                sheet_name: c_part_sheet_name,
+            sheet_slices.push(SheetSliceSpec {
+                sheet_name: part_sheet_name,
                 row_start_inclusive: *row_start,
                 row_end_exclusive: *row_end,
                 col_start_inclusive: *col_start,
                 col_end_exclusive: *col_end,
             });
-            n_idx_part += 1;
+            part_idx += 1;
         }
     }
 
-    if n_parts_total > 1 {
+    if parts_total > 1 {
         report.warn(format!(
             "Excel limit overflow: split into {} sheets (columns-first, then rows).",
-            l_sheet_parts.len()
+            sheet_slices.len()
         ));
     }
 
-    Ok(l_sheet_parts)
+    Ok(sheet_slices)
 }
 
 /// Create suffixed sheet name (`base_1`, `base_2`, ...), respecting length cap.
 pub fn create_sheet_identifier(base_name: &str, part_idx_1based: usize) -> String {
-    let c_sheet_name_suffix = format!("_{part_idx_1based}");
-    let n_len_base_name_max = N_LEN_EXCEL_SHEET_NAME_MAX.saturating_sub(c_sheet_name_suffix.len());
+    let sheet_name_suffix = format!("_{part_idx_1based}");
+    let base_name_max_len = N_LEN_EXCEL_SHEET_NAME_MAX.saturating_sub(sheet_name_suffix.len());
 
-    let c_sheet_name_base: String = base_name
+    let sheet_name_base: String = base_name
         .chars()
-        .take(usize::max(1, n_len_base_name_max))
+        .take(usize::max(1, base_name_max_len))
         .collect();
 
-    format!("{c_sheet_name_base}{c_sheet_name_suffix}")
+    format!("{sheet_name_base}{sheet_name_suffix}")
 }
 
 // #endregion
@@ -343,142 +350,132 @@ pub fn derive_contiguous_ranges(sorted_indices: &[usize]) -> Vec<(usize, usize)>
         return vec![];
     }
 
-    let mut l_contiguous_ranges = Vec::new();
-    let mut n_idx_start = sorted_indices[0];
-    let mut n_idx_end = sorted_indices[0];
+    let mut contiguous_ranges = Vec::new();
+    let mut idx_start = sorted_indices[0];
+    let mut idx_end = sorted_indices[0];
 
-    for idx in &sorted_indices[1..] {
-        if *idx == n_idx_end + 1 {
-            n_idx_end = *idx;
+    for _idx in &sorted_indices[1..] {
+        let idx = *_idx;
+        if idx == idx_end + 1 {
+            idx_end = idx;
         } else {
-            l_contiguous_ranges.push((n_idx_start, n_idx_end));
-            n_idx_start = *idx;
-            n_idx_end = *idx;
+            contiguous_ranges.push((idx_start, idx_end));
+            idx_start = idx;
+            idx_end = idx;
         }
     }
 
-    l_contiguous_ranges.push((n_idx_start, n_idx_end));
-    l_contiguous_ranges
+    contiguous_ranges.push((idx_start, idx_end));
+    contiguous_ranges
 }
 
 /// Plan horizontal merges for repeated non-empty header text per row.
 pub fn plan_horizontal_merges(
     header_grid: &[Vec<String>],
 ) -> BTreeMap<usize, Vec<SheetHorizontalMergeSpec>> {
-    let mut dict_horizontal_merges_map = BTreeMap::new();
+    let mut horizontal_merges_by_row = BTreeMap::new();
     if header_grid.is_empty() {
-        return dict_horizontal_merges_map;
+        return horizontal_merges_by_row;
     }
 
-    let n_rows = header_grid.len();
-    let n_cols = header_grid[0].len();
+    let row_count = header_grid.len();
+    let col_count = header_grid[0].len();
 
-    for (_idx_row, _) in header_grid.iter().enumerate().take(n_rows) {
-        let v_str_current_row = &header_grid[_idx_row];
-        let mut n_col_idx = 0;
+    for _row_idx in header_grid.iter().enumerate().take(row_count) {
+        let (row_idx, _) = _row_idx;
+        let current_row = &header_grid[row_idx];
+        let mut col_idx = 0;
 
-        while n_col_idx < n_cols {
-            let c_cell_val = &v_str_current_row[n_col_idx];
-            if c_cell_val.is_empty() {
-                n_col_idx += 1;
+        while col_idx < col_count {
+            let cell_value = &current_row[col_idx];
+            if cell_value.is_empty() {
+                col_idx += 1;
                 continue;
             }
 
-            let mut n_col_idx_end = n_col_idx + 1;
-            while n_col_idx_end < n_cols && v_str_current_row[n_col_idx_end] == *c_cell_val {
-                n_col_idx_end += 1;
+            let mut col_idx_end = col_idx + 1;
+            while col_idx_end < col_count && current_row[col_idx_end] == *cell_value {
+                col_idx_end += 1;
             }
 
-            if n_col_idx_end - n_col_idx > 1 {
-                dict_horizontal_merges_map
-                    .entry(_idx_row)
+            if col_idx_end - col_idx > 1 {
+                horizontal_merges_by_row
+                    .entry(row_idx)
                     .or_insert_with(Vec::new)
                     .push(SheetHorizontalMergeSpec {
-                        row_idx_start: _idx_row,
-                        col_idx_start: n_col_idx,
-                        col_idx_end: n_col_idx_end - 1,
-                        text: c_cell_val.clone(),
+                        row_idx_start: row_idx,
+                        col_idx_start: col_idx,
+                        col_idx_end: col_idx_end - 1,
+                        text: cell_value.clone(),
                     });
             }
-            n_col_idx = n_col_idx_end;
+            col_idx = col_idx_end;
         }
     }
 
-    dict_horizontal_merges_map
+    horizontal_merges_by_row
 }
 
 /// Generate contiguous vertical runs `(col, row_start, row_end, text)`.
 pub fn _generate_vertical_runs(header_grid: &[Vec<String>]) -> Vec<(usize, usize, usize, String)> {
-    let mut v_run_collection = Vec::new();
+    let mut run_collection = Vec::new();
     if header_grid.is_empty() {
-        return v_run_collection;
+        return run_collection;
     }
-    let Some(v_header_row_0) = header_grid.first() else {
-        return v_run_collection;
+    let Some(header_row_0) = header_grid.first() else {
+        return run_collection;
     };
 
-    let n_rows = header_grid.len();
-    let n_cols = v_header_row_0.len();
+    let row_count = header_grid.len();
+    let col_count = header_row_0.len();
 
     debug_assert!(
-        header_grid.iter().all(|_row| _row.len() == n_cols),
+        header_grid.iter().all(|_row| _row.len() == col_count),
         "All rows must have the same number of columns."
     );
 
-    for (_idx_col, _) in v_header_row_0.iter().enumerate() {
-        let mut n_row_idx_start = 0;
-        while n_row_idx_start < n_rows {
-            let c_val_cell_current = &header_grid[n_row_idx_start][_idx_col];
-            if c_val_cell_current.is_empty() {
-                n_row_idx_start += 1;
+    for _col_idx in header_row_0.iter().enumerate() {
+        let (col_idx, _) = _col_idx;
+        let mut row_idx_start = 0;
+        while row_idx_start < row_count {
+            let cell_value = &header_grid[row_idx_start][col_idx];
+            if cell_value.is_empty() {
+                row_idx_start += 1;
                 continue;
             }
 
-            let mut n_row_idx_next = n_row_idx_start + 1;
-            while n_row_idx_next < n_rows
-                && header_grid[n_row_idx_next][_idx_col] == *c_val_cell_current
-            {
-                n_row_idx_next += 1;
+            let mut row_idx_next = row_idx_start + 1;
+            while row_idx_next < row_count && header_grid[row_idx_next][col_idx] == *cell_value {
+                row_idx_next += 1;
             }
 
-            let n_len_vertical_run = n_row_idx_next - n_row_idx_start;
-            if n_len_vertical_run > 1 {
-                v_run_collection.push((
-                    _idx_col,
-                    n_row_idx_start,
-                    n_row_idx_next - 1,
-                    c_val_cell_current.clone(),
-                ));
+            let vertical_run_len = row_idx_next - row_idx_start;
+            if vertical_run_len > 1 {
+                run_collection.push((col_idx, row_idx_start, row_idx_next - 1, cell_value.clone()));
             }
 
-            n_row_idx_start = n_row_idx_next;
+            row_idx_start = row_idx_next;
         }
     }
 
-    v_run_collection
+    run_collection
 }
 
 /// Build border plan to simulate vertical merge visuals without merge cells.
 pub fn plan_vertical_visual_merge_borders(
     header_grid: &[Vec<String>],
 ) -> BTreeMap<(usize, usize), CellBorderSpec> {
-    let mut dict_plan_vertical_merge_border = BTreeMap::new();
+    let mut vertical_merge_border_plan = BTreeMap::new();
 
-    for (col_idx, row_start, row_end, _) in _generate_vertical_runs(header_grid) {
-        for row_idx_within_merge in row_start..=row_end {
-            dict_plan_vertical_merge_border.insert(
-                (row_idx_within_merge, col_idx),
+    for _run in _generate_vertical_runs(header_grid) {
+        let (col_idx, row_start, row_end, _) = _run;
+        for _row_idx in row_start..=row_end {
+            let row_idx = _row_idx;
+            vertical_merge_border_plan.insert(
+                (row_idx, col_idx),
                 CellBorderSpec {
-                    top: if row_idx_within_merge == row_start {
-                        1
-                    } else {
-                        0
-                    },
-                    bottom: if row_idx_within_merge == row_end {
-                        1
-                    } else {
-                        0
-                    },
+                    top: if row_idx == row_start { 1 } else { 0 },
+                    bottom: if row_idx == row_end { 1 } else { 0 },
                     left: 1,
                     right: 1,
                 },
@@ -486,7 +483,7 @@ pub fn plan_vertical_visual_merge_borders(
         }
     }
 
-    dict_plan_vertical_merge_border
+    vertical_merge_border_plan
 }
 
 /// Clear repeated text in vertical runs, keeping only first row text.
@@ -502,17 +499,20 @@ pub fn apply_vertical_run_text_blankout(header_grid: &mut [Vec<String>]) {
 pub fn derive_horizontal_merge_tracker(
     row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SheetHorizontalMergeSpec>>,
 ) -> BTreeMap<(usize, usize), bool> {
-    let mut dict_merged_cells_tracker = BTreeMap::new();
+    let mut merged_cells_tracker = BTreeMap::new();
 
-    for (row_idx, horizontal_merges) in row_horizontal_merge_mapping {
-        for merge in horizontal_merges {
-            for col_idx in (merge.col_idx_start + 1)..=merge.col_idx_end {
-                dict_merged_cells_tracker.insert((*row_idx, col_idx), true);
+    for _row_merges in row_horizontal_merge_mapping {
+        let (row_idx, horizontal_merges) = _row_merges;
+        for _merge in horizontal_merges {
+            let merge = _merge;
+            for _col_idx in (merge.col_idx_start + 1)..=merge.col_idx_end {
+                let col_idx = _col_idx;
+                merged_cells_tracker.insert((*row_idx, col_idx), true);
             }
         }
     }
 
-    dict_merged_cells_tracker
+    merged_cells_tracker
 }
 
 // #endregion
