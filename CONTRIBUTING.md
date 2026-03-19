@@ -181,11 +181,13 @@ Internal names are a readability aid, not a rigid contract.
   scan speed. Do not cargo-cult container prefixes onto already-clear names.
 - Avoid generic names such as `obj`, `tmp`, `x`, or `value` when a concrete
   role is available.
-- In Python and Rust, short transient loop placeholders such as `_sheet` or
-  `_name` are acceptable when intentionally temporary.
-- In R, `.sheet` or `.name` placeholders are acceptable in the same role.
-- Do not force marker prefixes when a plain semantic loop variable reads
-  better.
+- In Python and Rust, loop binders introduced by `for` should use an
+  underscore-prefixed name such as `_sheet` or `_name`.
+- In R, loop binders introduced by `for` should use a dot-prefixed name such
+  as `.sheet` or `.name`.
+- If a loop step needs a semantic working name, derive a new local from the
+  loop binder inside the loop body instead of dropping the prefix on the
+  binder itself.
 
 ## Public-facing Schema and Header Naming
 
