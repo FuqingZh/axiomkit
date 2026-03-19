@@ -4,8 +4,7 @@ Personal, portable engineering toolkit (Python/R/Rust).
 
 ## Docs
 
-- Memory and principles: [MEMORY.md](MEMORY.md)
-- Contribution guide and naming conventions: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Repository instructions: [AGENTS.md](AGENTS.md)
 - Python package: [py/README.md](py/README.md)
 - R package: [r/README.md](r/README.md)
 - Rust workspace: [rs/](rs/)
