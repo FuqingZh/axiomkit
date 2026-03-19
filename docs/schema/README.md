@@ -1,27 +1,26 @@
-# Schema 文档集索引（v1.1）
+# Schema 文档集索引
 
-- 更新日期：`2026-03-04`
-- 当前有效版本：`v1.1`
+`axiomkit` 只保留仍然需要放在仓库内的 schema 文档。
 
-## 1. 文档集评估结论
+## 已迁移到 engineering-canon 的通用规范
 
-现有 `v1.0` 文档总体框架可用，但存在以下问题：
+以下文档已上提为跨项目真源，不再在 `axiomkit/docs` 中重复维护：
 
-1. 配置真源仍写为 `YAML`，与当前工程实践不一致（现统一为 `TOML`）。
-2. 目录布局与 `WorkspacePlan` 现行结构不一致（应包含 `meta/` 目录，而非 `out/meta.json`）。
-3. 文件命名规范未明确统一前缀和分隔语义（`data- / info- / graph-` 等）。
-4. `identifer` 目录拼写错误，已新增 `identifier` 作为规范路径。
-5. 个别文档绑定生信/蛋白组学语义，泛化不足。
+1. `pipeline_directory_layout_specification`
+2. `step_to_step_artifact_flow_specification`
+3. `identifier`
 
-## 2. v1.1 生效文档
+新的真源位置：
+
+1. `/home/being/projects/engineering-canon/global-defaults/docs/schema/pipeline_directory_layout_specification/20260304-v1.1.md`
+2. `/home/being/projects/engineering-canon/global-defaults/docs/schema/step_to_step_artifact_flow_specification/20260304-v1.1.md`
+3. `/home/being/projects/engineering-canon/global-defaults/docs/schema/identifier/20260304-v1.1.md`
+
+## 当前仍保留在 axiomkit 的文档
 
 1. `data_architecture_file_format_specification/20260304-v1.1.md`
-2. `pipeline_directory_layout_specification/20260304-v1.1.md`
-3. `step_to_step_artifact_flow_specification/20260304-v1.1.md`
-4. `identifier/20260304-v1.1.md`
 
-## 3. 版本管理规则
+## 说明
 
-1. 旧版保留，不覆盖；新版递增版本号并更新时间。
-2. 文件命名：`YYYYMMDD-vX.Y.md`。
-3. 目录命名建议无空格、无拼写错误；历史目录保留兼容，新规范优先用新目录。
+- `axiomkit` 继续保留项目特有或尚未上提的文档。
+- 通用 schema 规范以后只在 `engineering-canon` 维护。
