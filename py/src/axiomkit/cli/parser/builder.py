@@ -231,7 +231,7 @@ class CommandBuilder:
         self.group_ops: list[Callable[[ArgGroupRegistry], None]] = []
         self._children: list[CommandSpec] = []
         self.is_closed = False
-        self._root._open_command_builders.append(self)
+        self._root.append_open_command_builder(self)
 
     def assert_open(self) -> None:
         if self.is_closed:
@@ -298,7 +298,7 @@ class CommandBuilder:
         """
         self.assert_open()
         self.is_closed = True
-        self._root._open_command_builders.remove(self)
+        self._root.remove_open_command_builder(self)
 
         group_ops = tuple(self.group_ops)
         base_arg_builder = self._arg_builder
@@ -533,6 +533,14 @@ class ParserBuilder:
         private-member diagnostics in static analyzers.
         """
         return tuple(self._open_command_builders)
+
+    def append_open_command_builder(self, builder: CommandBuilder) -> None:
+        """Track one newly opened command builder scope."""
+        self._open_command_builders.append(builder)
+
+    def remove_open_command_builder(self, builder: CommandBuilder) -> None:
+        """Stop tracking a command builder scope after it is closed."""
+        self._open_command_builders.remove(builder)
 
     def register_params(self, *specs: ParamSpec | Iterable[ParamSpec]) -> Self:
         """Register one or more parameter specifications.
