@@ -320,6 +320,23 @@ def test_build_rejects_unclosed_nested_command_builders() -> None:
         app.build()
 
 
+def test_open_command_builders_exposes_read_only_snapshot() -> None:
+    app = ParserBuilder(prog="demo")
+    root = app.command("go", help="Gene Ontology")
+    leaf = root.command("ontology", help="Ontology assets")
+
+    open_builders = app.open_command_builders
+
+    assert isinstance(open_builders, tuple)
+    assert open_builders == (root, leaf)
+    assert [builder.id for builder in open_builders] == ["go", "go.ontology"]
+
+    leaf.done()
+
+    assert app.open_command_builders == (root,)
+    assert open_builders == (root, leaf)
+
+
 def test_done_all_returns_root_parser_builder_for_nested_chain() -> None:
     app = ParserBuilder(prog="demo")
 

@@ -241,6 +241,11 @@ class CommandBuilder:
             )
 
     @property
+    def id(self) -> str:
+        """Expose the canonical command id for this builder scope."""
+        return self._id
+
+    @property
     def params(self) -> ParamRegistry:
         """Expose the shared parameter registry from the parent scope."""
         return self._owner.params
@@ -519,6 +524,16 @@ class ParserBuilder:
         """
         return self._groups.select_group(key)
 
+    @property
+    def open_command_builders(self) -> tuple[CommandBuilder, ...]:
+        """Expose unclosed command builders as a read-only snapshot.
+
+        This keeps the internal tracking list private while allowing external
+        callers to inspect pending fluent builder scopes without triggering
+        private-member diagnostics in static analyzers.
+        """
+        return tuple(self._open_command_builders)
+
     def register_params(self, *specs: ParamSpec | Iterable[ParamSpec]) -> Self:
         """Register one or more parameter specifications.
 
@@ -635,7 +650,7 @@ class ParserBuilder:
                 registries/factories are not provided.
         """
         if self._open_command_builders:
-            ids_open = ", ".join(builder._id for builder in self._open_command_builders)
+            ids_open = ", ".join(builder.id for builder in self._open_command_builders)
             raise ValueError(
                 "Unclosed command builders detected before build(); "
                 f"missing done() for: {ids_open}"
