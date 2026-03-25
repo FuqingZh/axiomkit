@@ -343,11 +343,11 @@ pub struct XlsxWriteOptionsSpec {
     /// Value conversion policy.
     pub value_policy: XlsxValuePolicySpec,
     /// Keep missing/NaN/Inf as text instead of blank.
-    pub keep_missing_values: bool,
+    pub should_keep_missing_values: bool,
     /// Infer numeric columns from dtypes.
-    pub infer_numeric_cols: bool,
+    pub should_infer_numeric_cols: bool,
     /// Infer integer subset from numeric columns.
-    pub infer_integer_cols: bool,
+    pub should_infer_integer_cols: bool,
     /// Row chunking policy.
     pub row_chunk_policy: XlsxRowChunkPolicySpec,
     /// Base patch merged into all per-column formats.
@@ -358,9 +358,9 @@ impl Default for XlsxWriteOptionsSpec {
     fn default() -> Self {
         Self {
             value_policy: XlsxValuePolicySpec::default(),
-            keep_missing_values: false,
-            infer_numeric_cols: true,
-            infer_integer_cols: true,
+            should_keep_missing_values: false,
+            should_infer_numeric_cols: true,
+            should_infer_integer_cols: true,
             row_chunk_policy: XlsxRowChunkPolicySpec::default(),
             base_format_patch: CellFormatSpec {
                 border: Some(0),

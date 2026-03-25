@@ -28,9 +28,9 @@ pub struct XlsxSheetWriteOptionsSpec {
     /// Decimal columns by name/index-string.
     pub cols_decimal: Option<Vec<String>>,
     /// Number of frozen columns.
-    pub col_freeze: usize,
-    /// Frozen row index; defaults to header height when `None`.
-    pub row_freeze: Option<usize>,
+    pub num_frozen_cols: usize,
+    /// Number of frozen top rows; defaults to header height when `None`.
+    pub num_frozen_rows: Option<usize>,
     /// Enable merged multi-row header behavior.
     pub should_merge_header: bool,
     /// Override writer-level keep-missing behavior.
@@ -180,7 +180,7 @@ impl XlsxWriter {
 
         let should_keep_missing_values = options
             .should_keep_missing_values
-            .unwrap_or(self.write_options.keep_missing_values);
+            .unwrap_or(self.write_options.should_keep_missing_values);
         let value_policy = self.write_options.value_policy.clone();
 
         let col_names: Vec<String> = df_data
@@ -216,13 +216,13 @@ impl XlsxWriter {
             header_grid = derive_string_grid_from_dataframe(df_header_custom)?;
         }
 
-        let cols_idx_numeric = if self.write_options.infer_numeric_cols {
+        let cols_idx_numeric = if self.write_options.should_infer_numeric_cols {
             derive_numeric_column_indices(df_data)
         } else {
             vec![]
         };
 
-        let cols_idx_integer_inferred = if self.write_options.infer_integer_cols {
+        let cols_idx_integer_inferred = if self.write_options.should_infer_integer_cols {
             derive_integer_column_indices(df_data, &cols_idx_numeric)
         } else {
             vec![]
@@ -261,7 +261,7 @@ impl XlsxWriter {
             &mut report,
         )?;
 
-        let row_freeze = options.row_freeze.unwrap_or(header_row_count);
+        let num_frozen_rows = options.num_frozen_rows.unwrap_or(header_row_count);
 
         for _sheet_slice in sheet_slices {
             let sheet_slice = _sheet_slice;
@@ -364,7 +364,10 @@ impl XlsxWriter {
             )?;
 
             worksheet
-                .set_freeze_panes(cast_row_num(row_freeze)?, cast_col_num(options.col_freeze)?)
+                .set_freeze_panes(
+                    cast_row_num(num_frozen_rows)?,
+                    cast_col_num(options.num_frozen_cols)?,
+                )
                 .map_err(derive_xlsx_error_text)?;
 
             let numeric_cols_idx: BTreeSet<usize> =

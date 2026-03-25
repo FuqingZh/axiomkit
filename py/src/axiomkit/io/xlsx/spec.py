@@ -84,9 +84,9 @@ class XlsxRowChunkPolicySpec:
 @dataclass(frozen=True, slots=True)
 class XlsxWriteOptionsSpec:
     value_policy: XlsxValuePolicySpec = field(default_factory=XlsxValuePolicySpec)
-    keep_missing_values: bool = False
-    infer_numeric_cols: bool = True
-    infer_integer_cols: bool = True
+    should_keep_missing_values: bool = False
+    should_infer_numeric_cols: bool = True
+    should_infer_integer_cols: bool = True
     row_chunk_policy: XlsxRowChunkPolicySpec = field(
         default_factory=XlsxRowChunkPolicySpec
     )

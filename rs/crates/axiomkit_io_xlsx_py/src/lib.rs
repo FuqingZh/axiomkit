@@ -144,8 +144,8 @@ impl PyXlsxWriter {
         df_header = None,
         cols_integer = None,
         cols_decimal = None,
-        col_freeze = 0,
-        row_freeze = None,
+        num_frozen_cols = 0,
+        num_frozen_rows = None,
         should_merge_header = false,
         should_keep_missing_values = None,
         policy_autofit = None,
@@ -160,8 +160,8 @@ impl PyXlsxWriter {
         df_header: Option<&Bound<'py, PyAny>>,
         cols_integer: Option<&Bound<'py, PyAny>>,
         cols_decimal: Option<&Bound<'py, PyAny>>,
-        col_freeze: usize,
-        row_freeze: Option<usize>,
+        num_frozen_cols: usize,
+        num_frozen_rows: Option<usize>,
         should_merge_header: bool,
         should_keep_missing_values: Option<bool>,
         policy_autofit: Option<&Bound<'py, PyAny>>,
@@ -179,8 +179,8 @@ impl PyXlsxWriter {
         let cfg_sheet_write_options = XlsxSheetWriteOptionsSpec {
             cols_integer: parse_column_refs(cols_integer)?,
             cols_decimal: parse_column_refs(cols_decimal)?,
-            col_freeze,
-            row_freeze,
+            num_frozen_cols,
+            num_frozen_rows,
             should_merge_header,
             should_keep_missing_values,
             policy_autofit: parse_spec_autofit_cells_policy(policy_autofit)?
@@ -367,14 +367,14 @@ fn parse_spec_xlsx_write_options(
         cfg_write_options.value_policy = value_policy;
     }
 
-    if let Some(v) = extract_optional_attr::<bool>(obj, "keep_missing_values")? {
-        cfg_write_options.keep_missing_values = v;
+    if let Some(v) = extract_optional_attr::<bool>(obj, "should_keep_missing_values")? {
+        cfg_write_options.should_keep_missing_values = v;
     }
-    if let Some(v) = extract_optional_attr::<bool>(obj, "infer_numeric_cols")? {
-        cfg_write_options.infer_numeric_cols = v;
+    if let Some(v) = extract_optional_attr::<bool>(obj, "should_infer_numeric_cols")? {
+        cfg_write_options.should_infer_numeric_cols = v;
     }
-    if let Some(v) = extract_optional_attr::<bool>(obj, "infer_integer_cols")? {
-        cfg_write_options.infer_integer_cols = v;
+    if let Some(v) = extract_optional_attr::<bool>(obj, "should_infer_integer_cols")? {
+        cfg_write_options.should_infer_integer_cols = v;
     }
 
     if let Some(row_chunk_policy_obj) = extract_optional_attr_bound(obj, "row_chunk_policy")? {
