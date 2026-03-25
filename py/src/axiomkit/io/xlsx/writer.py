@@ -118,6 +118,37 @@ class XlsxWriter:
         policy_autofit: AutofitCellsPolicySpec | None = None,
         policy_scientific: ScientificPolicySpec | None = None,
     ) -> Self:
+        """Write one worksheet to the workbook.
+
+        Args:
+            df: Tabular data to write. The object must be convertible to a Polars
+                DataFrame by the Rust bridge.
+            sheet_name: Requested worksheet name before Excel sanitization and
+                uniqueness adjustments.
+            df_header: Optional custom header grid. When provided, it must have the
+                same width as ``df`` and at least one row.
+            cols_integer: Optional column identifiers that should use integer
+                formatting and integer conversion rules.
+            cols_decimal: Optional column identifiers that should use decimal
+                formatting. Pass ``False`` to disable explicit decimal-column
+                selection.
+            num_frozen_cols: Number of leftmost columns to freeze.
+            num_frozen_rows: Number of top rows to freeze. When ``None``, the
+                backend uses the resolved header height.
+            should_merge_header:
+                - ``True``: Merge all adjacent header labels that are identical.
+                - ``False``: Don't merge any header labels.
+            should_keep_missing_values:
+                - ``True``: Write missing, NaN, and Inf values as text tokens.
+                - ``False``: Write missing, NaN, and Inf values as blank cells.
+                - ``None``: Use the writer-level option for missing value handling.
+            policy_autofit: Column autofit policy applied to the sheet.
+            policy_scientific: Scientific-number formatting policy applied to the
+                sheet.
+
+        Returns:
+            Self: The current writer instance for fluent chaining.
+        """
         self._writer.write_sheet(
             df=df,
             sheet_name=sheet_name,
