@@ -148,7 +148,7 @@ impl XlsxWriter {
 
     /// Write one sheet from IPC-serialized dataframe bytes.
     ///
-    /// `v_ipc_df` and optional `v_ipc_df_header` must be valid Polars IPC payloads.
+    /// `ipc_df` and optional `ipc_df_header` must be valid Polars IPC payloads.
     pub fn write_sheet_from_ipc_bytes(
         &mut self,
         ipc_df: &[u8],
