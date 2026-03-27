@@ -67,6 +67,11 @@ def resolve_dist_artifact(args: argparse.Namespace) -> Path:
         raise FileNotFoundError(
             f"No wheel artifact found in dist dir: {args.dist_dir.resolve()}"
         )
+
+    wheels_manylinux = [path for path in wheels if "manylinux" in path.name]
+    if wheels_manylinux:
+        return wheels_manylinux[-1].resolve()
+
     return wheels[-1].resolve()
 
 

@@ -65,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: py-dist-wheel-${{ matrix.arch }}
-          path: dist/*.whl
+          path: dist/*manylinux_2_28*${{ matrix.arch }}*.whl
           if-no-files-found: error
 
   build-sdist:
@@ -161,7 +161,7 @@ jobs:
       - name: Package QA on x86_64 wheel
         run: |
           python scripts/run_package_qa.py \
-            --wheel dist/$(basename "$(find dist -maxdepth 1 -type f -name '*x86_64*.whl' | head -n 1)") \
+            --wheel dist/$(basename "$(find dist -maxdepth 1 -type f -name '*manylinux_2_28*x86_64*.whl' | head -n 1)") \
             --tests-dir tests
 
       - name: Package QA from sdist
