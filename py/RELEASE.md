@@ -2,6 +2,17 @@
 
 This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
+## Release Contract
+
+- Official Linux baseline is `glibc >= 2.28`.
+- Official binary coverage is Linux only for now.
+- Every release must publish:
+  - `sdist`
+  - `cp310-abi3-manylinux_2_28_x86_64.whl`
+  - `cp310-abi3-manylinux_2_28_aarch64.whl`
+- Installers should prefer a compatible wheel and fall back to `sdist` when no wheel matches.
+- `sdist` fallback requires a local Rust toolchain and native build environment on the user machine.
+
 ## 1. Package Metadata
 
 - `pyproject.toml` has valid:
@@ -30,30 +41,34 @@ pdm run ruff check src tests scripts
 pdm run pyright src
 ```
 
-Then run package-level QA against the built wheel (isolated venv):
+For local smoke validation from `py/`:
 
 ```bash
-pdm run python -m build --wheel --installer uv
+pdm run python -m build --sdist --wheel --installer uv
 # Linux only: repair wheel platform tags to manylinux
 # Requires patchelf on PATH (e.g. apt install patchelf)
 python3 -m pip install -U auditwheel
 python3 -m auditwheel repair dist/axiomkit-*.whl -w dist-repaired
 rm -f dist/axiomkit-*.whl && mv dist-repaired/*.whl dist/
-pdm run python scripts/validate_wheel.py --dist-dir dist
+pdm run python scripts/validate_wheel.py --dist-dir dist --require-sdist --expected-manylinux-tag any
 pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```
+
+Official release artifacts should come from `.github/workflows/publish.yml`, which builds the Linux wheels inside `manylinux_2_28` containers and validates the aggregated `dist/` bundle before publishing.
 
 ## 4. Build Artifacts
 
 Build command:
 
 ```bash
-pdm run python -m build --wheel --installer uv
+pdm run python -m build --sdist --wheel --installer uv
 ```
 
 Expected output in `dist/`:
 
-- `axiomkit-<version>-cp310-abi3-<platform>.whl` (non-`py3-none-any`, includes Rust extensions)
+- `axiomkit-<version>.tar.gz`
+- `axiomkit-<version>-cp310-abi3-manylinux_2_28_x86_64.whl`
+- `axiomkit-<version>-cp310-abi3-manylinux_2_28_aarch64.whl`
 
 ## 5. Publish Credentials
 
@@ -79,3 +94,8 @@ Production PyPI:
 ```bash
 ./scripts/release_pypi.sh --repository pypi
 ```
+
+Notes:
+
+- The local script is a helper for smoke validation and manual publishing assistance.
+- Official distributable Linux wheels should be the CI-built manylinux artifacts, not ad hoc local builds.

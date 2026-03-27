@@ -13,6 +13,8 @@ Examples:
 Notes:
   - Default repository is testpypi.
   - Requires PDM publish credentials (env: PDM_PUBLISH_USERNAME/PASSWORD) or trusted publishing.
+  - Official distributable Linux artifacts are expected to come from CI manylinux builds.
+  - This script remains useful for local smoke validation and manual publishing assistance.
 EOF
 }
 
@@ -76,7 +78,7 @@ if ! pdm run uv --version >/dev/null 2>&1; then
 fi
 
 rm -rf dist dist-repaired
-pdm run python -m build --wheel --installer uv
+pdm run python -m build --sdist --wheel --installer uv
 if [[ "$(uname -s)" == "Linux" ]]; then
     if ! command -v patchelf >/dev/null 2>&1; then
         echo "patchelf is required for Linux wheel repair. Install it first (e.g. apt install patchelf)." >&2
@@ -97,7 +99,13 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     mv dist-repaired/*.whl dist/
 fi
 
-VERSION_RAW="$(pdm run python scripts/validate_wheel.py --dist-dir dist --print-version)"
+VERSION_RAW="$(
+    pdm run python scripts/validate_wheel.py \
+        --dist-dir dist \
+        --require-sdist \
+        --expected-manylinux-tag any \
+        --print-version
+)"
 
 if [[ "$RUN_CHECKS" -eq 1 ]]; then
     pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
