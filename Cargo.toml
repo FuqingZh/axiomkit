@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/axiomkit_py",
   "crates/axiomkit_io_fs",
   "crates/axiomkit_io_fs_py",
   "crates/axiomkit_io_xlsx",

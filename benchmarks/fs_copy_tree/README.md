@@ -5,7 +5,7 @@ with Rust `debug` vs `release` backend comparison.
 
 ## Run
 
-From `py/`:
+From repo root:
 
 ```bash
 PYTHONPATH=src pdm run python scripts/benchmark_fs_copy_tree.py --repeat 3

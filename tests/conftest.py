@@ -14,7 +14,7 @@ def _configure_import_mode() -> None:
         )
 
     if mode == "src":
-        src_dir = Path(__file__).resolve().parents[1] / "src"
+        src_dir = Path(__file__).resolve().parents[1] / "python"
         c_src_dir = str(src_dir)
         if c_src_dir not in sys.path:
             sys.path.insert(0, c_src_dir)

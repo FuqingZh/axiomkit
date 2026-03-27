@@ -181,6 +181,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "axiomkit_py"
+version = "0.0.35"
+dependencies = [
+ "axiomkit_io_fs",
+ "axiomkit_io_xlsx",
+ "polars",
+ "polars-arrow",
+ "pyo3",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

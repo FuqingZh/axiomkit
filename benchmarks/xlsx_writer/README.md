@@ -4,7 +4,7 @@ This directory stores reproducible benchmark records for `axiomkit.io.XlsxWriter
 
 ## Run
 
-From `py/`:
+From repo root:
 
 ```bash
 pdm run python scripts/benchmark_xlsx_writer.py

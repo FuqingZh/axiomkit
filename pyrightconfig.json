@@ -2,7 +2,8 @@
     "venvPath": ".",
     "venv": ".venv",
     "include": [
-        "src",
+        "python",
+        "scripts",
         "tests"
     ],
     "typeCheckingMode": "basic",
