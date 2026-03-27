@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -9,8 +10,21 @@ from pathlib import Path
 RE_WHEEL_VERSION = re.compile(r"^axiomkit-([^-]+)-")
 RE_SDIST_VERSION = re.compile(r"^axiomkit-([^-]+)\.(?:tar\.gz|zip)$")
 REQUIRED_EXTENSIONS = (
-    "axiomkit/io/fs/_axiomkit_io_fs_rs",
-    "axiomkit/io/xlsx/_axiomkit_io_xlsx_rs",
+    "axiomkit/_axiomkit_rs",
+)
+REQUIRED_SHIMS = (
+    "axiomkit/io/fs/_axiomkit_io_fs_rs.py",
+    "axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.py",
+)
+REQUIRED_SDIST_SUFFIXES = (
+    "pyproject.toml",
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/axiomkit_py/Cargo.toml",
+    "crates/axiomkit_py/src/lib.rs",
+    "python/axiomkit/__init__.py",
+    "python/axiomkit/io/fs/_axiomkit_io_fs_rs.py",
+    "python/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.py",
 )
 
 
@@ -114,6 +128,9 @@ def validate_wheels(
         for prefix in REQUIRED_EXTENSIONS:
             if not has_extension(names, prefix):
                 raise RuntimeError(f"{path_wheel.name} missing Rust extension: {prefix}")
+        for shim in REQUIRED_SHIMS:
+            if shim not in names:
+                raise RuntimeError(f"{path_wheel.name} missing Python shim module: {shim}")
 
     return versions
 
@@ -135,6 +152,22 @@ def validate_sdist(path_dist: Path, expected_version: str | None) -> set[str]:
         raise RuntimeError(
             f"sdist version mismatch: expected {expected_version!r}, got {version!r}"
         )
+
+    path_sdist = sdists[0]
+    if path_sdist.suffixes[-2:] == [".tar", ".gz"]:
+        with tarfile.open(path_sdist, "r:gz") as tar_file:
+            names = tar_file.getnames()
+    elif path_sdist.suffix == ".zip":
+        with zipfile.ZipFile(path_sdist) as zip_file:
+            names = zip_file.namelist()
+    else:
+        raise RuntimeError(f"Unsupported sdist archive format: {path_sdist.name}")
+
+    for suffix in REQUIRED_SDIST_SUFFIXES:
+        if not any(name.endswith(suffix) for name in names):
+            raise RuntimeError(
+                f"{path_sdist.name} missing required source file: {suffix}"
+            )
     return versions
 
 
