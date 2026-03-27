@@ -7,9 +7,9 @@ from pathlib import Path
 
 def _configure_import_mode() -> None:
     mode = os.environ.get("AXIOMKIT_TEST_IMPORT_MODE", "src")
-    if mode not in {"src", "wheel"}:
+    if mode not in {"src", "wheel", "dist"}:
         raise RuntimeError(
-            "AXIOMKIT_TEST_IMPORT_MODE must be one of {'src', 'wheel'}, "
+            "AXIOMKIT_TEST_IMPORT_MODE must be one of {'src', 'wheel', 'dist'}, "
             f"got {mode!r}."
         )
 

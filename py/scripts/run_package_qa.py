@@ -11,20 +11,26 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run package-level QA against a built axiomkit wheel in an isolated venv."
+            "Run package-level QA against a built axiomkit distribution in an isolated venv."
         )
     )
     parser.add_argument(
         "--dist-dir",
         type=Path,
         default=Path("dist"),
-        help="Directory containing built wheel artifacts.",
+        help="Directory containing built distribution artifacts.",
     )
     parser.add_argument(
         "--wheel",
         type=Path,
         default=None,
         help="Specific wheel path. If omitted, picks newest axiomkit wheel in --dist-dir.",
+    )
+    parser.add_argument(
+        "--sdist",
+        type=Path,
+        default=None,
+        help="Specific sdist path. If set, installs from the source distribution artifact.",
     )
     parser.add_argument(
         "--tests-dir",
@@ -40,12 +46,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_wheel(args: argparse.Namespace) -> Path:
+def resolve_dist_artifact(args: argparse.Namespace) -> Path:
+    if args.wheel is not None and args.sdist is not None:
+        raise ValueError("Only one of --wheel or --sdist may be provided.")
+
     if args.wheel is not None:
         path_wheel = args.wheel.resolve()
         if not path_wheel.exists():
             raise FileNotFoundError(f"Wheel file not found: {path_wheel}")
         return path_wheel
+
+    if args.sdist is not None:
+        path_sdist = args.sdist.resolve()
+        if not path_sdist.exists():
+            raise FileNotFoundError(f"sdist file not found: {path_sdist}")
+        return path_sdist
 
     wheels = sorted(args.dist_dir.glob("axiomkit-*.whl"))
     if not wheels:
@@ -58,9 +73,9 @@ def resolve_wheel(args: argparse.Namespace) -> Path:
 def main() -> None:
     args = parse_args()
     path_project_root = Path(__file__).resolve().parents[1]
-    path_wheel = resolve_wheel(args)
+    path_artifact = resolve_dist_artifact(args)
 
-    with tempfile.TemporaryDirectory(prefix="axiomkit-wheel-qa-") as dir_temp:
+    with tempfile.TemporaryDirectory(prefix="axiomkit-dist-qa-") as dir_temp:
         path_venv = Path(dir_temp) / "venv"
         subprocess.run([sys.executable, "-m", "venv", str(path_venv)], check=True)
 
@@ -75,14 +90,14 @@ def main() -> None:
                 "-m",
                 "pip",
                 "install",
-                f"{args.install_target} @ {path_wheel.as_uri()}",
+                f"{args.install_target} @ {path_artifact.as_uri()}",
                 "pytest",
             ],
             check=True,
         )
 
         env = dict(os.environ)
-        env["AXIOMKIT_TEST_IMPORT_MODE"] = "wheel"
+        env["AXIOMKIT_TEST_IMPORT_MODE"] = "dist"
         subprocess.run(
             [
                 str(path_python),

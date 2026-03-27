@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 RE_WHEEL_VERSION = re.compile(r"^axiomkit-([^-]+)-")
+RE_SDIST_VERSION = re.compile(r"^axiomkit-([^-]+)\.(?:tar\.gz|zip)$")
 REQUIRED_EXTENSIONS = (
     "axiomkit/io/fs/_axiomkit_io_fs_rs",
     "axiomkit/io/xlsx/_axiomkit_io_xlsx_rs",
@@ -15,23 +16,36 @@ REQUIRED_EXTENSIONS = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate built axiomkit wheel artifacts."
+        description="Validate built axiomkit distribution artifacts."
     )
     parser.add_argument(
         "--dist-dir",
         type=Path,
         default=Path("dist"),
-        help="Directory containing wheel artifacts.",
+        help="Directory containing built distribution artifacts.",
     )
     parser.add_argument(
         "--expected-version",
         default=None,
-        help="Expected wheel version (for tagged release validation).",
+        help="Expected distribution version (for tagged release validation).",
     )
     parser.add_argument(
         "--print-version",
         action="store_true",
         help="Print resolved version only (for shell capture).",
+    )
+    parser.add_argument(
+        "--require-sdist",
+        action="store_true",
+        help="Require a source distribution artifact alongside wheel artifacts.",
+    )
+    parser.add_argument(
+        "--expected-manylinux-tag",
+        default="manylinux_2_28",
+        help=(
+            "Expected manylinux tag for Linux wheels. "
+            "Use 'any' to accept any repaired manylinux tag."
+        ),
     )
     return parser.parse_args()
 
@@ -43,6 +57,13 @@ def parse_version(path_wheel: Path) -> str:
     return match.group(1)
 
 
+def parse_sdist_version(path_sdist: Path) -> str:
+    match = RE_SDIST_VERSION.match(path_sdist.name)
+    if match is None:
+        raise RuntimeError(f"Cannot parse version from sdist name: {path_sdist.name}")
+    return match.group(1)
+
+
 def has_extension(names: list[str], prefix: str) -> bool:
     return any(
         name.startswith(prefix) and name.endswith((".so", ".pyd", ".dylib"))
@@ -50,21 +71,19 @@ def has_extension(names: list[str], prefix: str) -> bool:
     )
 
 
-def validate_wheels(path_dist: Path, expected_version: str | None) -> str:
+def validate_wheels(
+    path_dist: Path,
+    expected_version: str | None,
+    expected_manylinux_tag: str,
+) -> set[str]:
     wheels = sorted(path_dist.glob("axiomkit-*.whl"))
     if not wheels:
         raise RuntimeError(f"No wheel artifact found in {path_dist.resolve()}")
 
     versions = {parse_version(path_wheel) for path_wheel in wheels}
-    if len(versions) != 1:
+    if expected_version is not None and versions != {expected_version}:
         raise RuntimeError(
-            f"Mixed wheel versions found: {sorted(versions)} from {[w.name for w in wheels]}"
-        )
-    version = next(iter(versions))
-
-    if expected_version is not None and version != expected_version:
-        raise RuntimeError(
-            f"Wheel version mismatch: expected {expected_version!r}, got {version!r}"
+            f"Wheel version mismatch: expected {expected_version!r}, got {sorted(versions)!r}"
         )
 
     for path_wheel in wheels:
@@ -80,6 +99,14 @@ def validate_wheels(path_dist: Path, expected_version: str | None) -> str:
                 f"Unrepaired Linux wheel tag detected: {path_wheel.name}. "
                 "Run auditwheel repair to produce a manylinux wheel."
             )
+        if (
+            expected_manylinux_tag != "any"
+            and "manylinux" in path_wheel.name
+            and expected_manylinux_tag not in path_wheel.name
+        ):
+            raise RuntimeError(
+                f"Linux wheel must target {expected_manylinux_tag}, got: {path_wheel.name}"
+            )
 
         with zipfile.ZipFile(path_wheel) as zip_file:
             names = zip_file.namelist()
@@ -88,16 +115,63 @@ def validate_wheels(path_dist: Path, expected_version: str | None) -> str:
             if not has_extension(names, prefix):
                 raise RuntimeError(f"{path_wheel.name} missing Rust extension: {prefix}")
 
-    return version
+    return versions
+
+
+def validate_sdist(path_dist: Path, expected_version: str | None) -> set[str]:
+    sdists = sorted(path_dist.glob("axiomkit-*.tar.gz")) + sorted(
+        path_dist.glob("axiomkit-*.zip")
+    )
+    if not sdists:
+        return set()
+    if len(sdists) != 1:
+        raise RuntimeError(
+            f"Expected exactly one sdist artifact, got {[path.name for path in sdists]}"
+        )
+
+    versions = {parse_sdist_version(path_sdist) for path_sdist in sdists}
+    version = next(iter(versions))
+    if expected_version is not None and version != expected_version:
+        raise RuntimeError(
+            f"sdist version mismatch: expected {expected_version!r}, got {version!r}"
+        )
+    return versions
+
+
+def validate_dist_artifacts(
+    path_dist: Path,
+    expected_version: str | None,
+    expected_manylinux_tag: str,
+    require_sdist: bool,
+) -> str:
+    wheel_versions = validate_wheels(path_dist, expected_version, expected_manylinux_tag)
+    sdist_versions = validate_sdist(path_dist, expected_version)
+
+    if require_sdist and not sdist_versions:
+        raise RuntimeError(
+            f"No source distribution artifact found in {path_dist.resolve()}"
+        )
+
+    versions = wheel_versions | sdist_versions
+    if len(versions) != 1:
+        raise RuntimeError(
+            f"Mixed distribution versions found: {sorted(versions)} in {path_dist.resolve()}"
+        )
+    return next(iter(versions))
 
 
 def main() -> None:
     args = parse_args()
-    version = validate_wheels(args.dist_dir, args.expected_version)
+    version = validate_dist_artifacts(
+        args.dist_dir,
+        args.expected_version,
+        args.expected_manylinux_tag,
+        args.require_sdist,
+    )
     if args.print_version:
         print(version)
     else:
-        print(f"Validated wheel artifacts in {args.dist_dir.resolve()} (version={version})")
+        print(f"Validated dist artifacts in {args.dist_dir.resolve()} (version={version})")
 
 
 if __name__ == "__main__":
