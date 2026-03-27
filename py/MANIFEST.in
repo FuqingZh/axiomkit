@@ -1,0 +1,6 @@
+prune __pypackages__
+prune .venv
+prune .pdm-build
+prune .pytest_cache
+prune .ruff_cache
+global-exclude *.so *.pyd *.dylib

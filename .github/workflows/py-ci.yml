@@ -29,6 +29,10 @@ jobs:
       - run: pdm run ruff check src tests scripts
       - run: pdm run pyright src
 
+      - name: Clean local packaging artifacts
+        run: |
+          rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache dist build
+
       - name: Build manylinux_2_28 wheel artifact
         env:
           CIBW_ARCHS_LINUX: x86_64
@@ -40,7 +44,6 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
             sh -s -- -y --profile minimal --default-toolchain stable
         run: |
-          rm -rf dist
           python -m cibuildwheel --output-dir dist .
 
       - name: Validate wheel is manylinux_2_28 abi3 and ships Rust extensions

@@ -77,7 +77,7 @@ if ! pdm run uv --version >/dev/null 2>&1; then
     exit 1
 fi
 
-rm -rf dist dist-repaired
+rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache build dist dist-repaired
 pdm run python -m build --sdist --wheel --installer uv
 if [[ "$(uname -s)" == "Linux" ]]; then
     if ! command -v patchelf >/dev/null 2>&1; then
