@@ -68,8 +68,8 @@ if [[ "$RUN_SYNC" -eq 1 ]]; then
 fi
 
 if [[ "$RUN_CHECKS" -eq 1 ]]; then
-    pdm run ruff check src tests scripts
-    pdm run pyright src
+    pdm run ruff check python tests scripts
+    pdm run pyright python
 fi
 
 if ! pdm run uv --version >/dev/null 2>&1; then
@@ -78,7 +78,8 @@ if ! pdm run uv --version >/dev/null 2>&1; then
 fi
 
 rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache build dist dist-repaired
-pdm run python -m build --sdist --wheel --installer uv
+pdm run maturin build --release --interpreter python3.13 --out dist
+pdm run maturin sdist --out dist
 if [[ "$(uname -s)" == "Linux" ]]; then
     if ! command -v patchelf >/dev/null 2>&1; then
         echo "patchelf is required for Linux wheel repair. Install it first (e.g. apt install patchelf)." >&2

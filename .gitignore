@@ -1,20 +1,19 @@
 # OS
 .DS_Store
 
-# Python (`py/`)
+# Python
 *.egg-info/
 *.py[cod]
-py/.mypy_cache/
-py/.pdm-build/
-py/.pdm-python
-py/.pytest_cache/
-py/.ruff_cache/
-py/.venv/
-py/__pycache__/
+.mypy_cache/
+.pdm-build/
+.pdm-python
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
 __pypackages__/
-py/__pypackages__/
-py/build/
-py/dist/
+build/
+dist/
 
 # R (`r/`)
 .Rhistory
@@ -23,9 +22,8 @@ r/renv/library/
 r/renv/staging/
 r/tests/artifacts/
 
-# Rust (`rs/`)
+# Rust
 target/
 
-# In-place Rust extension artifacts built under `py/src/`
-py/src/axiomkit/io/fs/_axiomkit_io_fs_rs*.so
-py/src/axiomkit/io/xlsx/_axiomkit_io_xlsx_rs*.so
+# In-place Rust extension artifact built under `python/`
+python/axiomkit/_axiomkit_rs*.so

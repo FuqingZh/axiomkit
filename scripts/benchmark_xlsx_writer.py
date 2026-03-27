@@ -19,7 +19,7 @@ from typing import Any
 import polars as pl
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "python"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -139,7 +139,7 @@ def detect_axiomkit_version() -> str:
 
 
 def resolve_rust_backend_binary_path() -> Path:
-    module_rs = importlib.import_module("axiomkit.io.xlsx._axiomkit_io_xlsx_rs")
+    module_rs = importlib.import_module("axiomkit._axiomkit_rs")
     path_file_module = getattr(module_rs, "__file__", None)
     if not path_file_module:
         raise RuntimeError("Cannot resolve Rust backend shared library path.")
@@ -156,8 +156,8 @@ def enforce_release_rust_backend() -> Path:
         raise RuntimeError(
             "Benchmark requires release Rust backend, but current module points to "
             f"{path_file_backend}. "
-            "Rebuild with `cargo build -p axiomkit_io_xlsx_py --release` and repoint "
-            "`_axiomkit_io_xlsx_rs.so` to `target/release/lib_axiomkit_io_xlsx_rs.so`."
+            "Rebuild with `cargo build -p axiomkit_py --release` and repoint "
+            "`_axiomkit_rs.so` to `target/release/lib_axiomkit_rs.so`."
         )
 
     return path_file_backend

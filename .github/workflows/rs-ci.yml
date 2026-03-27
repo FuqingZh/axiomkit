@@ -3,11 +3,15 @@ name: rs-ci
 on:
   push:
     paths:
-      - "rs/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/rs-ci.yml"
   pull_request:
     paths:
-      - "rs/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/rs-ci.yml"
   workflow_dispatch:
 
@@ -17,9 +21,6 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rs
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -27,7 +28,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rs -> rs/target
+          workspaces: . -> target
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy

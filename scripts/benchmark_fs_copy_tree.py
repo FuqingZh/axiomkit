@@ -12,9 +12,9 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
-RS_TARGET_DIR = PROJECT_ROOT.parent / "rs" / "target"
-PATH_SO_LINK = SRC_DIR / "axiomkit" / "io" / "fs" / "_axiomkit_io_fs_rs.so"
+SRC_DIR = PROJECT_ROOT / "python"
+RS_TARGET_DIR = PROJECT_ROOT / "target"
+PATH_SO_LINK = SRC_DIR / "axiomkit" / "_axiomkit_rs.so"
 
 
 @dataclass(frozen=True)
@@ -92,9 +92,9 @@ def prepare_source_tree(path_src: Path, scenario: SpecFsBenchmarkScenario) -> No
 
 def derive_backend_binary_path(profile: str) -> Path:
     if profile == "debug":
-        return RS_TARGET_DIR / "debug" / "lib_axiomkit_io_fs_rs.so"
+        return RS_TARGET_DIR / "debug" / "lib_axiomkit_rs.so"
     if profile == "release":
-        return RS_TARGET_DIR / "release" / "lib_axiomkit_io_fs_rs.so"
+        return RS_TARGET_DIR / "release" / "lib_axiomkit_rs.so"
     raise ValueError(f"Unsupported backend profile: {profile}")
 
 

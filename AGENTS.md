@@ -15,8 +15,9 @@ Repository-level instructions for `axiomkit`.
 - North star: Rust core plus a thin Python facade for stable, high-performance,
   maintainable I/O.
 - Source of truth:
-  - `rs/` is the implementation truth for core capabilities.
-  - `py/` provides API entrypoints, type mapping, and ecosystem integration.
+  - `crates/` is the implementation truth for core capabilities.
+  - `python/` provides API entrypoints, type mapping, and ecosystem
+    integration.
 - API compatibility has priority over internal refactors. Behavior changes
   require tests and migration notes.
 

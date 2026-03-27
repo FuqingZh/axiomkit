@@ -2,9 +2,17 @@
 
 Personal, portable engineering toolkit (Python/R/Rust).
 
+## Install
+
+- `pip install axiomkit`
+
+## Development
+
+- `pdm sync -G dev --no-self`
+
 ## Docs
 
 - Repository instructions: [AGENTS.md](AGENTS.md)
-- Python package: [py/README.md](py/README.md)
+- Python release checklist: [RELEASE.md](RELEASE.md)
 - R package: [r/README.md](r/README.md)
-- Rust workspace: [rs/](rs/)
+- Rust workspace: [crates/](crates/)

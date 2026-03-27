@@ -1,6 +1,6 @@
 # Python Release Checklist
 
-This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
+This checklist targets publishing the repo-root Python package as `axiomkit` to PyPI/TestPyPI.
 
 ## Release Contract
 
@@ -17,7 +17,7 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
 - `pyproject.toml` has valid:
   - `project.name`
-  - `tool.setuptools_scm`
+  - `tool.maturin`
   - `project.description`
   - `project.requires-python`
   - `project.readme`
@@ -26,25 +26,26 @@ This checklist targets publishing `py/` as `axiomkit` to PyPI/TestPyPI.
 
 ## 2. Versioning Notes
 
-- Version is derived from Git tags/SCM metadata.
-- Publish tags must be canonical PEP 440 (e.g. `0.0.27`, not `v0.0.27`).
-- The release workflow validates tag format before building.
+- Version is derived from the `crates/axiomkit_py/Cargo.toml` package version.
+- Publish tags must be canonical PEP 440 and match the built distribution version.
+- The release workflow validates tag format before publishing.
 
 ## 3. Validation Strategy
 
-From `py/`:
+From repo root:
 
 ```bash
 pdm sync -G dev --no-self
 pdm run uv --version
-pdm run ruff check src tests scripts
-pdm run pyright src
+pdm run ruff check python tests scripts
+pdm run pyright python
 ```
 
-For local smoke validation from `py/`:
+For local smoke validation from repo root:
 
 ```bash
-pdm run python -m build --sdist --wheel --installer uv
+pdm run maturin build --release --interpreter python3.13 --out dist
+pdm run maturin sdist --out dist
 # Linux only: repair wheel platform tags to manylinux
 # Requires patchelf on PATH (e.g. apt install patchelf)
 python3 -m pip install -U auditwheel
@@ -61,7 +62,8 @@ Official release artifacts should come from `.github/workflows/publish.yml`, whi
 Build command:
 
 ```bash
-pdm run python -m build --sdist --wheel --installer uv
+pdm run maturin build --release --interpreter python3.13 --out dist
+pdm run maturin sdist --out dist
 ```
 
 Expected output in `dist/`:

@@ -10,9 +10,6 @@ jobs:
     env:
       PDM_IGNORE_SAVED_PYTHON: "1"
       PDM_VENV_IN_PROJECT: "1"
-    defaults:
-      run:
-        working-directory: py
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,8 +25,8 @@ jobs:
       - run: pdm sync -G dev --no-self
       - run: pdm run python -c "import sys; print(sys.executable)"
       - run: pdm run uv --version
-      - run: pdm run ruff check src tests scripts
-      - run: pdm run pyright src
+      - run: pdm run ruff check python tests scripts
+      - run: pdm run pyright python
 
       - name: Clean local packaging artifacts
         run: |
@@ -41,9 +38,7 @@ jobs:
           CIBW_BUILD: cp313-*
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-          CIBW_ENVIRONMENT_LINUX: >-
-            PATH=/root/.cargo/bin:$PATH
-            SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AXIOMKIT=0.0.0+ci.${{ github.run_number }}
+          CIBW_ENVIRONMENT_LINUX: PATH=/root/.cargo/bin:$PATH
           CIBW_BEFORE_ALL_LINUX: >-
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
             sh -s -- -y --profile minimal --default-toolchain stable
