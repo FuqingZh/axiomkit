@@ -58,6 +58,7 @@ pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 ```
 
 Official release artifacts should come from `.github/workflows/publish.yml`, which builds the Linux wheels inside `manylinux_2_28` containers and validates the aggregated `dist/` bundle before publishing.
+Those CI manylinux builds use a dedicated prebuilt Rust-enabled image for speed; local development and local smoke builds do not depend on that image.
 
 ## 4. Build Artifacts
 
