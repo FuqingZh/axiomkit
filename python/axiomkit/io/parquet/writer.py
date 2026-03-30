@@ -233,10 +233,10 @@ def sink_parquet_dataset(
         )
     )
 
-    df = df.lazy() if isinstance(df, pl.DataFrame) else df
-    is_empty = df.limit(1).collect().height == 0
+    lf = df.lazy() if isinstance(df, pl.DataFrame) else df
+    is_empty = lf.limit(1).collect().height == 0
     if is_empty:
-        pl.LazyFrame(schema=df.collect_schema()).sink_parquet(
+        pl.LazyFrame(schema=lf.collect_schema()).sink_parquet(
             path=dir_out / "__EMPTY__.parquet",
             compression="zstd",
             compression_level=lvl_compression,
@@ -248,14 +248,14 @@ def sink_parquet_dataset(
 
     if cols_partitioning:
         missing_cols = [
-            column for column in cols_partitioning if column not in df.collect_schema().names()
+            column for column in cols_partitioning if column not in lf.collect_schema().names()
         ]
         if missing_cols:
             raise ValueError(
                 f"Partition column(s) not found in DataFrame columns: `{missing_cols}`."
             )
 
-        df = df.with_columns(
+        lf = lf.with_columns(
             [
                 _sanitize_partition_cols(
                     pl.col(column), size_bytes_hash=size_bytes_hash
@@ -265,7 +265,7 @@ def sink_parquet_dataset(
         )
 
     size_bytes_per_row = _estimate_compressed_bytes_per_row(
-        lf=df,
+        lf,
         compression_level=lvl_compression,
     )
     rows_per_file_max = max(
@@ -283,7 +283,7 @@ def sink_parquet_dataset(
         rows_per_row_group_max, max(10_000, rows_per_file_max // 2)
     )
 
-    df.sink_parquet(
+    lf.sink_parquet(
         pl.PartitionBy(
             base_path=dir_out,
             key=cols_partitioning,
