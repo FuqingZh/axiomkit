@@ -6,14 +6,15 @@
 
     c_stats_exports <- c(
         "QuantMatrix",
-        "center_median"
+        "center_median",
+        "impute_knn"
     )
-    for (c_name in c_stats_exports) {
+    for (.name in c_stats_exports) {
         makeActiveBinding(
-            c_name,
+            .name,
             local({
-                c_export_name <- c_name
-                function() get(c_export_name, envir = ns, inherits = FALSE)
+                name_exported <- .name
+                function() get(name_exported, envir = ns, inherits = FALSE)
             }),
             e_stats
         )
@@ -22,12 +23,12 @@
     c_plot_exports <- c(
         "plot_faceted"
     )
-    for (c_name in c_plot_exports) {
+    for (.name in c_plot_exports) {
         makeActiveBinding(
-            c_name,
+            .name,
             local({
-                c_export_name <- c_name
-                function() get(c_export_name, envir = ns, inherits = FALSE)
+                name_exported <- .name
+                function() get(name_exported, envir = ns, inherits = FALSE)
             }),
             e_plot
         )

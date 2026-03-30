@@ -97,38 +97,68 @@ QuantMatrix <- new_class(
 center_median <- new_generic(
     "center_median",
     dispatch_args = "x",
-    fun = function(
-        x,
-        rule_axis = c("col", "row"),
-        rule_baseline = c("global_median", "zero")
-    ) {
+    fun = function(x,
+                   rule_axis = c("col", "row"),
+                   rule_baseline = c("global_median", "zero")) {
         S7::S7_dispatch()
     }
 )
 
 method(center_median, QuantMatrix) <- function(
-    x,
-    rule_axis = c("col", "row"),
-    rule_baseline = c("global_median", "zero")
+  x,
+  rule_axis = c("col", "row"),
+  rule_baseline = c("global_median", "zero")
 ) {
-    c_axis <- match.arg(rule_axis)
-    c_baseline <- match.arg(rule_baseline)
+    rule_axis <- match.arg(rule_axis)
+    rule_baseline <- match.arg(rule_baseline)
 
-    n_axis_medians <- switch(c_axis,
+    vec_axis_medians <- switch(rule_axis,
         "col" = colMedians(x@mat, na.rm = TRUE),
         "row" = rowMedians(x@mat, na.rm = TRUE)
     )
-    n_baseline <- switch(c_baseline,
-        "global_median" = median(n_axis_medians, na.rm = TRUE),
+    baseline_metric <- switch(rule_baseline,
+        "global_median" = median(vec_axis_medians, na.rm = TRUE),
         "zero" = 0
     )
 
     mat_centered <- sweep(
         x@mat,
-        if (c_axis == "col") 2 else 1,
-        n_axis_medians,
+        if (rule_axis == "col") 2 else 1,
+        vec_axis_medians,
         "-"
-    ) + n_baseline
+    ) + baseline_metric
 
     QuantMatrix(mat = mat_centered)
+}
+
+#' KNN Impute a Quantification Matrix
+#'
+#' Impute missing values by k-nearest neighbors.
+#'
+#' @param x A `QuantMatrix` object.
+#' @param k Number of nearest neighbors to use for imputation.
+#' @return A new `QuantMatrix` object with imputed values.
+#' @export
+impute_knn <- new_generic(
+    "impute_knn",
+    dispatch_args = "x",
+    fun = function(x, k = 10) {
+        S7::S7_dispatch()
+    }
+)
+
+method(impute_knn, QuantMatrix) <- function(
+  x, k = 10
+) {
+    is_all_na_rows <- rowSums(!is.na(x@mat)) == 0
+    mat_out <- x@mat
+    mat_ok <- mat_out[!is_all_na_rows, , drop = FALSE]
+    if (nrow(mat_ok) > 0 && anyNA(mat_ok)) {
+        mat_out[!is_all_na_rows, ] <- impute::impute.knn(
+            data = mat_ok,
+            k = k
+        )$data
+    }
+
+    QuantMatrix(mat = mat_out)
 }

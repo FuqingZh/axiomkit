@@ -3,6 +3,7 @@
 export(QuantMatrix)
 export(ak)
 export(center_median)
+export(impute_knn)
 export(plot_faceted)
 import(data.table)
 import(ggplot2)

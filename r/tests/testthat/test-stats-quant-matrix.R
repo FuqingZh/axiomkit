@@ -124,6 +124,29 @@ test_that("center_median validates rules", {
     )
 })
 
+test_that("impute_knn fills partial missing rows and preserves all-NA rows", {
+    q <- QuantMatrix(
+        mat = matrix(
+            c(
+                1, 2, NA,
+                4, 5, 6,
+                NA, NA, NA
+            ),
+            nrow = 3,
+            byrow = TRUE,
+            dimnames = list(c("R1", "R2", "R3"), c("A", "B", "C"))
+        )
+    )
+
+    q_imp <- impute_knn(q, k = 1)
+
+    expect_s3_class(q_imp, "S7_object")
+    expect_false(anyNA(q_imp@mat[1, ]))
+    expect_equal(unname(q_imp@mat[2, ]), c(4, 5, 6))
+    expect_true(all(is.na(q_imp@mat[3, ])))
+    expect_identical(dimnames(q_imp@mat), dimnames(q@mat))
+})
+
 test_that("ak stats facade exposes quant APIs", {
     expect_true(exists("ak", inherits = TRUE))
     expect_true(is.environment(ak))

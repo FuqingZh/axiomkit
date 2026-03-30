@@ -12,6 +12,7 @@ Imports:
     data.table,
     ggh4x,
     ggplot2,
+    impute,
     matrixStats,
     S7
 Suggests:
