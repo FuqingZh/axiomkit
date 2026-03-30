@@ -7,7 +7,7 @@
     "axiomkit": "local-src",
     "polars": "1.38.1"
   },
-  "rust_backend_binary": "/home/being/projects/axiomkit/rs/target/release/lib_axiomkit_xlsx_rs.so",
+  "rust_backend_binary": "/home/being/projects/axiomkit/target/release/lib_axiomkit_xlsx_rs.so",
   "validation_policy": "enforce_release_backend + validate sheet1 dimension/rows/cols",
   "repeat": 2,
   "warmup": 1,

@@ -12,7 +12,7 @@
   "results": [
     {
       "backend_profile": "debug",
-      "backend_binary": "/home/being/projects/axiomkit/rs/target/debug/lib_axiomkit_fs_rs.so",
+      "backend_binary": "/home/being/projects/axiomkit/target/debug/lib_axiomkit_fs_rs.so",
       "scenario": {
         "name": "small_files_10k",
         "n_dirs": 50,
@@ -37,7 +37,7 @@
     },
     {
       "backend_profile": "release",
-      "backend_binary": "/home/being/projects/axiomkit/rs/target/release/lib_axiomkit_fs_rs.so",
+      "backend_binary": "/home/being/projects/axiomkit/target/release/lib_axiomkit_fs_rs.so",
       "scenario": {
         "name": "small_files_10k",
         "n_dirs": 50,
