@@ -184,10 +184,8 @@ dependencies = [
 name = "axiomkit_py"
 version = "0.0.37"
 dependencies = [
- "axiomkit_io_fs",
- "axiomkit_io_xlsx",
- "polars",
- "polars-arrow",
+ "axiomkit_io_fs_py",
+ "axiomkit_io_xlsx_py",
  "pyo3",
 ]
 

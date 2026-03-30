@@ -19,9 +19,9 @@ use pyo3::ffi as pyffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyList, PyTuple};
 
-const N_BRIDGE_ABI_VERSION: u64 = 1;
-const C_BRIDGE_CONTRACT_VERSION: &str = "axiomkit.xlsx.writer.v1";
-const C_BRIDGE_TRANSPORT: &str = "arrow_c_data";
+pub const BRIDGE_ABI_VERSION: u64 = 1;
+pub const BRIDGE_CONTRACT_VERSION: &str = "axiomkit.xlsx.writer.v1";
+pub const BRIDGE_TRANSPORT: &str = "arrow_c_data";
 const C_ARROW_ARRAY_STREAM_CAPSULE_NAME: &[u8] = b"arrow_array_stream\0";
 
 #[pyclass(name = "XlsxWriter")]
@@ -599,11 +599,16 @@ fn extract_optional_attr_bound<'py>(
     Ok(Some(val))
 }
 
+pub fn register_xlsx_bindings(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<PyXlsxWriter>()?;
+    Ok(())
+}
+
 #[pymodule]
 fn _axiomkit_io_xlsx_rs(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<PyXlsxWriter>()?;
-    module.add("__bridge_abi__", N_BRIDGE_ABI_VERSION)?;
-    module.add("__bridge_contract__", C_BRIDGE_CONTRACT_VERSION)?;
-    module.add("__bridge_transport__", C_BRIDGE_TRANSPORT)?;
+    register_xlsx_bindings(module)?;
+    module.add("__bridge_abi__", BRIDGE_ABI_VERSION)?;
+    module.add("__bridge_contract__", BRIDGE_CONTRACT_VERSION)?;
+    module.add("__bridge_transport__", BRIDGE_TRANSPORT)?;
     Ok(())
 }

@@ -5,7 +5,7 @@ edition = "2024"
 
 [lib]
 name = "_axiomkit_io_xlsx_rs"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 axiomkit_io_xlsx = { path = "../axiomkit_io_xlsx" }

@@ -7,9 +7,9 @@ use axiomkit_io_fs::{
 use pyo3::exceptions::{PyNotADirectoryError, PyOSError, PyValueError};
 use pyo3::prelude::*;
 
-const N_BRIDGE_ABI_VERSION: u64 = 1;
-const C_BRIDGE_CONTRACT_VERSION: &str = "axiomkit.fs.copy_tree.v1";
-const C_BRIDGE_TRANSPORT: &str = "rust_native";
+pub const BRIDGE_ABI_VERSION: u64 = 1;
+pub const BRIDGE_CONTRACT_VERSION: &str = "axiomkit.fs.copy_tree.v1";
+pub const BRIDGE_TRANSPORT: &str = "rust_native";
 
 #[pyclass(name = "CopyErrorRecord")]
 #[derive(Debug, Clone)]
@@ -240,13 +240,18 @@ fn copy_tree_py(
     Ok(PyReportCopy::from(report))
 }
 
-#[pymodule]
-fn _axiomkit_io_fs_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn register_fs_bindings(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PySpecCopyError>()?;
     module.add_class::<PyReportCopy>()?;
     module.add_function(wrap_pyfunction!(copy_tree_py, module)?)?;
-    module.add("__bridge_abi__", N_BRIDGE_ABI_VERSION)?;
-    module.add("__bridge_contract__", C_BRIDGE_CONTRACT_VERSION)?;
-    module.add("__bridge_transport__", C_BRIDGE_TRANSPORT)?;
+    Ok(())
+}
+
+#[pymodule]
+fn _axiomkit_io_fs_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    register_fs_bindings(module)?;
+    module.add("__bridge_abi__", BRIDGE_ABI_VERSION)?;
+    module.add("__bridge_contract__", BRIDGE_CONTRACT_VERSION)?;
+    module.add("__bridge_transport__", BRIDGE_TRANSPORT)?;
     Ok(())
 }
