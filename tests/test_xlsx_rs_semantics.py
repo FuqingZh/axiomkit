@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -164,6 +165,62 @@ def test_scientific_format_trigger_for_extreme_values(tmp_path: Path) -> None:
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
     assert c_type != "s"
     assert "E+" in c_fmt
+
+
+def test_numeric_string_selector_targets_named_column_and_warns(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    df = pl.DataFrame({"x": [1.0, 2.0], "0": [2.5, 3.5]})
+    path_file_out = tmp_path / "numeric_name_selector.xlsx"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with XlsxWriter(path_file_out) as writer:
+            writer.write_sheet(
+                df=df,
+                sheet_name="S",
+                cols_integer=["0"],
+                policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
+            )
+
+    messages = [str(item.message) for item in caught]
+    assert any("literal column names" in message for message in messages)
+
+    c_type_a2, c_value_a2, _ = read_cell(path_file_out, "A2")
+    c_type_b2, c_value_b2, _ = read_cell(path_file_out, "B2")
+    assert c_type_a2 != "s"
+    assert float(c_value_a2) == 1.0
+    assert c_type_b2 == "s"
+    assert c_value_b2 == "2.5"
+
+
+def test_integer_index_selector_uses_zero_based_index_without_warning(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    df = pl.DataFrame({"x": [1.0, 2.0], "0": [2.5, 3.5]})
+    path_file_out = tmp_path / "integer_index_selector.xlsx"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with XlsxWriter(path_file_out) as writer:
+            writer.write_sheet(
+                df=df,
+                sheet_name="S",
+                cols_integer=[0],
+                policy_autofit=AutofitCellsPolicySpec(rule_columns="none"),
+            )
+
+    messages = [str(item.message) for item in caught]
+    assert not any("literal column names" in message for message in messages)
+
+    c_type_a2, c_value_a2, _ = read_cell(path_file_out, "A2")
+    c_type_b2, c_value_b2, _ = read_cell(path_file_out, "B2")
+    assert c_type_a2 != "s"
+    assert float(c_value_a2) == 1.0
+    assert c_type_b2 != "s"
+    assert float(c_value_b2) == 2.5
 
 
 def test_scientific_policy_scope_none_disables_scientific(tmp_path: Path) -> None:

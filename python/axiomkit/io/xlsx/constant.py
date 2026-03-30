@@ -28,4 +28,5 @@ DEFAULT_XLSX_FORMATS: Mapping[LIT_FMT_KEYS, CellFormatSpec] = MappingProxyType(
 
 DEFAULT_XLSX_WRITE_OPTIONS = XlsxWriteOptionsSpec()
 
+# `str` means a literal column name; `int` means a zero-based column index.
 ColumnIdentifier: TypeAlias = str | int

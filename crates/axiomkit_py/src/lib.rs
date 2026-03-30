@@ -9,7 +9,9 @@ use axiomkit_io_fs::{
     CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyErrorRecord, CopyFileConflictStrategy,
     CopyOptionsSpec, CopyPatternMode, CopyReport, CopySymlinkStrategy, CopyTreeError, copy_tree,
 };
-use axiomkit_io_xlsx::constant::{derive_default_xlsx_formats, derive_default_xlsx_write_options};
+use axiomkit_io_xlsx::constant::{
+    ColumnIdentifier, derive_default_xlsx_formats, derive_default_xlsx_write_options,
+};
 use axiomkit_io_xlsx::spec::{
     AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, IntegerCoerceMode,
     ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxValuePolicySpec,
@@ -735,7 +737,7 @@ fn parse_spec_scientific_policy(
     Ok(Some(policy))
 }
 
-fn parse_column_refs(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Vec<String>>> {
+fn parse_column_refs(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Vec<ColumnIdentifier>>> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -743,29 +745,50 @@ fn parse_column_refs(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Vec<St
         return Ok(None);
     }
 
-    if let Ok(b) = value.extract::<bool>()
-        && !b
-    {
-        return Ok(None);
-    }
-
-    if let Ok(c_value) = value.extract::<String>() {
-        return Ok(Some(vec![c_value]));
-    }
-    if let Ok(l_values) = value.extract::<Vec<String>>() {
-        return Ok(Some(l_values));
-    }
-    if let Ok(l_values) = value.extract::<Vec<i64>>() {
-        return Ok(Some(
-            l_values
-                .into_iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>(),
+    if let Ok(b) = value.extract::<bool>() {
+        if !b {
+            return Ok(None);
+        }
+        return Err(PyValueError::new_err(
+            "Column refs must be str, int, sequence[str | int], False, or None.",
         ));
     }
 
+    if let Ok(c_value) = value.extract::<String>() {
+        return Ok(Some(vec![ColumnIdentifier::Name(c_value)]));
+    }
+    if let Ok(idx) = value.extract::<usize>() {
+        return Ok(Some(vec![ColumnIdentifier::Index(idx)]));
+    }
+
+    if let Ok(iter) = value.try_iter() {
+        let mut refs = Vec::new();
+        for item in iter {
+            let item = item?;
+            refs.push(parse_single_column_ref(&item)?);
+        }
+        return Ok(Some(refs));
+    }
+
     Err(PyValueError::new_err(
-        "Column refs must be str, sequence[str], sequence[int], or None.",
+        "Column refs must be str, int, sequence[str | int], False, or None.",
+    ))
+}
+
+fn parse_single_column_ref(value: &Bound<'_, PyAny>) -> PyResult<ColumnIdentifier> {
+    if let Ok(b) = value.extract::<bool>() {
+        return Err(PyValueError::new_err(format!(
+            "Column ref items must be str or int, got bool {b}."
+        )));
+    }
+    if let Ok(name) = value.extract::<String>() {
+        return Ok(ColumnIdentifier::Name(name));
+    }
+    if let Ok(idx) = value.extract::<usize>() {
+        return Ok(ColumnIdentifier::Index(idx));
+    }
+    Err(PyValueError::new_err(
+        "Column ref items must be str or int.",
     ))
 }
 

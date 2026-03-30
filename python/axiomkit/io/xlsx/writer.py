@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import os
+import warnings
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
@@ -127,11 +126,17 @@ class XlsxWriter:
                 uniqueness adjustments.
             df_header: Optional custom header grid. When provided, it must have the
                 same width as ``df`` and at least one row.
-            cols_integer: Optional column identifiers that should use integer
-                formatting and integer conversion rules.
-            cols_decimal: Optional column identifiers that should use decimal
-                formatting. Pass ``False`` to disable explicit decimal-column
-                selection.
+            cols_integer:
+                Optional column identifiers that should use integer formatting and
+                integer conversion rules. Use ``str`` for literal column names and
+                ``int`` for zero-based column indices. Pure numeric strings such as
+                ``"0"`` are treated as column names, not indices.
+            cols_decimal:
+                Optional column identifiers that should use decimal formatting.
+                Use ``str`` for literal column names and ``int`` for zero-based
+                column indices. Pure numeric strings such as ``"0"`` are treated as
+                column names, not indices.
+                Pass ``False`` to disable explicit decimal-column selection.
             num_frozen_cols: Number of leftmost columns to freeze.
             num_frozen_rows: Number of top rows to freeze. When ``None``, the
                 backend uses the resolved header height.
@@ -148,7 +153,46 @@ class XlsxWriter:
 
         Returns:
             Self: The current writer instance for fluent chaining.
+
+        Examples:
+            ```python
+            with XlsxWriter("output.xlsx") as writer:
+                writer.write_sheet(
+                    my_dataframe,
+                    "Data",
+                    cols_integer=["id", "age"],
+                    cols_decimal=["score"],
+                    num_frozen_cols=1,
+                    should_merge_header=True,
+                )
+
+            with XlsxWriter("output.xlsx") as writer:
+                writer.write_sheet(
+                    my_dataframe,
+                    "Data",
+                    cols_integer=[0, 1],  # using column indices instead of names
+                    cols_decimal=[2],
+                    num_frozen_rows=2,
+                    should_keep_missing_values=True,
+                    policy_autofit=AutofitCellsPolicySpec(
+                        rule_columns="all",
+                        height_body_inferred_max=20_000,
+                        width_cell_min=8,
+                        width_cell_max=60,
+                        width_cell_padding=2
+                    ),
+                    policy_scientific=ScientificPolicySpec(
+                        rule_scope="decimal",
+                        thr_min=0.0001,
+                        thr_max=1_000_000_000_000.0,
+                        height_body_inferred_max=20_000
+                    ),
+                )
+            ```
         """
+        _warn_numeric_string_column_selectors(cols_integer, arg_name="cols_integer")
+        _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
+
         self._writer.write_sheet(
             df=df,
             sheet_name=sheet_name,
@@ -163,3 +207,31 @@ class XlsxWriter:
             policy_scientific=policy_scientific,
         )
         return self
+
+
+def _warn_numeric_string_column_selectors(
+    value: Sequence[ColumnIdentifier] | None | Literal[False] | object,
+    *,
+    arg_name: str,
+) -> None:
+    match value:
+        case None | False:
+            return
+        case str() | int():
+            items = (value,)
+        case Sequence():
+            items = value
+        case _:
+            return
+
+    for _item in items:
+        if isinstance(_item, str) and _item.isascii() and _item.isdigit():
+            warnings.warn(
+                (
+                    f"{arg_name} contains numeric string selector {_item!r}; "
+                    "string selectors are treated as literal column names. "
+                    "Pass an int to select a zero-based column index."
+                ),
+                category=UserWarning,
+                stacklevel=2,
+            )

@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::constant::{
-    N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
+    ColumnIdentifier, N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX,
+    TUP_EXCEL_ILLEGAL,
 };
 use crate::spec::{
     CellBorderSpec, CellValue, IntegerCoerceMode, SheetHorizontalMergeSpec, SheetSliceSpec,
@@ -171,27 +172,28 @@ pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
     Err(format!("Duplicate column names detected: {message}"))
 }
 
-/// Resolve mixed refs (`name` or numeric string index) to sorted unique indices.
+/// Resolve mixed refs (`name` or `index`) to sorted unique indices.
 pub fn select_sorted_indices_from_refs(
     columns: &[String],
-    refs: Option<&[String]>,
+    refs: Option<&[ColumnIdentifier]>,
 ) -> Result<Vec<usize>, String> {
     let Some(refs) = refs else {
         return Ok(vec![]);
     };
 
     let mut indices = BTreeSet::new();
-    for _ref_col in refs {
-        let ref_col = _ref_col;
-        if let Ok(idx) = ref_col.parse::<usize>() {
-            indices.insert(idx);
-            continue;
+    for ref_col in refs {
+        match ref_col {
+            ColumnIdentifier::Index(idx) => {
+                indices.insert(*idx);
+            }
+            ColumnIdentifier::Name(name) => {
+                let Some(idx) = columns.iter().position(|column_name| column_name == name) else {
+                    return Err(format!("Column not found: {name:?}"));
+                };
+                indices.insert(idx);
+            }
         }
-
-        let Some(idx) = columns.iter().position(|name| name == ref_col) else {
-            return Err(format!("Column not found: {ref_col:?}"));
-        };
-        indices.insert(idx);
     }
 
     Ok(indices.into_iter().collect())
@@ -521,6 +523,37 @@ pub fn derive_horizontal_merge_tracker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constant::ColumnIdentifier;
+
+    #[test]
+    fn test_select_sorted_indices_from_refs_respects_typed_selectors() {
+        let columns = vec!["x".to_string(), "0".to_string(), "y".to_string()];
+
+        assert_eq!(
+            select_sorted_indices_from_refs(
+                &columns,
+                Some(&[
+                    ColumnIdentifier::Name("0".to_string()),
+                    ColumnIdentifier::Index(0),
+                ]),
+            )
+            .unwrap(),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn test_select_sorted_indices_from_refs_rejects_missing_name() {
+        let columns = vec!["x".to_string(), "y".to_string()];
+
+        let err = select_sorted_indices_from_refs(
+            &columns,
+            Some(&[ColumnIdentifier::Name("0".to_string())]),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("Column not found"));
+    }
 
     #[test]
     fn test_generate_vertical_runs_detects_only_contiguous_non_empty_runs() {

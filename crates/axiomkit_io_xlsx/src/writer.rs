@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use polars::prelude::{AnyValue, DataFrame, IpcReader, SerReader};
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet, XlsxError};
 
-use crate::constant::N_LEN_EXCEL_SHEET_NAME_MAX;
+use crate::constant::{ColumnIdentifier, N_LEN_EXCEL_SHEET_NAME_MAX};
 use crate::spec::{
     AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, CellValue, ColumnFormatPlanSpec,
     ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxReport, XlsxValuePolicySpec,
@@ -23,10 +23,10 @@ use crate::util::{
 /// Per-sheet call options (aligned with Python `XlsxWriter.write_sheet` kwargs).
 #[derive(Default, Debug, Clone)]
 pub struct XlsxSheetWriteOptionsSpec {
-    /// Integer columns by name/index-string.
-    pub cols_integer: Option<Vec<String>>,
-    /// Decimal columns by name/index-string.
-    pub cols_decimal: Option<Vec<String>>,
+    /// Integer columns by typed name or zero-based index.
+    pub cols_integer: Option<Vec<ColumnIdentifier>>,
+    /// Decimal columns by typed name or zero-based index.
+    pub cols_decimal: Option<Vec<ColumnIdentifier>>,
     /// Number of frozen columns.
     pub num_frozen_cols: usize,
     /// Number of frozen top rows; defaults to header height when `None`.
