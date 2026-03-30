@@ -17,6 +17,7 @@ REQUIRED_SHIMS = (
     "axiomkit/io/xlsx/_axiomkit_io_xlsx_rs.py",
 )
 REQUIRED_SDIST_SUFFIXES = (
+    "LICENSE",
     "pyproject.toml",
     "Cargo.toml",
     "Cargo.lock",

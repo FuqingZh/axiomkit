@@ -47,6 +47,9 @@ manifest-path = "crates/axiomkit_py/Cargo.toml"
 python-source = "python"
 module-name = "axiomkit._axiomkit_rs"
 bindings = "pyo3"
+include = [
+    { path = "LICENSE", format = ["sdist", "wheel"] },
+]
 
 [tool.pdm]
 distribution = true
