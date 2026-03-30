@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "axiomkit_py"
-version = "0.0.35"
+version = "0.0.37"
 dependencies = [
  "axiomkit_io_fs",
  "axiomkit_io_xlsx",
