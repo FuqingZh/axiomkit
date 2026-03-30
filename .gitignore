@@ -10,6 +10,7 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+.cargo-ci/
 __pycache__/
 __pypackages__/
 build/
@@ -25,6 +26,7 @@ r/tests/artifacts/
 
 # Rust
 target/
+target/cibuildwheel-*/
 
 # In-place Rust extension artifact built under `python/`
 python/axiomkit/_axiomkit_rs*.so
