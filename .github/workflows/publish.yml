@@ -291,3 +291,55 @@ jobs:
         with:
           packages-dir: dist
           skip-existing: true
+
+  publish-testpypi-aarch64:
+    needs:
+      - build-wheel-aarch64
+      - publish-testpypi-main
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/axiomkit
+    steps:
+      - name: Download aarch64 wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: py-dist-wheel-aarch64
+          path: dist
+
+      - name: Publish aarch64 wheel to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+          skip-existing: true
+          attestations: false
+
+  publish-pypi-aarch64:
+    needs:
+      - build-wheel-aarch64
+      - publish-pypi-main
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: pypi
+      url: https://pypi.org/p/axiomkit
+    steps:
+      - name: Download aarch64 wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: py-dist-wheel-aarch64
+          path: dist
+
+      - name: Publish aarch64 wheel to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
