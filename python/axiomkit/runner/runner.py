@@ -139,16 +139,18 @@ def derive_worker_distribution(
             If loguru is unavailable, falls back to stdlib logging.
 
     Returns:
-        Worker/thread distribution satisfying the above contract.
+        WorkerDistributionReport: Worker/thread distribution satisfying the above contract.
 
     Raises:
         ValueError: If inputs are out of range.
 
     Examples:
-        >>> derive_worker_distribution(threads=32, threads_per_worker_min=2, threads_per_worker_max=16)
-        WorkerDistributionReport(workers=2, threads_per_worker=16)
-        >>> derive_worker_distribution(threads=1, threads_per_worker_min=2, threads_per_worker_max=16)
-        WorkerDistributionReport(workers=1, threads_per_worker=1)
+        ```python
+        # Derive distribution for 32 threads with default preferences
+        worker_rpt = derive_worker_distribution(32)
+        print(worker_rpt.workers)  # e.g., 4
+        print(worker_rpt.threads_per_worker)  # e.g., 8
+        ```
     """
     if threads < 1:
         raise ValueError(f"threads must be >= 1, got {threads}")

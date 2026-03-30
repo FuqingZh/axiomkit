@@ -117,6 +117,32 @@ class WorkspacePlan:
 
     Resolve and validate workspace paths in ``__init__``, then create directories
     with :meth:`apply`.
+
+    Args:
+        dir_root: Root directory for the workspace.
+        spec: Optional workspace layout specification, see :class:`WorkspaceLayoutSpec`.
+            If not provided, a default layout with standard directory names will be used.
+
+    Raises:
+        ValueError: If the workspace layout specification is invalid.
+
+    Returns:
+        WorkspaceCheckReport: Report of the validation check, including any errors.
+
+    Examples:
+    ```python
+    from axiomkit.workspace import WorkspacePlan, WorkspaceLayoutSpec
+    # Create a workspace plan with default layout
+    ws_spec = WorkspaceLayoutSpec(dirs=["input", "output", "temp"])
+    ws_plan = WorkspacePlan(
+        dir_root=Path("/path/to/workspace"),
+        spec=ws_spec,
+    ).apply()
+    if not ws_plan.ok:
+        print("Errors occurred while creating workspace directories:")
+        for error in ws_plan.errors:
+            raise ValueError(f"- {error}")
+    ```
     """
 
     def __init__(

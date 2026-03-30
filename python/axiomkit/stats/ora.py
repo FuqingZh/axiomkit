@@ -177,20 +177,22 @@ def calculate_ora(
             - `BgMembers` (optional): List of background members for each term
 
     Examples:
-        >>> import polars as pl
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "ElementId": ["g1", "g1", "g2", "g3"],
-        ...         "TermId": ["t1", "t2", "t2", "t2"],
-        ...     }
-        ... )
-        >>> foreground_ids = {"g1", "g2"}
-        >>> df_result = calculate_ora(
-        ...     df,
-        ...     col_elements="ElementId",
-        ...     col_terms="TermId",
-        ...     foreground_elements=foreground_ids,
-        ... )
+        ```python
+        import polars as pl
+        df = pl.DataFrame(
+            {
+                "ElementId": ["g1", "g1", "g2", "g3"],
+                "TermId": ["t1", "t2", "t2", "t2"],
+            }
+        )
+        foreground_ids = {"g1", "g2"}
+        df_result = calculate_ora(
+            df,
+            col_elements="ElementId",
+            col_terms="TermId",
+            foreground_elements=foreground_ids,
+        )
+        ```
     """
 
     ############################################################
