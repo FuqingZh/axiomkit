@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: py-publish-${{ github.ref }}
@@ -31,6 +32,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
 
       - name: Set up QEMU
         if: matrix.arch == 'aarch64'
@@ -45,6 +47,16 @@ jobs:
         run: |
           rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache dist build
 
+      - name: Restore Cargo build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-ci/${{ matrix.arch }}
+            target/cibuildwheel-${{ matrix.arch }}
+          key: >-
+            cargo-cibuildwheel-${{ runner.os }}-${{ matrix.arch }}-stable-${{
+            hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
+
       - name: Sync package version from release tag
         if: github.ref_type == 'tag'
         run: python scripts/sync_release_version.py --version "${{ github.ref_name }}"
@@ -54,12 +66,11 @@ jobs:
           CIBW_ARCHS_LINUX: ${{ matrix.arch }}
           CIBW_BUILD: cp313-*
           CIBW_BUILD_VERBOSITY: "1"
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-          CIBW_ENVIRONMENT_LINUX: PATH=/root/.cargo/bin:$PATH
-          CIBW_BEFORE_ALL_LINUX: >-
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
-            sh -s -- -y --profile minimal --default-toolchain stable
+          CIBW_MANYLINUX_AARCH64_IMAGE: ghcr.io/${{ github.repository_owner }}/axiomkit-manylinux_2_28-rust:aarch64
+          CIBW_MANYLINUX_X86_64_IMAGE: ghcr.io/${{ github.repository_owner }}/axiomkit-manylinux_2_28-rust:x86_64
+          CIBW_ENVIRONMENT_LINUX: >-
+            CARGO_HOME=/project/.cargo-ci/${{ matrix.arch }}
+            CARGO_TARGET_DIR=/project/target/cibuildwheel-${{ matrix.arch }}
         run: python -m cibuildwheel --output-dir dist .
 
       - name: Validate built wheel
