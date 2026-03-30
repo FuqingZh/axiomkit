@@ -61,6 +61,7 @@ pdm run python scripts/run_package_qa.py --dist-dir dist --tests-dir tests
 
 Official release artifacts should come from `.github/workflows/publish.yml`, which validates `x86_64 + sdist` as the main release path and then supplements the release with a Linux ARM64 wheel when available.
 Those CI manylinux builds use dedicated prebuilt Rust-enabled images for speed; the Linux ARM64 supplemental wheel is built on a native ARM GitHub runner, while local development and local smoke builds do not depend on those images.
+TestPyPI is retained as an advisory verification channel for upload and install behavior, but it does not block the main PyPI release.
 
 ## 4. Build Artifacts
 
@@ -110,3 +111,5 @@ Notes:
 - The local script is a helper for smoke validation and manual publishing assistance.
 - Official distributable Linux wheels should be the CI-built manylinux artifacts, not ad hoc local builds.
 - Linux ARM64 (`aarch64`) targets Linux ARM servers and cloud instances, not Windows or macOS, and it may appear slightly later than the main release.
+- The main PyPI release is authoritative; TestPyPI failures or partial upload conflicts should not block the official release.
+- TestPyPI remains useful for surfacing packaging/upload issues, but it is treated as advisory rather than a release gate.
