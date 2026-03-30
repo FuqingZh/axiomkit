@@ -188,7 +188,7 @@ jobs:
 
   verify-dist:
     needs:
-      - build-wheel
+      - build-wheel-x86_64
       - build-sdist
     runs-on: ubuntu-latest
     steps:
@@ -210,9 +210,8 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: py-dist-wheel-*
+          name: py-dist-wheel-x86_64
           path: dist
-          merge-multiple: true
 
       - name: Download sdist artifact
         uses: actions/download-artifact@v4
@@ -243,11 +242,11 @@ jobs:
       - name: Upload verified dist bundle
         uses: actions/upload-artifact@v4
         with:
-          name: py-dist
+          name: py-dist-main
           path: dist/
           if-no-files-found: error
 
-  publish-testpypi:
+  publish-testpypi-main:
     needs: verify-dist
     runs-on: ubuntu-latest
     permissions:
@@ -260,7 +259,7 @@ jobs:
       - name: Download dist
         uses: actions/download-artifact@v4
         with:
-          name: py-dist
+          name: py-dist-main
           path: dist
 
       - name: Publish to TestPyPI
@@ -271,8 +270,8 @@ jobs:
           skip-existing: true
           attestations: false
 
-  publish-pypi:
-    needs: publish-testpypi
+  publish-pypi-main:
+    needs: publish-testpypi-main
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -284,7 +283,7 @@ jobs:
       - name: Download dist
         uses: actions/download-artifact@v4
         with:
-          name: py-dist
+          name: py-dist-main
           path: dist
 
       - name: Publish to PyPI
