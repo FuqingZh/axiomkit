@@ -26,7 +26,9 @@ This checklist targets publishing the repo-root Python package as `axiomkit` to 
 
 ## 2. Versioning Notes
 
-- Version is derived from the `crates/axiomkit_py/Cargo.toml` package version.
+- Official tagged releases take the version from the Git tag.
+- The publish workflow syncs that tag version into `crates/axiomkit_py/Cargo.toml` and `Cargo.lock` before building artifacts.
+- Local non-tag builds still use the checked-in `crates/axiomkit_py/Cargo.toml` package version.
 - Publish tags must be canonical PEP 440 and match the built distribution version.
 - The release workflow validates tag format before publishing.
 

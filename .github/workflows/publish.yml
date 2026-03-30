@@ -45,6 +45,10 @@ jobs:
         run: |
           rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache dist build
 
+      - name: Sync package version from release tag
+        if: github.ref_type == 'tag'
+        run: python scripts/sync_release_version.py --version "${{ github.ref_name }}"
+
       - name: Build wheel
         env:
           CIBW_ARCHS_LINUX: ${{ matrix.arch }}
@@ -85,6 +89,10 @@ jobs:
       - name: Clean local packaging artifacts
         run: |
           rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache dist build
+
+      - name: Sync package version from release tag
+        if: github.ref_type == 'tag'
+        run: python scripts/sync_release_version.py --version "${{ github.ref_name }}"
 
       - name: Verify tag is canonical PEP 440
         if: github.ref_type == 'tag'
