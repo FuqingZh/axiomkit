@@ -18,14 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-wheel:
+  build-wheel-x86_64:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch:
-          - x86_64
-          - aarch64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,12 +30,6 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-
-      - name: Set up QEMU
-        if: matrix.arch == 'aarch64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Install wheel builder
         run: python -m pip install -U pip cibuildwheel==3.2.1
@@ -54,10 +42,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .cargo-ci/${{ matrix.arch }}
-            target/cibuildwheel-${{ matrix.arch }}
+            .cargo-ci/x86_64
+            target/cibuildwheel-x86_64
           key: >-
-            cargo-cibuildwheel-${{ runner.os }}-${{ matrix.arch }}-stable-${{
+            cargo-cibuildwheel-${{ runner.os }}-x86_64-stable-${{
             hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
 
       - name: Sync package version from release tag
@@ -66,14 +54,13 @@ jobs:
 
       - name: Build wheel
         env:
-          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_ARCHS_LINUX: x86_64
           CIBW_BUILD: cp313-*
           CIBW_BUILD_VERBOSITY: "1"
-          CIBW_MANYLINUX_AARCH64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:aarch64
           CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:x86_64
           CIBW_ENVIRONMENT_LINUX: >-
-            CARGO_HOME=/project/.cargo-ci/${{ matrix.arch }}
-            CARGO_TARGET_DIR=/project/target/cibuildwheel-${{ matrix.arch }}
+            CARGO_HOME=/project/.cargo-ci/x86_64
+            CARGO_TARGET_DIR=/project/target/cibuildwheel-x86_64
         run: python -m cibuildwheel --output-dir dist .
 
       - name: Validate built wheel
@@ -82,8 +69,63 @@ jobs:
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: py-dist-wheel-${{ matrix.arch }}
-          path: dist/*manylinux_2_28*${{ matrix.arch }}*.whl
+          name: py-dist-wheel-x86_64
+          path: dist/*manylinux_2_28*x86_64*.whl
+          if-no-files-found: error
+
+  build-wheel-aarch64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install wheel builder
+        run: python -m pip install -U pip cibuildwheel==3.2.1
+
+      - name: Clean local packaging artifacts
+        run: |
+          rm -rf __pypackages__ .pdm-build .pytest_cache .ruff_cache dist build
+
+      - name: Restore Cargo build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-ci/aarch64
+            target/cibuildwheel-aarch64
+          key: >-
+            cargo-cibuildwheel-${{ runner.os }}-aarch64-stable-${{
+            hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
+
+      - name: Sync package version from release tag
+        if: github.ref_type == 'tag'
+        run: python scripts/sync_release_version.py --version "${{ github.ref_name }}"
+
+      - name: Build wheel
+        env:
+          CIBW_ARCHS_LINUX: aarch64
+          CIBW_BUILD: cp313-*
+          CIBW_BUILD_VERBOSITY: "1"
+          CIBW_MANYLINUX_AARCH64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:aarch64
+          CIBW_ENVIRONMENT_LINUX: >-
+            CARGO_HOME=/project/.cargo-ci/aarch64
+            CARGO_TARGET_DIR=/project/target/cibuildwheel-aarch64
+        run: python -m cibuildwheel --output-dir dist .
+
+      - name: Validate built wheel
+        run: python scripts/validate_wheel.py --dist-dir dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: py-dist-wheel-aarch64
+          path: dist/*manylinux_2_28*aarch64*.whl
           if-no-files-found: error
 
   build-sdist:
