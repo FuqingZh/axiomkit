@@ -150,35 +150,39 @@ fn should_error_unsafe_destination_path(path_dst: &Path, copy_ctx: &mut CopyCont
     false
 }
 
+fn execute_copy_task(task: CopyTaskFileSpec, dir_dst_root: &Path) -> (PathBuf, Result<(), String>) {
+    let copy_result =
+        validate_destination_path_safety(&task.file_dst_path, dir_dst_root).and_then(|_| {
+            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
+                .map_err(|_e| _e.to_string())
+        });
+
+    (task.file_dst_path.clone(), copy_result)
+}
+
+fn apply_results(
+    results: Vec<(PathBuf, Result<(), String>)>,
+    report_builder: &mut CopyReportBuilder,
+) {
+    for _result in results {
+        let (path_dst, copy_result) = _result;
+        match copy_result {
+            Ok(_) => report_builder.add_copied(),
+            Err(message) => report_builder.add_error(path_dst, message),
+        }
+    }
+}
+
 fn flush_file_copy_tasks(copy_ctx: &mut CopyContext) {
     let file_copy_tasks = std::mem::take(&mut copy_ctx.file_copy_tasks);
     if file_copy_tasks.is_empty() {
         return;
     }
 
-    let apply_results = |results: Vec<(PathBuf, Result<(), String>)>,
-                         report_builder: &mut CopyReportBuilder| {
-        for _result in results {
-            let (path_dst, copy_result) = _result;
-            match copy_result {
-                Ok(_) => report_builder.add_copied(),
-                Err(message) => report_builder.add_error(path_dst, message),
-            }
-        }
-    };
-
     if copy_ctx.workers_max <= 1 {
         let results = file_copy_tasks
             .into_iter()
-            .map(|task| {
-                let copy_result =
-                    validate_destination_path_safety(&task.file_dst_path, &copy_ctx.dir_dst_path)
-                        .and_then(|_| {
-                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
-                                .map_err(|e| e.to_string())
-                        });
-                (task.file_dst_path, copy_result)
-            })
+            .map(|_task| execute_copy_task(_task, &copy_ctx.dir_dst_path))
             .collect::<Vec<_>>();
         apply_results(results, &mut copy_ctx.report_builder);
         return;
@@ -194,15 +198,7 @@ fn flush_file_copy_tasks(copy_ctx: &mut CopyContext) {
         ));
         let results = file_copy_tasks
             .into_iter()
-            .map(|task| {
-                let copy_result =
-                    validate_destination_path_safety(&task.file_dst_path, &copy_ctx.dir_dst_path)
-                        .and_then(|_| {
-                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
-                                .map_err(|e| e.to_string())
-                        });
-                (task.file_dst_path, copy_result)
-            })
+            .map(|_task| execute_copy_task(_task, &copy_ctx.dir_dst_path))
             .collect::<Vec<_>>();
         apply_results(results, &mut copy_ctx.report_builder);
         return;
@@ -212,16 +208,7 @@ fn flush_file_copy_tasks(copy_ctx: &mut CopyContext) {
         let dir_dst_root = copy_ctx.dir_dst_path.clone();
         file_copy_tasks
             .into_par_iter()
-            .map(|task| {
-                let copy_result =
-                    validate_destination_path_safety(&task.file_dst_path, &dir_dst_root).and_then(
-                        |_| {
-                            copy_file_with_metadata(&task.file_src_path, &task.file_dst_path)
-                                .map_err(|e| e.to_string())
-                        },
-                    );
-                (task.file_dst_path, copy_result)
-            })
+            .map(|_task| execute_copy_task(_task, &dir_dst_root))
             .collect::<Vec<_>>()
     });
     apply_results(results, &mut copy_ctx.report_builder);
@@ -316,9 +303,9 @@ fn walk_directory(path_root: &Path, depth_relative: usize, copy_ctx: &mut CopyCo
         || copy_ctx.copy_patterns.patterns_exclude_dirs.is_some()
     {
         let rule_pattern = copy_ctx.copy_options.rule_pattern;
-        dirs.retain(|d| {
+        dirs.retain(|_d| {
             !should_exclude_by_patterns(
-                &d.dir_name,
+                &_d.dir_name,
                 copy_ctx.copy_patterns.patterns_include_dirs.as_ref(),
                 copy_ctx.copy_patterns.patterns_exclude_dirs.as_ref(),
                 rule_pattern,
@@ -327,7 +314,7 @@ fn walk_directory(path_root: &Path, depth_relative: usize, copy_ctx: &mut CopyCo
     }
 
     let depth_limit = copy_ctx.copy_options.depth_limit;
-    if depth_limit.is_some_and(|limit| depth_relative >= limit) {
+    if depth_limit.is_some_and(|_limit| depth_relative >= _limit) {
         dirs.clear();
     }
 
