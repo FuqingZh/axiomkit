@@ -70,15 +70,11 @@ struct CopyContext {
 /// Returns [`CopyReport`] when the run completes (with possible per-entry errors
 /// stored in the report). Returns [`CopyTreeError`] only for top-level setup and
 /// validation failures.
-pub fn copy_tree<P, Q>(
-    dir_source: P,
-    dir_destination: Q,
+pub fn copy_tree(
+    dir_source: impl AsRef<Path>,
+    dir_destination: impl AsRef<Path>,
     copy_options: CopyOptionsSpec,
-) -> Result<CopyReport, CopyTreeError>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-{
+) -> Result<CopyReport, CopyTreeError> {
     let rule_depth_limit = copy_options.rule_depth_limit;
     if copy_options.depth_limit == Some(0) {
         return Err(CopyTreeError::InvalidDepthLimit(
