@@ -69,18 +69,7 @@ impl fmt::Display for CopyReport {
 /// Mutable accumulator for copy statistics.
 #[derive(Debug, Default, Clone)]
 pub struct CopyReportBuilder {
-    /// See [`CopyReport::cnt_matched`].
-    pub cnt_matched: u64,
-    /// See [`CopyReport::cnt_scanned`].
-    pub cnt_scanned: u64,
-    /// See [`CopyReport::cnt_copied`].
-    pub cnt_copied: u64,
-    /// See [`CopyReport::cnt_skipped`].
-    pub cnt_skipped: u64,
-    /// See [`CopyReport::errors`].
-    pub errors: Vec<CopyErrorRecord>,
-    /// See [`CopyReport::warnings`].
-    pub warnings: Vec<String>,
+    report: CopyReport,
 }
 
 impl CopyReportBuilder {
@@ -88,12 +77,12 @@ impl CopyReportBuilder {
     ///
     /// Unknown names are ignored intentionally to keep call-sites concise.
     pub fn add_counts(&mut self, fields: &[&str], value: u64) {
-        for _field in fields {
-            match *_field {
-                "cnt_matched" => self.cnt_matched += value,
-                "cnt_scanned" => self.cnt_scanned += value,
-                "cnt_copied" => self.cnt_copied += value,
-                "cnt_skipped" => self.cnt_skipped += value,
+        for &_field in fields {
+            match _field {
+                "cnt_matched" => self.report.cnt_matched += value,
+                "cnt_scanned" => self.report.cnt_scanned += value,
+                "cnt_copied" => self.report.cnt_copied += value,
+                "cnt_skipped" => self.report.cnt_skipped += value,
                 _ => {}
             }
         }
@@ -101,44 +90,42 @@ impl CopyReportBuilder {
 
     /// Increment matched count by one.
     pub fn add_matched(&mut self) {
-        self.cnt_matched += 1;
+        self.report.cnt_matched += 1;
     }
 
     /// Increment scanned count by one.
     pub fn add_scanned(&mut self) {
-        self.cnt_scanned += 1;
+        self.report.cnt_scanned += 1;
     }
 
     /// Increment copied count by one.
     pub fn add_copied(&mut self) {
-        self.cnt_copied += 1;
+        self.report.cnt_copied += 1;
     }
 
     /// Increment skipped count by one.
     pub fn add_skipped(&mut self) {
-        self.cnt_skipped += 1;
+        self.report.cnt_skipped += 1;
     }
 
     /// Add warning message.
     pub fn add_warning(&mut self, warning: String) {
-        self.warnings.push(warning);
+        self.report.warnings.push(warning);
     }
 
     /// Add one path-scoped error.
     pub fn add_error(&mut self, path: std::path::PathBuf, exception: String) {
-        self.errors.push(CopyErrorRecord { path, exception });
+        self.report.errors.push(CopyErrorRecord { path, exception });
+    }
+
+    /// Get current report snapshot.
+    pub fn as_report(&self) -> &CopyReport {
+        &self.report
     }
 
     /// Finalize builder into immutable report.
     pub fn build(self) -> CopyReport {
-        CopyReport {
-            cnt_matched: self.cnt_matched,
-            cnt_scanned: self.cnt_scanned,
-            cnt_copied: self.cnt_copied,
-            cnt_skipped: self.cnt_skipped,
-            errors: self.errors,
-            warnings: self.warnings,
-        }
+        self.report
     }
 }
 
