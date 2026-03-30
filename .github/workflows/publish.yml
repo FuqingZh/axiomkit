@@ -1,5 +1,8 @@
 name: py-publish
 
+env:
+  MANYLINUX_RUST_IMAGE: ghcr.io/fuqingzh/axiomkit-manylinux_2_28-rust
+
 on:
   push:
     tags:
@@ -66,8 +69,8 @@ jobs:
           CIBW_ARCHS_LINUX: ${{ matrix.arch }}
           CIBW_BUILD: cp313-*
           CIBW_BUILD_VERBOSITY: "1"
-          CIBW_MANYLINUX_AARCH64_IMAGE: ghcr.io/${{ github.repository_owner }}/axiomkit-manylinux_2_28-rust:aarch64
-          CIBW_MANYLINUX_X86_64_IMAGE: ghcr.io/${{ github.repository_owner }}/axiomkit-manylinux_2_28-rust:x86_64
+          CIBW_MANYLINUX_AARCH64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:aarch64
+          CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:x86_64
           CIBW_ENVIRONMENT_LINUX: >-
             CARGO_HOME=/project/.cargo-ci/${{ matrix.arch }}
             CARGO_TARGET_DIR=/project/target/cibuildwheel-${{ matrix.arch }}

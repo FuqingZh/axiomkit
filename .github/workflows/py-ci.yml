@@ -1,5 +1,8 @@
 name: py-ci
 
+env:
+  MANYLINUX_RUST_IMAGE: ghcr.io/fuqingzh/axiomkit-manylinux_2_28-rust
+
 on:
   push:
   pull_request:
@@ -52,7 +55,7 @@ jobs:
           CIBW_ARCHS_LINUX: x86_64
           CIBW_BUILD: cp313-*
           CIBW_BUILD_VERBOSITY: "1"
-          CIBW_MANYLINUX_X86_64_IMAGE: ghcr.io/${{ github.repository_owner }}/axiomkit-manylinux_2_28-rust:x86_64
+          CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:x86_64
           CIBW_ENVIRONMENT_LINUX: >-
             CARGO_HOME=/project/.cargo-ci/x86_64
             CARGO_TARGET_DIR=/project/target/cibuildwheel-x86_64
