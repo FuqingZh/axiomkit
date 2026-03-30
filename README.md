@@ -10,6 +10,7 @@ Personal, portable engineering toolkit (Python/R/Rust).
 
 - `pdm sync -G dev --no-self`
 - GitHub Actions uses a CI-only manylinux image with preinstalled Rust to speed wheel builds; local development does not depend on Docker or GHCR.
+- The Linux ARM64 wheel is built as a supplemental artifact on a native GitHub ARM runner; local development paths remain unchanged.
 
 ## Docs
 
