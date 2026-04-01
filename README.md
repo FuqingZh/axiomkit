@@ -6,6 +6,38 @@ Personal, portable engineering toolkit (Python/R/Rust).
 
 - `pip install axiomkit`
 
+## Stats
+
+```python
+import polars as pl
+from axiomkit.stats import (
+    ContrastSpec,
+    calculate_t_test_one_sample,
+    calculate_t_test_two_sample,
+)
+
+df_values = pl.DataFrame(
+    {
+        "FeatureId": ["f1", "f1", "f1", "f1", "f2", "f2", "f2", "f2"],
+        "Group": ["ctrl", "ctrl", "case", "case", "ctrl", "ctrl", "case", "case"],
+        "Value": [1.0, 2.0, 4.0, 5.0, 4.0, 4.0, 6.0, 8.0],
+    }
+)
+
+df_t = calculate_t_test_two_sample(
+    df_values,
+    col_feature="FeatureId",
+    contrasts=[ContrastSpec(group_test="case", group_ref="ctrl")],
+    rule_p_adjust="bh",
+)
+
+df_one_sample = calculate_t_test_one_sample(
+    df_values.select("FeatureId", "Value"),
+    col_feature="FeatureId",
+    popmean=3.0,
+)
+```
+
 ## Development
 
 - `pdm sync -G dev --no-self`
