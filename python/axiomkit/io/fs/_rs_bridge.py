@@ -7,10 +7,10 @@ from typing import Any
 from .report import CopyReport
 from .spec import (
     CopyDepthLimitMode,
-    CopyDirectoryConflictStrategy,
-    CopyFileConflictStrategy,
+    CopyDirectoryConflictMode,
+    CopyFileConflictMode,
     CopyPatternMode,
-    CopySymlinkStrategy,
+    CopySymlinkMode,
     CopyErrorRecord,
 )
 
@@ -93,9 +93,9 @@ def copy_tree_via_rs(
     patterns_include_dirs: Sequence[str] | str | None,
     patterns_exclude_dirs: Sequence[str] | str | None,
     rule_pattern: CopyPatternMode,
-    rule_conflict_file: CopyFileConflictStrategy,
-    rule_conflict_dir: CopyDirectoryConflictStrategy,
-    rule_symlink: CopySymlinkStrategy,
+    rule_conflict_file: CopyFileConflictMode,
+    rule_conflict_dir: CopyDirectoryConflictMode,
+    rule_symlink: CopySymlinkMode,
     depth_limit: int | None,
     rule_depth_limit: CopyDepthLimitMode,
     workers_max: int | None,
