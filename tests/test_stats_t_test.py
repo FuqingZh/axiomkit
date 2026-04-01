@@ -9,6 +9,7 @@ from scipy import stats
 from axiomkit.stats import (
     ContrastSpec,
     calculate_t_test_one_sample,
+    calculate_t_test_paired,
     calculate_t_test_two_sample,
 )
 
@@ -112,6 +113,163 @@ def test_calculate_t_test_one_sample_keeps_insufficient_rows_with_nan_stats() ->
     assert math.isnan(row_f1["PAdjust"])
     assert not math.isnan(row_f2["TStatistic"])
     assert row_f2["DegreesFreedom"] == pytest.approx(1.0)
+
+
+def test_calculate_t_test_paired_matches_scipy_for_single_contrast() -> None:
+    df_values = pl.DataFrame(
+        {
+            "PairId": ["p1", "p1", "p2", "p2", "p3", "p3"],
+            "Group": ["A", "B", "A", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 5.0, 4.0, 6.0],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+    )
+
+    assert df_result.columns == [
+        "ContrastId",
+        "GroupTest",
+        "GroupRef",
+        "NGroupTest",
+        "NGroupRef",
+        "MeanGroupTest",
+        "MeanGroupRef",
+        "MeanDiff",
+        "TStatistic",
+        "DegreesFreedom",
+        "PValue",
+        "PAdjust",
+    ]
+    row = df_result.row(0, named=True)
+    expected = stats.ttest_rel([2.0, 5.0, 6.0], [1.0, 3.0, 4.0])
+
+    assert row["ContrastId"] == ["B", "A"]
+    assert row["GroupTest"] == "B"
+    assert row["GroupRef"] == "A"
+    assert row["NGroupTest"] == 3
+    assert row["NGroupRef"] == 3
+    assert row["MeanGroupTest"] == pytest.approx((2.0 + 5.0 + 6.0) / 3.0)
+    assert row["MeanGroupRef"] == pytest.approx((1.0 + 3.0 + 4.0) / 3.0)
+    assert row["MeanDiff"] == pytest.approx(((2.0 - 1.0) + (5.0 - 3.0) + (6.0 - 4.0)) / 3.0)
+    assert row["TStatistic"] == pytest.approx(expected.statistic)
+    assert row["DegreesFreedom"] == pytest.approx(expected.df)
+    assert row["PValue"] == pytest.approx(expected.pvalue)
+    assert row["PAdjust"] == pytest.approx(expected.pvalue)
+
+
+def test_calculate_t_test_paired_supports_feature_and_multiple_contrasts() -> None:
+    df_values = pl.DataFrame(
+        {
+            "FeatureId": [
+                "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1",
+                "f2", "f2", "f2", "f2", "f2", "f2", "f2", "f2", "f2",
+            ],
+            "PairId": [
+                "p1", "p1", "p1", "p2", "p2", "p2", "p3", "p3", "p3",
+                "p1", "p1", "p1", "p2", "p2", "p2", "p3", "p3", "p3",
+            ],
+            "Group": [
+                "A", "B", "C", "A", "B", "C", "A", "B", "C",
+                "A", "B", "C", "A", "B", "C", "A", "B", "C",
+            ],
+            "Value": [
+                1.0, 2.0, 3.0, 2.0, 4.0, 5.0, 4.0, 7.0, 8.0,
+                2.0, 5.0, 6.0, 4.0, 7.0, 9.0, 6.0, 10.0, 12.0,
+            ],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values.lazy(),
+        col_pair="PairId",
+        col_feature="FeatureId",
+        contrasts=[
+            ContrastSpec(group_test="B", group_ref="A"),
+            ContrastSpec(group_test="C", group_ref="A"),
+        ],
+        rule_p_adjust="bonferroni",
+    )
+
+    assert df_result.columns == [
+        "FeatureId",
+        "ContrastId",
+        "GroupTest",
+        "GroupRef",
+        "NGroupTest",
+        "NGroupRef",
+        "MeanGroupTest",
+        "MeanGroupRef",
+        "MeanDiff",
+        "TStatistic",
+        "DegreesFreedom",
+        "PValue",
+        "PAdjust",
+    ]
+    assert df_result.select("FeatureId", "ContrastId").rows() == [
+        ("f1", ["B", "A"]),
+        ("f1", ["C", "A"]),
+        ("f2", ["B", "A"]),
+        ("f2", ["C", "A"]),
+    ]
+
+
+def test_calculate_t_test_paired_supports_rule_alternative() -> None:
+    df_values = pl.DataFrame(
+        {
+            "PairId": ["p1", "p1", "p2", "p2", "p3", "p3"],
+            "Group": ["A", "B", "A", "B", "A", "B"],
+            "Value": [2.0, 1.0, 3.0, 1.0, 4.0, 1.0],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        rule_alternative="less",
+    )
+
+    expected = stats.ttest_rel([1.0, 1.0, 1.0], [2.0, 3.0, 4.0], alternative="less")
+    row = df_result.row(0, named=True)
+    assert row["PValue"] == pytest.approx(expected.pvalue)
+
+
+def test_calculate_t_test_paired_rejects_missing_pairs() -> None:
+    df_values = pl.DataFrame(
+        {
+            "PairId": ["p1", "p1", "p2"],
+            "Group": ["A", "B", "A"],
+            "Value": [1.0, 2.0, 3.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires exactly one test row and one ref row"):
+        calculate_t_test_paired(
+            df_values,
+            col_pair="PairId",
+            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        )
+
+
+def test_calculate_t_test_paired_rejects_duplicate_pairs() -> None:
+    df_values = pl.DataFrame(
+        {
+            "PairId": ["p1", "p1", "p1", "p2", "p2"],
+            "Group": ["A", "B", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="does not allow duplicate rows"):
+        calculate_t_test_paired(
+            df_values,
+            col_pair="PairId",
+            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        )
 
 
 def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None:
