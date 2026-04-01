@@ -4,12 +4,11 @@ import os
 from pathlib import Path
 
 import pytest
-
 from axiomkit.io.fs._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.fs.copy import copy_tree  # noqa: E402
 from axiomkit.io.fs.spec import (  # noqa: E402
     CopyDepthLimitMode,
-    CopyDirectoryConflictStrategy,
+    CopyDirectoryConflictMode,
     CopyFileConflictStrategy,
     CopyPatternMode,
     CopySymlinkStrategy,
@@ -124,7 +123,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
         src,
         dst7,
         rule_conflict_file=CopyFileConflictStrategy.ERROR,
-        rule_conflict_dir=CopyDirectoryConflictStrategy.SKIP,
+        rule_conflict_dir=CopyDirectoryConflictMode.SKIP,
     )
     assert report7.error_count >= 1
 
