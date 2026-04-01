@@ -8,19 +8,19 @@ from typing import TypeAlias
 TypeCopyPatternSeq: TypeAlias = Sequence[str] | Sequence[re.Pattern[str]]
 
 
-class CopySymlinkStrategy(StrEnum):
+class CopySymlinkMode(StrEnum):
     DEREFERENCE = "dereference"
     COPY_SYMLINKS = "copy_symlinks"
     SKIP_SYMLINKS = "skip_symlinks"
 
 
-class CopyFileConflictStrategy(StrEnum):
+class CopyFileConflictMode(StrEnum):
     SKIP = "skip"
     OVERWRITE = "overwrite"
     ERROR = "error"
 
 
-class CopyDirectoryConflictStrategy(StrEnum):
+class CopyDirectoryConflictMode(StrEnum):
     SKIP = "skip"
     MERGE = "merge"
     ERROR = "error"
