@@ -249,10 +249,10 @@ def calculate_ora(
     df_total_counts = (
         lf_bg_elements.select(pl.len().alias("BgTotal"))
         .join(lf_fg_in_bg.select(pl.len().alias("FgTotal")), how="cross")
-        .collect(engine="streaming")
+        .collect()
     )
-    bg_total = int(df_total_counts["BgTotal"][0])
-    fg_total = int(df_total_counts["FgTotal"][0])
+    bg_total = df_total_counts.item(0, "BgTotal")
+    fg_total = df_total_counts.item(0, "FgTotal")
 
     if fg_total == 0:
         logger.warning(
@@ -296,7 +296,7 @@ def calculate_ora(
             .then(pl.col("FgRatio") / pl.col("BgRatio"))
             .otherwise(np.inf),
         )
-        .collect(engine="streaming")
+        .collect()
     )
 
     if df_ora.height == 0:
@@ -380,7 +380,7 @@ def calculate_ora(
                     else []
                 ),
             )
-            .collect(engine="streaming")
+            .collect()
         )
         df_ora = df_ora.join(df_members, on=col_terms, how="left")
     # #endregion
