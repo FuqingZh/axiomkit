@@ -5,7 +5,7 @@ from typing import Self
 import polars as pl
 import numpy as np
 
-from ..p_value import PValueAdjustmentMode
+from ...p_value import PValueAdjustmentMode
 
 @dataclass(frozen=True, slots=True)
 class TTestContext:

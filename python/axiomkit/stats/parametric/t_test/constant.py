@@ -1,10 +1,8 @@
 import polars as pl
 from polars._typing import SchemaDict
 
-COL_FEATURE_INTERNAL = "__FeatureKey"
-COL_FEATURE_ORDER = "__FeatureOrder"
-COL_VAR_TEST = "__VarGroupTest"
-COL_VAR_REF = "__VarGroupRef"
+COL_VAR_TEST = "_VarGroupTest"
+COL_VAR_REF = "_VarGroupRef"
 COLS_STATS_TWO_SAMPLE_NUMERIC = (
     "MeanGroupTest",
     "MeanGroupRef",
@@ -12,11 +10,6 @@ COLS_STATS_TWO_SAMPLE_NUMERIC = (
     COL_VAR_REF,
     "NGroupTest",
     "NGroupRef",
-)
-COLS_STATS_ONE_SAMPLE_NUMERIC = (
-    "Mean",
-    "Var",
-    "N",
 )
 
 SCHEMA_T_TEST_STATS: SchemaDict = {

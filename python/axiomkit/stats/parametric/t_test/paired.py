@@ -3,15 +3,27 @@ from collections.abc import Sequence
 import numpy as np
 import polars as pl
 
-from ..p_value import (
+from ...p_value import (
     PValueAdjustmentMode,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
-from .constant import (
+from ..constant import (
     COL_FEATURE_INTERNAL,
     COL_FEATURE_ORDER,
-    COLS_STATS_ONE_SAMPLE_NUMERIC,
+    COLS_SUMMARY_STATS,
+)
+from ..util import (
+    create_feature_frame,
+    create_required_columns,
+    create_result_schema,
+    create_summary_stat_columns,
+    normalize_value_frame,
+    read_frame_schema,
+    select_result_columns,
+    validate_required_columns,
+)
+from .constant import (
     SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
 )
 from .spec import (
@@ -22,16 +34,8 @@ from .spec import (
 )
 from .util import (
     calculate_p_values,
-    create_feature_frame,
-    create_required_columns,
-    create_summary_stat_columns,
-    create_t_test_result_columns,
-    create_t_test_result_schema,
+    create_t_stat_columns,
     normalize_alternative_hypothesis_mode,
-    normalize_t_test_value_frame,
-    read_frame_schema,
-    select_t_test_result_columns,
-    validate_required_columns,
 )
 
 
@@ -105,7 +109,7 @@ def calculate_t_test_paired(
 ) -> pl.DataFrame:
     """
     Calculate tidy paired t-tests from a long-format table.
-    
+
     Paired t-tests:
     - Compare the mean difference between paired observations of two groups (test vs ref) against zero.
     - Require a column (`col_pair`) that identifies matched pairs of observations across the two groups.
@@ -159,16 +163,14 @@ def calculate_t_test_paired(
     # #region Validate input DataFrame schema and normalize input data
     schema_input = read_frame_schema(df)
     cols_required = create_required_columns(col_value, col_group, col_pair, col_feature)
-    validate_required_columns(
-        cols_in=list(schema_input.keys()), cols_required=cols_required
-    )
+    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
 
-    schema_result = create_t_test_result_schema(
+    schema_result = create_result_schema(
         col_feature=col_feature,
         dtype_feature=schema_input.get(col_feature)
         if col_feature is not None
         else None,
-        schema_t_test_result=SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
+        schema_result=SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
     )
     contrast_plan = ContrastPlan.from_inputs(contrasts)
     if not contrast_plan.group_used:
@@ -176,11 +178,11 @@ def calculate_t_test_paired(
     # #endregion
     ############################################################
     # #region Normalize pair data and validate complete pairs
-    lf_values = normalize_t_test_value_frame(
+    lf_values = normalize_value_frame(
         df,
         cols_required,
-        col_float=col_value,
-        col_string=col_group,
+        cols_float=col_value,
+        cols_string=col_group,
         col_feature=col_feature,
     ).filter(pl.col(col_group).is_in(contrast_plan.group_used))
 
@@ -297,9 +299,7 @@ def calculate_t_test_paired(
     # #endregion
     ############################################################
     # #region Calculate t-test statistics, p-values, and p-value adjustments
-    np_stats = (
-        df_stats.select(COLS_STATS_ONE_SAMPLE_NUMERIC).fill_null(np.nan).to_numpy()
-    )
+    np_stats = df_stats.select(COLS_SUMMARY_STATS).fill_null(np.nan).to_numpy()
     t_test_result = calculate_paired_test_statistics(
         mean_diff=np_stats[:, 0],
         var_diff=np_stats[:, 1],
@@ -315,11 +315,9 @@ def calculate_t_test_paired(
     ############################################################
     # #region Finalize result DataFrame
     df_result = df_stats.with_columns(
-        *create_t_test_result_columns(
-            t_test_result, p_values=p_value, p_adjust=p_adjust
-        )
+        *create_t_stat_columns(t_test_result, p_values=p_value, p_adjust=p_adjust)
     )
-    df_result = select_t_test_result_columns(
+    df_result = select_result_columns(
         df_result,
         cols_selected=list(SCHEMA_T_TEST_TWO_SAMPLE_RESULT.keys()),
         col_feature=col_feature,

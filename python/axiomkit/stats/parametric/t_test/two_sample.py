@@ -3,14 +3,26 @@ from collections.abc import Sequence
 import numpy as np
 import polars as pl
 
-from ..p_value import (
+from ...p_value import (
     PValueAdjustmentMode,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
-from .constant import (
+from ..constant import (
     COL_FEATURE_INTERNAL,
     COL_FEATURE_ORDER,
+)
+from ..util import (
+    create_feature_frame,
+    create_required_columns,
+    create_result_schema,
+    create_summary_stat_columns,
+    normalize_value_frame,
+    read_frame_schema,
+    select_result_columns,
+    validate_required_columns,
+)
+from .constant import (
     COL_VAR_REF,
     COL_VAR_TEST,
     COLS_STATS_TWO_SAMPLE_NUMERIC,
@@ -24,16 +36,8 @@ from .spec import (
 )
 from .util import (
     calculate_p_values,
-    create_feature_frame,
-    create_required_columns,
-    create_summary_stat_columns,
-    create_t_test_result_columns,
-    create_t_test_result_schema,
+    create_t_stat_columns,
     normalize_alternative_hypothesis_mode,
-    normalize_t_test_value_frame,
-    read_frame_schema,
-    select_t_test_result_columns,
-    validate_required_columns,
 )
 
 
@@ -133,7 +137,7 @@ def calculate_t_test_two_sample(
 ) -> pl.DataFrame:
     """
     Calculate tidy two-sample t-tests from a long-format table.
-    
+
     Two-sample t-tests:
     - Compare the means of two independent groups (test vs ref) for each feature.
     - Can be performed for multiple features if `col_feature` is specified, with optional p-value adjustment for multiple testing.
@@ -224,16 +228,14 @@ def calculate_t_test_two_sample(
     # #region Validate input DataFrame schema and normalize input data
     schema_input = read_frame_schema(df)
     cols_required = create_required_columns(col_value, col_group, col_feature)
-    validate_required_columns(
-        cols_in=list(schema_input.keys()), cols_required=cols_required
-    )
+    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
 
-    schema_result = create_t_test_result_schema(
+    schema_result = create_result_schema(
         col_feature=col_feature,
         dtype_feature=schema_input.get(col_feature)
         if col_feature is not None
         else None,
-        schema_t_test_result=SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
+        schema_result=SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
     )
     contrast_plan = ContrastPlan.from_inputs(contrasts)
     if not contrast_plan.group_used:
@@ -241,11 +243,11 @@ def calculate_t_test_two_sample(
     # #endregion
     ############################################################
     # #region Calculate summary statistics for each group and prepare data for t-test calculations
-    lf_values = normalize_t_test_value_frame(
+    lf_values = normalize_value_frame(
         df,
         cols_required,
-        col_float=col_value,
-        col_string=col_group,
+        cols_float=col_value,
+        cols_string=col_group,
         col_feature=col_feature,
     )
     lf_features = create_feature_frame(lf_values)
@@ -324,11 +326,9 @@ def calculate_t_test_two_sample(
     ############################################################
     # #region Finalize result DataFrame
     df_result = df_stats.with_columns(
-        *create_t_test_result_columns(
-            t_test_result, p_values=p_value, p_adjust=p_adjust
-        )
+        *create_t_stat_columns(t_test_result, p_values=p_value, p_adjust=p_adjust)
     )
-    df_result = select_t_test_result_columns(
+    df_result = select_result_columns(
         df_result,
         cols_selected=list(SCHEMA_T_TEST_TWO_SAMPLE_RESULT.keys()),
         col_feature=col_feature,

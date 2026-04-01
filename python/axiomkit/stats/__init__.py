@@ -4,6 +4,9 @@ from axiomkit._optional_deps import import_optional_attr
 
 __all__ = [
     "ContrastSpec",
+    "calculate_anova_one_way",
+    "calculate_anova_one_way_welch",
+    "calculate_anova_two_way",
     "calculate_ora",
     "calculate_t_test_one_sample",
     "calculate_t_test_paired",
@@ -12,8 +15,11 @@ __all__ = [
 
 if TYPE_CHECKING:
     from .ora import calculate_ora
-    from .t_test import (
+    from .parametric import (
         ContrastSpec,
+        calculate_anova_one_way,
+        calculate_anova_one_way_welch,
+        calculate_anova_two_way,
         calculate_t_test_one_sample,
         calculate_t_test_paired,
         calculate_t_test_two_sample,
@@ -21,6 +27,33 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    if name == "calculate_anova_one_way":
+        return import_optional_attr(
+            module_name=".parametric",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars"),
+        )
+    if name == "calculate_anova_one_way_welch":
+        return import_optional_attr(
+            module_name=".parametric",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars"),
+        )
+    if name == "calculate_anova_two_way":
+        return import_optional_attr(
+            module_name=".parametric",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars"),
+        )
     if name == "calculate_ora":
         return import_optional_attr(
             module_name=".ora",
@@ -32,7 +65,7 @@ def __getattr__(name: str) -> Any:
         )
     if name == "ContrastSpec":
         return import_optional_attr(
-            module_name=".t_test",
+            module_name=".parametric",
             attr_name=name,
             package=__name__,
             feature="axiomkit.stats",
@@ -41,7 +74,7 @@ def __getattr__(name: str) -> Any:
         )
     if name == "calculate_t_test_one_sample":
         return import_optional_attr(
-            module_name=".t_test",
+            module_name=".parametric",
             attr_name=name,
             package=__name__,
             feature="axiomkit.stats",
@@ -50,7 +83,7 @@ def __getattr__(name: str) -> Any:
         )
     if name == "calculate_t_test_paired":
         return import_optional_attr(
-            module_name=".t_test",
+            module_name=".parametric",
             attr_name=name,
             package=__name__,
             feature="axiomkit.stats",
@@ -59,7 +92,7 @@ def __getattr__(name: str) -> Any:
         )
     if name == "calculate_t_test_two_sample":
         return import_optional_attr(
-            module_name=".t_test",
+            module_name=".parametric",
             attr_name=name,
             package=__name__,
             feature="axiomkit.stats",

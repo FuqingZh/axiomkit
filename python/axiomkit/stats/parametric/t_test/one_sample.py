@@ -1,15 +1,27 @@
 import numpy as np
 import polars as pl
 
-from ..p_value import (
+from ...p_value import (
     PValueAdjustmentMode,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
-from .constant import (
+from ..constant import (
     COL_FEATURE_INTERNAL,
     COL_FEATURE_ORDER,
-    COLS_STATS_ONE_SAMPLE_NUMERIC,
+    COLS_SUMMARY_STATS,
+)
+from ..util import (
+    create_feature_frame,
+    create_required_columns,
+    create_result_schema,
+    create_summary_stat_columns,
+    normalize_value_frame,
+    read_frame_schema,
+    select_result_columns,
+    validate_required_columns,
+)
+from .constant import (
     SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
 )
 from .spec import (
@@ -18,16 +30,8 @@ from .spec import (
 )
 from .util import (
     calculate_p_values,
-    create_feature_frame,
-    create_required_columns,
-    create_summary_stat_columns,
-    create_t_test_result_columns,
-    create_t_test_result_schema,
+    create_t_stat_columns,
     normalize_alternative_hypothesis_mode,
-    normalize_t_test_value_frame,
-    read_frame_schema,
-    select_t_test_result_columns,
-    validate_required_columns,
 )
 
 
@@ -94,7 +98,7 @@ def calculate_t_test_one_sample(
 ) -> pl.DataFrame:
     """
     Calculate tidy one-sample t-tests from a long-format table.
-    
+
     One-sample t-tests:
     - Compare the mean of a single group (feature) against a specified population mean (`popmean`).
     - Can be performed for multiple features if `col_feature` is specified, with optional p-value adjustment for multiple testing.
@@ -181,23 +185,21 @@ def calculate_t_test_one_sample(
     # #region Validate input DataFrame schema and normalize input data
     schema_input = read_frame_schema(df)
     cols_required = create_required_columns(col_value, col_feature)
-    validate_required_columns(
-        cols_in=list(schema_input.keys()), cols_required=cols_required
-    )
-    schema_result = create_t_test_result_schema(
+    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
+    schema_result = create_result_schema(
         col_feature=col_feature,
         dtype_feature=schema_input.get(col_feature)
         if col_feature is not None
         else None,
-        schema_t_test_result=SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
+        schema_result=SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
     )
     # #endregion
     ############################################################
     # #region Calculate summary statistics for each feature and prepare data for t-test calculations
-    lf_values = normalize_t_test_value_frame(
-        df, cols_required, col_float=col_value, col_feature=col_feature
+    lf_values = normalize_value_frame(
+        df, cols_required, cols_float=col_value, col_feature=col_feature
     )
-    lf_summary = (
+    df_stats = (
         lf_values.group_by(COL_FEATURE_INTERNAL, maintain_order=True)
         .agg(
             *create_summary_stat_columns(col_value),
@@ -208,17 +210,14 @@ def calculate_t_test_one_sample(
             how="left",
         )
         .sort(COL_FEATURE_ORDER)
+        .collect()
     )
-
-    df_stats = lf_summary.collect()
     if df_stats.height == 0:
         return pl.DataFrame(schema=schema_result)
     # #endregion
     ############################################################
     # #region Calculate t-test statistics, p-values, and p-value adjustments
-    np_stats = (
-        df_stats.select(COLS_STATS_ONE_SAMPLE_NUMERIC).fill_null(np.nan).to_numpy()
-    )
+    np_stats = df_stats.select(COLS_SUMMARY_STATS).fill_null(np.nan).to_numpy()
     t_test_result = calculate_one_sample_test_statistics(
         mean_value=np_stats[:, 0],
         var_value=np_stats[:, 1],
@@ -238,12 +237,10 @@ def calculate_t_test_one_sample(
         pl.Series(
             name="PopMean", values=np.full(df_stats.height, popmean), dtype=pl.Float64
         ),
-        *create_t_test_result_columns(
-            t_test_result, p_values=p_value, p_adjust=p_adjust
-        ),
+        *create_t_stat_columns(t_test_result, p_values=p_value, p_adjust=p_adjust),
     )
 
-    df_result = select_t_test_result_columns(
+    df_result = select_result_columns(
         df_result,
         cols_selected=list(SCHEMA_T_TEST_ONE_SAMPLE_RESULT.keys()),
         col_feature=col_feature,
