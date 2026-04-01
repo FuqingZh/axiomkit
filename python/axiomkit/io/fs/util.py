@@ -1,16 +1,16 @@
 from .spec import (
     CopyDepthLimitMode,
-    CopyDirectoryConflictStrategy,
-    CopyFileConflictStrategy,
+    CopyDirectoryConflictMode,
+    CopyFileConflictMode,
     CopyPatternMode,
-    CopySymlinkStrategy,
+    CopySymlinkMode,
 )
 
 ################################################################################
 # #region StrategyValidation
 
 
-def validate_copy_depth_mode(
+def normalize_copy_depth_mode(
     value: CopyDepthLimitMode | str,
 ) -> CopyDepthLimitMode:
     """Validate and normalize a depth limit mode."""
@@ -25,37 +25,37 @@ def validate_copy_depth_mode(
         ) from e
 
 
-def validate_copy_dir_conflict_strategy(
-    value: CopyDirectoryConflictStrategy | str,
-) -> CopyDirectoryConflictStrategy:
+def normalize_copy_dir_conflict_mode(
+    value: CopyDirectoryConflictMode | str,
+) -> CopyDirectoryConflictMode:
     """Validate and normalize a directory conflict strategy."""
-    if isinstance(value, CopyDirectoryConflictStrategy):
+    if isinstance(value, CopyDirectoryConflictMode):
         return value
     try:
-        return CopyDirectoryConflictStrategy(value)
+        return CopyDirectoryConflictMode(value)
     except ValueError as e:
         raise ValueError(
             f"Invalid directory conflict strategy: `{value}`. "
-            f"Expected one of: {[s.value for s in CopyDirectoryConflictStrategy]}"
+            f"Expected one of: {[s.value for s in CopyDirectoryConflictMode]}"
         ) from e
 
 
-def validate_copy_file_conflict_strategy(
-    value: CopyFileConflictStrategy | str,
-) -> CopyFileConflictStrategy:
+def normalize_copy_file_conflict_mode(
+    value: CopyFileConflictMode | str,
+) -> CopyFileConflictMode:
     """Validate and normalize a file conflict strategy."""
-    if isinstance(value, CopyFileConflictStrategy):
+    if isinstance(value, CopyFileConflictMode):
         return value
     try:
-        return CopyFileConflictStrategy(value)
+        return CopyFileConflictMode(value)
     except ValueError as e:
         raise ValueError(
             f"Invalid file conflict strategy: `{value}`. "
-            f"Expected one of: {[s.value for s in CopyFileConflictStrategy]}"
+            f"Expected one of: {[s.value for s in CopyFileConflictMode]}"
         ) from e
 
 
-def validate_copy_pattern_strategy(
+def normalize_copy_pattern_mode(
     value: CopyPatternMode | str,
 ) -> CopyPatternMode:
     """Validate and normalize a pattern interpretation mode."""
@@ -70,18 +70,18 @@ def validate_copy_pattern_strategy(
         ) from e
 
 
-def validate_copy_symlink_strategy(
-    value: CopySymlinkStrategy | str,
-) -> CopySymlinkStrategy:
+def normalize_copy_symlink_mode(
+    value: CopySymlinkMode | str,
+) -> CopySymlinkMode:
     """Validate and normalize a symlink handling strategy."""
-    if isinstance(value, CopySymlinkStrategy):
+    if isinstance(value, CopySymlinkMode):
         return value
     try:
-        return CopySymlinkStrategy(value)
+        return CopySymlinkMode(value)
     except ValueError as e:
         raise ValueError(
             f"Invalid symlink strategy: `{value}`. "
-            f"Expected one of: {[s.value for s in CopySymlinkStrategy]}"
+            f"Expected one of: {[s.value for s in CopySymlinkMode]}"
         ) from e
 
 
