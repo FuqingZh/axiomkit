@@ -32,7 +32,9 @@ def test_copy_tree_rejects_symlink_destination_root(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not is_rs_backend_available(), reason="Rust fs backend unavailable")
 @pytest.mark.skipif(os.name != "posix", reason="symlink tests require posix")
-def test_copy_tree_blocks_destination_symlink_escape_in_merge_mode(tmp_path: Path) -> None:
+def test_copy_tree_blocks_destination_symlink_escape_in_merge_mode(
+    tmp_path: Path,
+) -> None:
     src = tmp_path / "src"
     dst = tmp_path / "dst"
     outside = tmp_path / "outside"
