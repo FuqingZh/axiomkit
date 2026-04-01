@@ -1,11 +1,13 @@
-from typing import Literal
-
-from axiomkit.stats.p_value import calculate_p_adjustment_array, normalize_p_value_adjustment_mode
 import numpy as np
 import polars as pl
 from loguru import logger
 from numpy.typing import ArrayLike
 from scipy import stats
+
+from axiomkit.stats.p_value import (
+    calculate_p_adjustment_array,
+    normalize_p_value_adjustment_mode,
+)
 
 
 def _validate_non_negative(value: int | float, name: str) -> None:
@@ -72,35 +74,6 @@ def _calculate_hypergeometric_right_tail_pvalue(
     return nd_p_values
 
 
-def _calculate_bh_fdr(p_values: np.ndarray):
-    """
-    Benjamini-Hochberg FDR correction.
-
-    Args:
-        p_values (np.ndarray): Array of p-values to be corrected for multiple testing.
-
-    Returns:
-        np.ndarray: Array of Benjamini–Hochberg FDR-adjusted p-values, matching the
-            shape of the input.
-    """
-    p_values = np.asarray(p_values, dtype=np.float64)
-    if (size_values := p_values.size) == 0:
-        return p_values
-
-    np_order = np.argsort(p_values, kind="mergesort")
-    np_ranks = (
-        p_values[np_order]
-        * size_values
-        / (np.arange(1, size_values + 1, dtype=np.float64))
-    )
-    np_adjusted = np.minimum.accumulate(np_ranks[::-1])[::-1]
-    np_adjusted = np.clip(np_adjusted, 0.0, 1.0)
-
-    np_p = np.empty_like(np_adjusted)
-    np_p[np_order] = np_adjusted
-    return np_p
-
-
 def calculate_ora(
     df: pl.DataFrame | pl.LazyFrame,
     col_elements: str = "ElementId",
@@ -141,7 +114,7 @@ def calculate_ora(
                 `BgTotal` is ``len(background_elements)`` and the mapping table is restricted to those elements.
                 The provided universe may include elements not present in ``df`` (elements without any mapping),
                 those elements contribute to ``BgTotal`` but not to ``BgHits``.
-        rule_p_adjust (PValueAdjustmentMode | str | None, optional): 
+        rule_p_adjust (PValueAdjustmentMode | str | None, optional):
             Method for p-value adjustment. see :class:`PValueAdjustmentMode`.
             - "bh": (Default) Benjamini–Hochberg FDR;
             - "bonferroni": Bonferroni correction;
