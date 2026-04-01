@@ -133,6 +133,10 @@ def calculate_t_test_two_sample(
 ) -> pl.DataFrame:
     """
     Calculate tidy two-sample t-tests from a long-format table.
+    
+    Two-sample t-tests:
+    - Compare the means of two independent groups (test vs ref) for each feature.
+    - Can be performed for multiple features if `col_feature` is specified, with optional p-value adjustment for multiple testing.
 
     Args:
         df: Input data in long format, with one row per observation.

@@ -94,6 +94,10 @@ def calculate_t_test_one_sample(
 ) -> pl.DataFrame:
     """
     Calculate tidy one-sample t-tests from a long-format table.
+    
+    One-sample t-tests:
+    - Compare the mean of a single group (feature) against a specified population mean (`popmean`).
+    - Can be performed for multiple features if `col_feature` is specified, with optional p-value adjustment for multiple testing.
 
     Args:
         df: Input data in long format, with one row per observation.
@@ -121,6 +125,38 @@ def calculate_t_test_one_sample(
             - `DegreesFreedom`: Degrees of freedom used in the t-test.
             - `PValue`: Raw p-value.
             - `PAdjust`: Adjusted p-value if `rule_p_adjust` is specified, otherwise same as `PValue`.
+
+    Examples:
+        ```python
+        import polars as pl
+        from axiomkit.stats import calculate_t_test_one_sample
+        # Example 1: One-sample t-test comparing a single feature against a population mean
+        df = pl.DataFrame({
+            "Value": [5.1, 4.9, 5.0, 5.2, 4.8]
+        })
+        result = calculate_t_test_one_sample(
+            df,
+            col_value="Value",
+            popmean=5.0,
+            rule_alternative="two-sided",
+            rule_p_adjust=None,
+        )
+        print(result)
+        # Example 2: One-sample t-test comparing multiple features against a population mean
+        df = pl.DataFrame({
+            "Feature": ["A", "A", "A", "B", "B", "B"],
+            "Value": [5.1, 4.9, 5.0, 5.2, 4.8, 5.3]
+        })
+        result = calculate_t_test_one_sample(
+            df,
+            col_value="Value",
+            popmean=5.0,
+            col_feature="Feature",
+            rule_alternative="greater",
+            rule_p_adjust="bh",
+        )
+        print(result)
+        ```
     """
     ############################################################
     # #region Validate input arguments
