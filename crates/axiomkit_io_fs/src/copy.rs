@@ -9,8 +9,7 @@ use rayon::prelude::*;
 
 use crate::report::{CopyReport, CopyReportBuilder};
 use crate::spec::{
-    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyOptionsSpec, CopySymlinkStrategy,
-    CopyTreeError,
+    CopyDepthLimitMode, CopyDirectoryConflictMode, CopyOptionsSpec, CopySymlinkMode, CopyTreeError,
 };
 use crate::util::{
     CopyPatternsSpec, calculate_worker_limit, copy_file_with_metadata, create_symbolic_link,
@@ -216,7 +215,7 @@ fn flush_file_copy_tasks(copy_ctx: &mut CopyContext) {
 
 fn walk_directory(path_root: &Path, depth_relative: usize, copy_ctx: &mut CopyContext) {
     let rule_symlink = copy_ctx.copy_options.rule_symlink;
-    if rule_symlink == CopySymlinkStrategy::Dereference {
+    if rule_symlink == CopySymlinkMode::Dereference {
         if let Ok(stat_root) = fs::metadata(path_root) {
             #[cfg(unix)]
             {
@@ -347,7 +346,7 @@ fn handle_dir_entry(
     let should_dry_run = copy_ctx.copy_options.should_dry_run;
 
     if dir_entry.is_symlink {
-        if rule_symlink == CopySymlinkStrategy::SkipSymlinks {
+        if rule_symlink == CopySymlinkMode::SkipSymlinks {
             if should_keep_tree && is_depth_within {
                 copy_ctx
                     .report_builder
@@ -369,7 +368,7 @@ fn handle_dir_entry(
             return false;
         }
 
-        if rule_symlink == CopySymlinkStrategy::CopySymlinks {
+        if rule_symlink == CopySymlinkMode::CopySymlinks {
             if !is_depth_within {
                 return false;
             }
@@ -397,7 +396,7 @@ fn handle_dir_entry(
                     return false;
                 }
 
-                if rule_conflict_dir == CopyDirectoryConflictStrategy::Merge {
+                if rule_conflict_dir == CopyDirectoryConflictMode::Merge {
                     copy_ctx.report_builder.add_warning(format!(
                         "Merge not applicable to symlink: {}",
                         path_dir_dst_sub.display()
@@ -505,7 +504,7 @@ fn handle_file_entry(file_entry: FileEntryRecord, depth_value: usize, copy_ctx: 
 
     let rule_symlink = copy_ctx.copy_options.rule_symlink;
     if file_entry.is_symlink {
-        if rule_symlink == CopySymlinkStrategy::SkipSymlinks {
+        if rule_symlink == CopySymlinkMode::SkipSymlinks {
             copy_ctx.report_builder.add_skipped();
             return;
         }
@@ -536,7 +535,7 @@ fn handle_file_entry(file_entry: FileEntryRecord, depth_value: usize, copy_ctx: 
             copy_ctx.report_builder.add_skipped();
             return;
         }
-    } else if rule_symlink == CopySymlinkStrategy::Dereference {
+    } else if rule_symlink == CopySymlinkMode::Dereference {
         let metadata_target = match fs::metadata(&file_entry.file_src_path) {
             Ok(v) => v,
             Err(e) => {
@@ -607,7 +606,7 @@ fn handle_file_entry(file_entry: FileEntryRecord, depth_value: usize, copy_ctx: 
         return;
     }
 
-    if file_entry.is_symlink && rule_symlink == CopySymlinkStrategy::CopySymlinks {
+    if file_entry.is_symlink && rule_symlink == CopySymlinkMode::CopySymlinks {
         create_symbolic_link(
             &file_entry.file_src_path,
             &path_file_dst,
@@ -629,8 +628,8 @@ mod tests {
 
     use super::copy_tree;
     use crate::spec::{
-        CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyFileConflictStrategy,
-        CopyOptionsSpec, CopyPatternMode, CopySymlinkStrategy, CopyTreeError,
+        CopyDepthLimitMode, CopyDirectoryConflictMode, CopyFileConflictMode, CopyOptionsSpec,
+        CopyPatternMode, CopySymlinkMode, CopyTreeError,
     };
 
     struct TestDir {
@@ -753,7 +752,7 @@ mod tests {
         symlink(src.join("root.txt"), src.join("link_root.txt")).expect("create symlink");
 
         let copy_options = CopyOptionsSpec {
-            rule_symlink: CopySymlinkStrategy::CopySymlinks,
+            rule_symlink: CopySymlinkMode::CopySymlinks,
             ..CopyOptionsSpec::default()
         };
 
@@ -1004,7 +1003,7 @@ mod tests {
         symlink(&outside, dst.join("escape")).expect("create escape symlink");
 
         let copy_options = CopyOptionsSpec {
-            rule_conflict_dir: CopyDirectoryConflictStrategy::Merge,
+            rule_conflict_dir: CopyDirectoryConflictMode::Merge,
             ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, copy_options).expect("copy tree returns report");
@@ -1029,7 +1028,7 @@ mod tests {
         symlink(outside.join("out.txt"), dst.join("a.txt")).expect("create dst symlink");
 
         let copy_options = CopyOptionsSpec {
-            rule_conflict_file: CopyFileConflictStrategy::Overwrite,
+            rule_conflict_file: CopyFileConflictMode::Overwrite,
             ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, copy_options).expect("copy tree returns report");
@@ -1051,7 +1050,7 @@ mod tests {
         symlink("/dev/null", src.join("null_dev")).expect("create symlink to /dev/null");
 
         let copy_options = CopyOptionsSpec {
-            rule_symlink: CopySymlinkStrategy::Dereference,
+            rule_symlink: CopySymlinkMode::Dereference,
             ..CopyOptionsSpec::default()
         };
         let report = copy_tree(&src, &dst, copy_options).expect("copy tree");

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use axiomkit_io_fs::{
-    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyErrorRecord, CopyFileConflictStrategy,
-    CopyOptionsSpec, CopyPatternMode, CopyReport, CopySymlinkStrategy, CopyTreeError, copy_tree,
+    CopyDepthLimitMode, CopyDirectoryConflictMode, CopyErrorRecord, CopyFileConflictMode,
+    CopyOptionsSpec, CopyPatternMode, CopyReport, CopySymlinkMode, CopyTreeError, copy_tree,
 };
 use pyo3::exceptions::{PyNotADirectoryError, PyOSError, PyValueError};
 use pyo3::prelude::*;
@@ -115,33 +115,33 @@ fn parse_rule_pattern(value: &str) -> PyResult<CopyPatternMode> {
     }
 }
 
-fn parse_rule_conflict_file(value: &str) -> PyResult<CopyFileConflictStrategy> {
+fn parse_rule_conflict_file(value: &str) -> PyResult<CopyFileConflictMode> {
     match value {
-        "skip" => Ok(CopyFileConflictStrategy::Skip),
-        "overwrite" => Ok(CopyFileConflictStrategy::Overwrite),
-        "error" => Ok(CopyFileConflictStrategy::Error),
+        "skip" => Ok(CopyFileConflictMode::Skip),
+        "overwrite" => Ok(CopyFileConflictMode::Overwrite),
+        "error" => Ok(CopyFileConflictMode::Error),
         _ => Err(PyValueError::new_err(format!(
             "Invalid file conflict strategy: `{value}`. Expected one of: ['skip', 'overwrite', 'error']"
         ))),
     }
 }
 
-fn parse_rule_conflict_dir(value: &str) -> PyResult<CopyDirectoryConflictStrategy> {
+fn parse_rule_conflict_dir(value: &str) -> PyResult<CopyDirectoryConflictMode> {
     match value {
-        "skip" => Ok(CopyDirectoryConflictStrategy::Skip),
-        "merge" => Ok(CopyDirectoryConflictStrategy::Merge),
-        "error" => Ok(CopyDirectoryConflictStrategy::Error),
+        "skip" => Ok(CopyDirectoryConflictMode::Skip),
+        "merge" => Ok(CopyDirectoryConflictMode::Merge),
+        "error" => Ok(CopyDirectoryConflictMode::Error),
         _ => Err(PyValueError::new_err(format!(
             "Invalid directory conflict strategy: `{value}`. Expected one of: ['skip', 'merge', 'error']"
         ))),
     }
 }
 
-fn parse_rule_symlink(value: &str) -> PyResult<CopySymlinkStrategy> {
+fn parse_rule_symlink(value: &str) -> PyResult<CopySymlinkMode> {
     match value {
-        "dereference" => Ok(CopySymlinkStrategy::Dereference),
-        "copy_symlinks" => Ok(CopySymlinkStrategy::CopySymlinks),
-        "skip_symlinks" => Ok(CopySymlinkStrategy::SkipSymlinks),
+        "dereference" => Ok(CopySymlinkMode::Dereference),
+        "copy_symlinks" => Ok(CopySymlinkMode::CopySymlinks),
+        "skip_symlinks" => Ok(CopySymlinkMode::SkipSymlinks),
         _ => Err(PyValueError::new_err(format!(
             "Invalid symlink strategy: `{value}`. Expected one of: ['dereference', 'copy_symlinks', 'skip_symlinks']"
         ))),

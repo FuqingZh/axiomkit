@@ -15,6 +15,6 @@ mod util;
 pub use copy::copy_tree;
 pub use report::{CopyReport, CopyReportBuilder};
 pub use spec::{
-    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyErrorRecord, CopyFileConflictStrategy,
-    CopyOptionsSpec, CopyPatternMode, CopySymlinkStrategy, CopyTreeError,
+    CopyDepthLimitMode, CopyDirectoryConflictMode, CopyErrorRecord, CopyFileConflictMode,
+    CopyOptionsSpec, CopyPatternMode, CopySymlinkMode, CopyTreeError,
 };

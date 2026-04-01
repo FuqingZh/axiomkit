@@ -7,8 +7,8 @@ use regex::Regex;
 
 use crate::report::CopyReportBuilder;
 use crate::spec::{
-    CopyDepthLimitMode, CopyDirectoryConflictStrategy, CopyFileConflictStrategy, CopyPatternMode,
-    CopySymlinkStrategy, CopyTreeError,
+    CopyDepthLimitMode, CopyDirectoryConflictMode, CopyFileConflictMode, CopyPatternMode,
+    CopySymlinkMode, CopyTreeError,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -267,14 +267,14 @@ pub(crate) fn validate_destination_path_safety(
 
 pub(crate) fn should_error_broken_symlink(
     path_symlink: &Path,
-    rule_symlink: CopySymlinkStrategy,
+    rule_symlink: CopySymlinkMode,
 ) -> bool {
-    rule_symlink == CopySymlinkStrategy::Dereference && !path_symlink.exists()
+    rule_symlink == CopySymlinkMode::Dereference && !path_symlink.exists()
 }
 
 pub(crate) fn should_skip_dir_conflict(
     path_dst: &Path,
-    rule_conflict: CopyDirectoryConflictStrategy,
+    rule_conflict: CopyDirectoryConflictMode,
     report_builder: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
@@ -292,24 +292,24 @@ pub(crate) fn should_skip_dir_conflict(
     }
 
     match rule_conflict {
-        CopyDirectoryConflictStrategy::Skip => {
+        CopyDirectoryConflictMode::Skip => {
             report_builder.add_skipped();
             true
         }
-        CopyDirectoryConflictStrategy::Error => {
+        CopyDirectoryConflictMode::Error => {
             report_builder.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
             true
         }
-        CopyDirectoryConflictStrategy::Merge => false,
+        CopyDirectoryConflictMode::Merge => false,
     }
 }
 
 pub(crate) fn should_skip_file_conflict(
     path_dst: &Path,
-    rule_conflict: CopyFileConflictStrategy,
+    rule_conflict: CopyFileConflictMode,
     report_builder: &mut CopyReportBuilder,
 ) -> bool {
     if !path_dst.exists() {
@@ -324,18 +324,18 @@ pub(crate) fn should_skip_file_conflict(
     }
 
     match rule_conflict {
-        CopyFileConflictStrategy::Skip => {
+        CopyFileConflictMode::Skip => {
             report_builder.add_skipped();
             true
         }
-        CopyFileConflictStrategy::Error => {
+        CopyFileConflictMode::Error => {
             report_builder.add_error(
                 path_dst.to_path_buf(),
                 format!("Destination exists: {}", path_dst.display()),
             );
             true
         }
-        CopyFileConflictStrategy::Overwrite => false,
+        CopyFileConflictMode::Overwrite => false,
     }
 }
 

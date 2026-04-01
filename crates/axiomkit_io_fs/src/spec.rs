@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 /// Symlink handling policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CopySymlinkStrategy {
+pub enum CopySymlinkMode {
     /// Follow the link and copy the target bytes/entries.
     Dereference,
     /// Create a symbolic link at destination (do not copy target bytes).
@@ -19,7 +19,7 @@ pub enum CopySymlinkStrategy {
 
 /// Existing destination file conflict policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CopyFileConflictStrategy {
+pub enum CopyFileConflictMode {
     /// Keep destination file and skip current source file.
     Skip,
     /// Replace destination file with source file.
@@ -30,7 +30,7 @@ pub enum CopyFileConflictStrategy {
 
 /// Existing destination directory conflict policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CopyDirectoryConflictStrategy {
+pub enum CopyDirectoryConflictMode {
     /// Do not descend/copy into an already existing destination directory.
     Skip,
     /// Reuse destination directory and continue copying children into it.
@@ -77,11 +77,11 @@ pub struct CopyOptionsSpec {
     /// Pattern interpretation mode.
     pub rule_pattern: CopyPatternMode,
     /// Conflict behavior for destination files.
-    pub rule_conflict_file: CopyFileConflictStrategy,
+    pub rule_conflict_file: CopyFileConflictMode,
     /// Conflict behavior for destination directories.
-    pub rule_conflict_dir: CopyDirectoryConflictStrategy,
+    pub rule_conflict_dir: CopyDirectoryConflictMode,
     /// Symlink handling behavior.
-    pub rule_symlink: CopySymlinkStrategy,
+    pub rule_symlink: CopySymlinkMode,
     /// Optional maximum/target depth (depends on `rule_depth_limit`).
     pub depth_limit: Option<usize>,
     /// Depth evaluation mode.
@@ -102,9 +102,9 @@ impl Default for CopyOptionsSpec {
             patterns_include_dirs: None,
             patterns_exclude_dirs: None,
             rule_pattern: CopyPatternMode::Glob,
-            rule_conflict_file: CopyFileConflictStrategy::Skip,
-            rule_conflict_dir: CopyDirectoryConflictStrategy::Skip,
-            rule_symlink: CopySymlinkStrategy::CopySymlinks,
+            rule_conflict_file: CopyFileConflictMode::Skip,
+            rule_conflict_dir: CopyDirectoryConflictMode::Skip,
+            rule_symlink: CopySymlinkMode::CopySymlinks,
             depth_limit: None,
             rule_depth_limit: CopyDepthLimitMode::AtMost,
             workers_max: None,
