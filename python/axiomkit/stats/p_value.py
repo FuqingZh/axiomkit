@@ -2,7 +2,6 @@ from enum import StrEnum
 
 import numpy as np
 import scipy.stats as sci_stats
-from typing import Literal
 
 class PValueAdjustmentMode(StrEnum):
     BONFERRONI = "bonferroni"
