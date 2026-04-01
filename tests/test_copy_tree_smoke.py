@@ -9,9 +9,9 @@ from axiomkit.io.fs.copy import copy_tree  # noqa: E402
 from axiomkit.io.fs.spec import (  # noqa: E402
     CopyDepthLimitMode,
     CopyDirectoryConflictMode,
-    CopyFileConflictStrategy,
+    CopyFileConflictMode,
     CopyPatternMode,
-    CopySymlinkStrategy,
+    CopySymlinkMode,
 )
 
 
@@ -100,7 +100,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report5 = copy_tree(
         src,
         dst5,
-        rule_symlink=CopySymlinkStrategy.COPY_SYMLINKS,
+        rule_symlink=CopySymlinkMode.COPY_SYMLINKS,
     )
     assert report5.error_count == 0
     _assert_symlink(dst5 / "link_root.txt")
@@ -111,7 +111,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report6 = copy_tree(
         src,
         dst6,
-        rule_symlink=CopySymlinkStrategy.DEREFERENCE,
+        rule_symlink=CopySymlinkMode.DEREFERENCE,
     )
     assert report6.error_count >= 1
 
@@ -122,7 +122,7 @@ def test_copy_tree_smoke_and_edges(tmp_path: Path) -> None:
     report7 = copy_tree(
         src,
         dst7,
-        rule_conflict_file=CopyFileConflictStrategy.ERROR,
+        rule_conflict_file=CopyFileConflictMode.ERROR,
         rule_conflict_dir=CopyDirectoryConflictMode.SKIP,
     )
     assert report7.error_count >= 1
