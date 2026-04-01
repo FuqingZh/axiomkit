@@ -265,7 +265,7 @@ def _sanitize_protein_sequence(seq: str) -> tuple[str, int, int]:
     """
     Clean a protein sequence for molecular weight calculation.
 
-    Strategy:
+    Mode:
     - Upper-case.
     - Map common ambiguous letters to a concrete residue.
     - Drop unknowns/stops/gaps and any other invalid characters.
