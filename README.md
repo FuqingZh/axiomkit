@@ -13,6 +13,7 @@ import polars as pl
 from axiomkit.stats import (
     ContrastSpec,
     calculate_t_test_one_sample,
+    calculate_t_test_paired,
     calculate_t_test_two_sample,
 )
 
@@ -35,6 +36,20 @@ df_one_sample = calculate_t_test_one_sample(
     df_values.select("FeatureId", "Value"),
     col_feature="FeatureId",
     popmean=3.0,
+)
+
+df_paired = calculate_t_test_paired(
+    pl.DataFrame(
+        {
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "PairId": ["p1", "p1", "p2", "p2"],
+            "Group": ["ctrl", "case", "ctrl", "case"],
+            "Value": [1.0, 2.0, 4.0, 6.0],
+        }
+    ),
+    col_feature="FeatureId",
+    col_pair="PairId",
+    contrasts=ContrastSpec(group_test="case", group_ref="ctrl"),
 )
 ```
 
