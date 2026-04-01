@@ -6,17 +6,17 @@ from ._rs_bridge import copy_tree_via_rs, is_rs_backend_available
 from .report import CopyReport
 from .spec import (
     CopyDepthLimitMode,
-    CopyDirectoryConflictStrategy,
-    CopyFileConflictStrategy,
+    CopyDirectoryConflictMode,
+    CopyFileConflictMode,
     CopyPatternMode,
-    CopySymlinkStrategy,
+    CopySymlinkMode,
 )
 from .util import (
-    validate_copy_depth_mode,
-    validate_copy_dir_conflict_strategy,
-    validate_copy_file_conflict_strategy,
-    validate_copy_pattern_strategy,
-    validate_copy_symlink_strategy,
+    normalize_copy_depth_mode,
+    normalize_copy_dir_conflict_mode,
+    normalize_copy_file_conflict_mode,
+    normalize_copy_pattern_mode,
+    normalize_copy_symlink_mode,
 )
 
 ################################################################################
@@ -31,9 +31,9 @@ def copy_tree(
     patterns_include_dirs: Sequence[str] | str | None = None,
     patterns_exclude_dirs: Sequence[str] | str | None = None,
     rule_pattern: CopyPatternMode | str = "glob",
-    rule_conflict_file: CopyFileConflictStrategy | str = "skip",
-    rule_conflict_dir: CopyDirectoryConflictStrategy | str = "skip",
-    rule_symlink: CopySymlinkStrategy | str = "copy_symlinks",
+    rule_conflict_file: CopyFileConflictMode | str = "skip",
+    rule_conflict_dir: CopyDirectoryConflictMode | str = "skip",
+    rule_symlink: CopySymlinkMode | str = "copy_symlinks",
     depth_limit: int | None = None,
     rule_depth_limit: CopyDepthLimitMode | str = "at_most",
     workers_max: int | None = None,
@@ -61,17 +61,17 @@ def copy_tree(
             - ``regex``: Regular expressions.
             - ``literal``: Exact string matches.
         rule_conflict_file:
-            File conflict strategy. See :class:`CopyFileConflictStrategy`.
+            File conflict strategy. See :class:`CopyFileConflictMode`.
             - ``skip``: (Default) Skip existing files.
             - ``overwrite``: Overwrite existing files.
             - ``error``: Raise an error on conflict.
         rule_conflict_dir:
-            Directory conflict strategy. See :class:`CopyDirectoryConflictStrategy`.
+            Directory conflict strategy. See :class:`CopyDirectoryConflictMode`.
             - ``skip``: (Default) Skip existing directories.
             - ``merge``: Merge contents into existing directories.
             - ``error``: Raise an error on conflict.
         rule_symlink:
-            Symlink handling strategy. See :class:`CopySymlinkStrategy`.
+            Symlink handling strategy. See :class:`CopySymlinkMode`.
             - ``copy_symlinks``: (Default) Copy symlinks as symlinks.
             - ``dereference``: Follow symlinks and copy target files/directories.
             - ``skip_symlinks``: Skip symlinked files and directories.
@@ -124,11 +124,11 @@ def copy_tree(
         >>> report_flat.error_count == 0
         True
     """
-    enum_rule_pattern = validate_copy_pattern_strategy(rule_pattern)
-    enum_rule_conflict_file = validate_copy_file_conflict_strategy(rule_conflict_file)
-    enum_rule_conflict_dir = validate_copy_dir_conflict_strategy(rule_conflict_dir)
-    enum_rule_symlink = validate_copy_symlink_strategy(rule_symlink)
-    enum_rule_depth_limit = validate_copy_depth_mode(rule_depth_limit)
+    enum_rule_pattern = normalize_copy_pattern_mode(rule_pattern)
+    enum_rule_conflict_file = normalize_copy_file_conflict_mode(rule_conflict_file)
+    enum_rule_conflict_dir = normalize_copy_dir_conflict_mode(rule_conflict_dir)
+    enum_rule_symlink = normalize_copy_symlink_mode(rule_symlink)
+    enum_rule_depth_limit = normalize_copy_depth_mode(rule_depth_limit)
 
     if depth_limit is None:
         if enum_rule_depth_limit is CopyDepthLimitMode.EXACT:
