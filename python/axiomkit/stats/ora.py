@@ -1,5 +1,6 @@
 from typing import Literal
 
+from axiomkit.stats.p_value import calculate_p_adjustment_array, normalize_p_value_adjustment_mode
 import numpy as np
 import polars as pl
 from loguru import logger
@@ -107,7 +108,7 @@ def calculate_ora(
     *,
     foreground_elements: set[str],
     background_elements: set[str] | None = None,
-    rule_p_adjust: Literal["bh", "bonferroni"] | None = "bh",
+    rule_p_adjust: str | None = "bh",
     thr_bg_hits_min: int = 0,
     thr_bg_hits_max: int | None = None,
     thr_fg_hits_min: int = 0,
@@ -140,8 +141,9 @@ def calculate_ora(
                 `BgTotal` is ``len(background_elements)`` and the mapping table is restricted to those elements.
                 The provided universe may include elements not present in ``df`` (elements without any mapping),
                 those elements contribute to ``BgTotal`` but not to ``BgHits``.
-        rule_p_adjust (Literal["bh", "bonferroni"] | None, optional): Method for p-value adjustment. Defaults to "bh".
-            - "bh": Benjamini–Hochberg FDR;
+        rule_p_adjust (PValueAdjustmentMode | str | None, optional): 
+            Method for p-value adjustment. see :class:`PValueAdjustmentMode`.
+            - "bh": (Default) Benjamini–Hochberg FDR;
             - "bonferroni": Bonferroni correction;
             - None: no adjustment (PAdjust == PValue).
         thr_bg_hits_min (int, optional):
@@ -209,6 +211,11 @@ def calculate_ora(
         raise ValueError(
             f"Arg `thr_fg_hits_max` must be in [`thr_fg_hits_min`, ∞) or None, yours: '{thr_fg_hits_max}'."
         )
+    rule_p_adjust = (
+        normalize_p_value_adjustment_mode(rule_p_adjust)
+        if rule_p_adjust is not None
+        else None
+    )
     # endregion
     ############################################################
     # #region createEmptyResult
@@ -345,13 +352,7 @@ def calculate_ora(
         fg_total=fg_total,
     )
 
-    match rule_p_adjust:
-        case "bh":
-            nd_p_adj = _calculate_bh_fdr(nd_p_vals)
-        case "bonferroni":
-            nd_p_adj = np.minimum(nd_p_vals * df_ora.height, 1.0)
-        case _:
-            nd_p_adj = nd_p_vals
+    nd_p_adj = calculate_p_adjustment_array(nd_p_vals, rule_p_adjust=rule_p_adjust)
 
     df_ora = (
         df_ora.with_columns(
