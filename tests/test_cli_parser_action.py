@@ -1,15 +1,26 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import pytest
 
-from axiomkit.cli.parser import ActionNumericRange, ActionPath  # noqa: E402
+from axiomkit.cli.parser import (  # noqa: E402
+    ArgumentParser,
+    ActionCommandPrefix,
+    ActionHexColor,
+    ActionNumericRange,
+    ActionPath,
+)
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    return argparse.ArgumentParser(prog="demo")
+def _build_parser() -> ArgumentParser:
+    return ArgumentParser(prog="demo")
+
+
+def _assert_help_renders(parser: ArgumentParser) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["--help"])
+    assert exc_info.value.code == 0
 
 
 def test_non_negative_accepts_zero_and_rejects_negative() -> None:
@@ -100,4 +111,153 @@ def test_action_path_file_accepts_variadic_extensions(tmp_path: Path) -> None:
     parser.add_argument("--file_in", action=ActionPath.file("tsv", "tsv.gz"))
 
     ns = parser.parse_args(["--file_in", str(file_in)])
+    assert ns.file_in == file_in.resolve()
+
+
+def test_action_path_lazy_default_keeps_help_renderable() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--file_in",
+        action=ActionPath.file("obo"),
+        default="missing.obo",
+    )
+
+    _assert_help_renders(parser)
+
+
+def test_action_path_lazy_default_fails_without_explicit_override() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--file_in",
+        action=ActionPath.file("obo"),
+        default="missing.obo",
+    )
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+
+
+def test_action_path_lazy_default_explicit_override_wins(tmp_path: Path) -> None:
+    file_in = tmp_path / "go.obo"
+    file_in.write_text("[Term]\n", encoding="utf-8")
+
+    parser = _build_parser()
+    parser.add_argument(
+        "--file_in",
+        action=ActionPath.file("obo"),
+        default="missing.obo",
+    )
+
+    ns = parser.parse_args(["--file_in", str(file_in)])
+    assert ns.file_in == file_in.resolve()
+
+
+def test_action_path_lazy_default_normalizes_valid_default(tmp_path: Path) -> None:
+    file_in = tmp_path / "go.obo"
+    file_in.write_text("[Term]\n", encoding="utf-8")
+
+    parser = _build_parser()
+    parser.add_argument(
+        "--file_in",
+        action=ActionPath.file("obo"),
+        default=str(file_in),
+    )
+
+    ns = parser.parse_args([])
+    assert ns.file_in == file_in.resolve()
+
+
+def test_action_command_prefix_lazy_default_help_and_failure() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--rule_exec_prefix",
+        action=ActionCommandPrefix,
+        default="definitely_missing_command_xyz",
+    )
+
+    _assert_help_renders(parser)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+
+
+def test_action_command_prefix_lazy_default_normalizes_valid_default() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--rule_exec_prefix",
+        action=ActionCommandPrefix,
+        default="bash -lc",
+    )
+
+    ns = parser.parse_args([])
+    assert ns.rule_exec_prefix == ("bash", "-lc")
+
+
+def test_action_hex_color_lazy_default_help_and_failure() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--panel_border_color",
+        action=ActionHexColor,
+        default="#12",
+    )
+
+    _assert_help_renders(parser)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+
+
+def test_action_hex_color_lazy_default_normalizes_valid_default() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--panel_border_color",
+        action=ActionHexColor,
+        default="#33aaFF",
+    )
+
+    ns = parser.parse_args([])
+    assert ns.panel_border_color == "#33AAFF"
+
+
+def test_action_numeric_range_lazy_default_help_and_failure() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--thr",
+        action=ActionNumericRange.non_negative(value_kind="float"),
+        default="-1",
+    )
+
+    _assert_help_renders(parser)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
+
+
+def test_action_numeric_range_lazy_default_normalizes_valid_default() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--thr",
+        action=ActionNumericRange.non_negative(value_kind="float"),
+        default="1.5",
+    )
+
+    ns = parser.parse_args([])
+    assert ns.thr == 1.5
+
+
+def test_argument_parser_parse_known_args_finalizes_lazy_defaults(
+    tmp_path: Path,
+) -> None:
+    file_in = tmp_path / "go.obo"
+    file_in.write_text("[Term]\n", encoding="utf-8")
+
+    parser = _build_parser()
+    parser.add_argument(
+        "--file_in",
+        action=ActionPath.file("obo"),
+        default=str(file_in),
+    )
+
+    ns, extras = parser.parse_known_args([])
+    assert extras == []
     assert ns.file_in == file_in.resolve()

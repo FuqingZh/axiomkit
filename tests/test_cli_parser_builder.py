@@ -5,7 +5,13 @@ from enum import StrEnum
 
 import pytest
 
-from axiomkit.cli.parser import GroupKey, ParserBuilder, ParamSpec  # noqa: E402
+from axiomkit.cli.parser import (  # noqa: E402
+    ArgumentParser,
+    ActionHexColor,
+    GroupKey,
+    ParserBuilder,
+    ParamSpec,
+)
 
 
 class ParamKey(StrEnum):
@@ -216,6 +222,56 @@ def test_build_accepts_should_require_command_false() -> None:
     ns = parser.parse_args([])
 
     assert ns.command is None
+
+
+def test_parser_builder_uses_axiomkit_argument_parser_by_default() -> None:
+    app = ParserBuilder(prog="demo").command(
+        "demo",
+        help="Demo command",
+        arg_builder=_build_demo_args,
+    ).done()
+
+    parser = app.build()
+    assert isinstance(parser, ArgumentParser)
+
+
+def test_parser_builder_keeps_external_parser_instance() -> None:
+    external_parser = argparse.ArgumentParser(prog="demo")
+    app = ParserBuilder(parser=external_parser).command(
+        "demo",
+        help="Demo command",
+        arg_builder=_build_demo_args,
+    ).done()
+
+    parser = app.build()
+    assert parser is external_parser
+
+
+def test_unselected_subcommand_defaults_are_not_finalized() -> None:
+    app = ParserBuilder(prog="demo")
+    (
+        app.command("ok", help="Selected command")
+        .group(GroupKey.GENERAL)
+        .add_argument("--demo-flag", action="store_true")
+        .end()
+        .done()
+    )
+    (
+        app.command("bad", help="Unselected command")
+        .group(GroupKey.PLOTS)
+        .add_argument(
+            "--panel-border-color",
+            action=ActionHexColor,
+            default="#12",
+        )
+        .end()
+        .done()
+    )
+
+    parser = app.build()
+    ns = parser.parse_args(["ok"])
+
+    assert ns.command == "ok"
 
 
 def test_registries_accept_should_sort_false() -> None:
