@@ -49,27 +49,30 @@ class ArgumentParser(argparse.ArgumentParser):
         namespace: argparse.Namespace | None = None,
     ) -> tuple[argparse.Namespace, list[str]]:
         """Parse arguments and finalize lazy defaults on the active parser path."""
-        initial_dests = set(vars(namespace).keys()) if namespace is not None else set()
+        if namespace is None:
+            namespace = argparse.Namespace()
+
+        initial_dests = set(vars(namespace).keys())
         explicit_state_previous = (
             getattr(namespace, _ATTR_EXPLICIT_DESTS)
-            if namespace is not None and hasattr(namespace, _ATTR_EXPLICIT_DESTS)
+            if hasattr(namespace, _ATTR_EXPLICIT_DESTS)
             else None
         )
 
-        namespace, extras = super().parse_known_args(args=args, namespace=namespace)
+        parsed_namespace, extras = super().parse_known_args(args=args, namespace=namespace)
 
         try:
             self._finalize_lazy_defaults(
-                namespace=namespace,
+                namespace=parsed_namespace,
                 initial_dests=initial_dests,
             )
-            return namespace, extras
+            return parsed_namespace, extras
         finally:
             if explicit_state_previous is None:
-                if hasattr(namespace, _ATTR_EXPLICIT_DESTS):
-                    delattr(namespace, _ATTR_EXPLICIT_DESTS)
+                if hasattr(parsed_namespace, _ATTR_EXPLICIT_DESTS):
+                    delattr(parsed_namespace, _ATTR_EXPLICIT_DESTS)
             else:
-                setattr(namespace, _ATTR_EXPLICIT_DESTS, explicit_state_previous)
+                setattr(parsed_namespace, _ATTR_EXPLICIT_DESTS, explicit_state_previous)
 
     def parse_args(
         self,
