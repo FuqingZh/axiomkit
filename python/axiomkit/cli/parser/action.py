@@ -10,6 +10,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from .runtime import mark_namespace_dest_explicit, namespace_dest_is_explicit
+
 
 def _normalize_allowed_file_exts(
     exts: str | Iterable[str] = (),
@@ -85,7 +87,23 @@ class PathSpec:
     is_writable: bool = False
 
 
-class ActionPath(argparse.Action):
+class _LazyDefaultAction(argparse.Action):
+    """Base action with helpers for lazy default finalization."""
+
+    def _mark_dest_explicit(self, namespace: argparse.Namespace) -> None:
+        if self.dest is not argparse.SUPPRESS:
+            mark_namespace_dest_explicit(namespace, self.dest)
+
+    def _dest_was_explicit(self, namespace: argparse.Namespace) -> bool:
+        if self.dest is argparse.SUPPRESS:
+            return False
+        return namespace_dest_is_explicit(namespace, self.dest)
+
+    def _has_lazy_default(self) -> bool:
+        return getattr(self, "default", None) not in {None, argparse.SUPPRESS}
+
+
+class ActionPath(_LazyDefaultAction):
     """Validate and normalize path arguments for argparse.
 
     For ``file``/``dir`` kinds, resolves to absolute :class:`pathlib.Path` and
@@ -113,11 +131,12 @@ class ActionPath(argparse.Action):
 
     Notes:
         - Parsed values stored in ``argparse.Namespace`` are always
-          ``pathlib.Path`` objects (resolved absolute paths).
-        - Defaults are normalized during parser construction.
-        - If a non-``None`` default fails validation, parser construction
-          fails immediately; this can prevent even ``--help`` from rendering
-          for that invocation.
+          ``pathlib.Path`` objects (resolved absolute paths) when used with
+          :class:`axiomkit.cli.parser.ArgumentParser`.
+        - Defaults are normalized lazily after parsing rather than during
+          parser construction.
+        - Invalid non-``None`` defaults fail only if parsing completes without
+          an explicit override; this keeps ``--help`` renderable.
         - For executables, "activate" scripts are not checked; only existence
           and executability are validated.
     """
@@ -150,9 +169,6 @@ class ActionPath(argparse.Action):
 
         Raises:
             ValueError: If an invalid ``entry_kind`` is provided.
-            argparse.ArgumentError:
-                If a non-``None`` default value fails validation. This happens
-                at parser construction time (before parsing argv).
         """
         super().__init__(option_strings, dest, **kwargs)
 
@@ -181,13 +197,6 @@ class ActionPath(argparse.Action):
             )
         else:
             self.allowed_file_exts = None
-
-        # Normalize/validate default as well (argparse does not call Action for defaults).
-        if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
-            self.default = self._normalize_one(
-                value=self.default,
-                name=f"{dest} (default)",
-            )
 
     def _normalize_one(
         self, *, value: str | os.PathLike[str] | os.PathLike[bytes], name: str
@@ -340,7 +349,21 @@ class ActionPath(argparse.Action):
 
         values = cast(str | os.PathLike[str] | os.PathLike[bytes], values)
         path = self._normalize_one(value=values, name=argument_name)
+        self._mark_dest_explicit(namespace)
         setattr(namespace, self.dest, path)
+
+    def _finalize_default_into_namespace(self, namespace: argparse.Namespace) -> None:
+        """Normalize a default value into the namespace after parsing."""
+        if not self._has_lazy_default():
+            return
+        setattr(
+            namespace,
+            self.dest,
+            self._normalize_one(
+                value=self.default,
+                name=f"{self.dest} (default)",
+            ),
+        )
 
     # -------- convenience factories (avoid importing PathSpec explicitly) --------
     @classmethod
@@ -349,8 +372,8 @@ class ActionPath(argparse.Action):
 
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
-              including eager validation of non-``None`` defaults during parser
-              construction.
+              including lazy default finalization when used with
+              :class:`axiomkit.cli.parser.ArgumentParser`.
 
         Args:
             spec: Path specification to enforce.
@@ -382,8 +405,8 @@ class ActionPath(argparse.Action):
 
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
-              including eager validation of non-``None`` defaults during parser
-              construction.
+              including lazy default finalization when used with
+              :class:`axiomkit.cli.parser.ArgumentParser`.
 
         Args:
             entry_kind: Expected entry type.
@@ -430,9 +453,9 @@ class ActionPath(argparse.Action):
         """Factory for file path validation.
 
         Notes:
-            - Non-``None`` defaults are validated during parser construction.
-            - If the default violates existence/extension/readability rules,
-              parser construction fails and ``--help`` may not render.
+            - Non-``None`` defaults are finalized lazily after parsing when
+              used with :class:`axiomkit.cli.parser.ArgumentParser`.
+            - Invalid defaults therefore do not block ``--help`` output.
 
         Args:
             exts:
@@ -473,9 +496,9 @@ class ActionPath(argparse.Action):
         """Factory for directory path validation.
 
         Notes:
-            - Non-``None`` defaults are validated during parser construction.
-            - If the default violates existence/accessibility rules, parser
-              construction fails and ``--help`` may not render.
+            - Non-``None`` defaults are finalized lazily after parsing when
+              used with :class:`axiomkit.cli.parser.ArgumentParser`.
+            - Invalid defaults therefore do not block ``--help`` output.
 
         Args:
             should_exist: Whether the directory must already exist.
@@ -503,10 +526,11 @@ class ActionPath(argparse.Action):
         """Factory for executable path/command validation.
 
         Notes:
-            - Non-``None`` defaults are validated during parser construction.
+            - Non-``None`` defaults are finalized lazily after parsing when
+              used with :class:`axiomkit.cli.parser.ArgumentParser`.
             - When used as ``action=ActionPath.exe(), default=\"some_tool\"``,
-              if ``some_tool`` is not resolvable in current PATH, parser
-              construction fails and ``--help`` may not render.
+              ``--help`` remains available even if ``some_tool`` is not
+              resolvable in current PATH.
 
         Returns:
             A callable suitable for argparse ``action``.
@@ -520,7 +544,7 @@ class ActionPath(argparse.Action):
 _RE_ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
-class ActionCommandPrefix(argparse.Action):
+class ActionCommandPrefix(_LazyDefaultAction):
     """Validate and tokenize shell-style command prefixes.
 
     Intended for prefixes like ``"micromamba run -n ENV"`` or
@@ -552,16 +576,6 @@ class ActionCommandPrefix(argparse.Action):
             **kwargs: Forwarded to ``argparse.Action``.
         """
         super().__init__(option_strings, dest, **kwargs)
-
-        # Normalize/validate default as well (argparse does not call Action for defaults).
-        if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
-            # Use an immutable default so it won't be mutated by later `extend`.
-            self.default = tuple(
-                self._tokenize_and_validate(
-                    value=self.default,
-                    argument_name=f"{dest} (default)",
-                )
-            )
 
     def _tokenize_and_validate(
         self,
@@ -699,10 +713,8 @@ class ActionCommandPrefix(argparse.Action):
         )
 
         cur = getattr(namespace, self.dest, None)
-        # If a default was supplied, argparse places it into the namespace
-        # before parsing. On the first explicit user-specified occurrence we
-        # should *replace* the default rather than append to it.
-        if cur is None or isinstance(cur, tuple):
+        if not self._dest_was_explicit(namespace):
+            self._mark_dest_explicit(namespace)
             setattr(namespace, self.dest, list(tokens))
             return
 
@@ -713,11 +725,26 @@ class ActionCommandPrefix(argparse.Action):
         current_tokens = cast(list[str], cur)
         current_tokens.extend(tokens)
 
+    def _finalize_default_into_namespace(self, namespace: argparse.Namespace) -> None:
+        """Tokenize and freeze the default command prefix after parsing."""
+        if not self._has_lazy_default():
+            return
+        setattr(
+            namespace,
+            self.dest,
+            tuple(
+                self._tokenize_and_validate(
+                    value=self.default,
+                    argument_name=f"{self.dest} (default)",
+                )
+            ),
+        )
+
 
 _RE_HEX6 = re.compile(r"#[0-9A-Fa-f]{6}$")
 
 
-class ActionHexColor(argparse.Action):
+class ActionHexColor(_LazyDefaultAction):
     """Parse and validate hex colors in ``#RRGGBB`` format.
 
     Examples:
@@ -743,13 +770,6 @@ class ActionHexColor(argparse.Action):
             **kwargs: Forwarded to ``argparse.Action``.
         """
         super().__init__(option_strings, dest, **kwargs)
-
-        # Normalize/validate default as well (argparse does not call Action for defaults).
-        if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
-            self.default = self._normalize_hex(
-                value=self.default,
-                argument_name=f"{dest} (default)",
-            )
 
     def _normalize_hex(
         self,
@@ -813,10 +833,24 @@ class ActionHexColor(argparse.Action):
     ) -> None:
         """Parse and set a validated hex color on the namespace."""
         argument_name = option_string or self.dest
+        self._mark_dest_explicit(namespace)
         setattr(
             namespace,
             self.dest,
             self._normalize_hex(value=values, argument_name=argument_name),
+        )
+
+    def _finalize_default_into_namespace(self, namespace: argparse.Namespace) -> None:
+        """Normalize a default color into the namespace after parsing."""
+        if not self._has_lazy_default():
+            return
+        setattr(
+            namespace,
+            self.dest,
+            self._normalize_hex(
+                value=self.default,
+                argument_name=f"{self.dest} (default)",
+            ),
         )
 
 
@@ -863,11 +897,11 @@ class NumericRangeSpec:
     is_finite: bool = True
 
 
-class ActionNumericRange(argparse.Action):
+class ActionNumericRange(_LazyDefaultAction):
     """Argparse action enforcing numeric value constraints.
 
     Parses an option as int/float, validates it against ``NumericRangeSpec``,
-    and normalizes defaults during parser construction.
+    and finalizes defaults lazily after parsing.
 
     Examples:
         Directly provide a spec:
@@ -887,7 +921,8 @@ class ActionNumericRange(argparse.Action):
     Notes:
         - ``allowed_values`` are accepted even if outside min/max.
         - When ``value_kind="float"`` and ``is_finite=True``, rejects NaN/Inf.
-        - Defaults are validated eagerly; misconfigured defaults raise early.
+        - Defaults are validated lazily after parsing when used with
+          :class:`axiomkit.cli.parser.ArgumentParser`.
     """
 
     def __init__(
@@ -908,7 +943,6 @@ class ActionNumericRange(argparse.Action):
 
         Raises:
             ValueError: If spec bounds are inconsistent or kind is invalid.
-            argparse.ArgumentError: If the default value fails validation.
         """
         super().__init__(option_strings, dest, **kwargs)
 
@@ -925,13 +959,6 @@ class ActionNumericRange(argparse.Action):
 
         self.spec = spec
         self._allowed_float: set[float] = {float(v) for v in spec.allowed_values}
-
-        # Normalize/validate default as well (argparse does not call Action for defaults).
-        if getattr(self, "default", None) not in {None, argparse.SUPPRESS}:
-            self.default = self._parse_and_validate(
-                value=self.default,
-                argument_name=f"{dest} (default)",
-            )
 
     # -------- convenience factories (avoid importing NumericRangeSpec explicitly) --------
     @classmethod
@@ -1214,8 +1241,22 @@ class ActionNumericRange(argparse.Action):
     ) -> None:
         """Parse, validate, and set a numeric value on the namespace."""
         argument_name = option_string or self.dest
+        self._mark_dest_explicit(namespace)
         setattr(
             namespace,
             self.dest,
             self._parse_and_validate(value=values, argument_name=argument_name),
+        )
+
+    def _finalize_default_into_namespace(self, namespace: argparse.Namespace) -> None:
+        """Parse and validate a default numeric value after parsing."""
+        if not self._has_lazy_default():
+            return
+        setattr(
+            namespace,
+            self.dest,
+            self._parse_and_validate(
+                value=self.default,
+                argument_name=f"{self.dest} (default)",
+            ),
         )

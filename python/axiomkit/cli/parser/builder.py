@@ -6,7 +6,9 @@ This module provides a thin layered API:
 - ``ParamRegistry`` and ``CommandRegistry`` own registration/validation.
 - ``ParserBuilder`` materializes specs into an ``argparse.ArgumentParser``.
 
-The runtime parse step intentionally stays with raw argparse:
+The runtime parse step stays with argparse, using
+``axiomkit.cli.parser.ArgumentParser`` by default so compatible actions can
+finalize lazy defaults after parsing:
 
     >>> app = ParserBuilder(prog="demo")
     >>> _ = (
@@ -29,6 +31,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Self
 
 from .base import SmartFormatter
+from .runtime import ArgumentParser as AxiomkitArgumentParser
 from .registry import CommandRegistry, ParamRegistry
 from .spec import DICT_ARG_GROUP_META, ArgAdder, GroupKey, CommandSpec, ParamSpec
 
@@ -493,7 +496,9 @@ class ParserBuilder:
         Args:
             parser:
                 Existing parser instance. When provided, ``prog`` and
-                ``description`` are ignored.
+                ``description`` are ignored. When omitted, a
+                :class:`axiomkit.cli.parser.ArgumentParser` is created so lazy
+                action defaults are finalized automatically after parsing.
             prog: Program name used when a new parser is created.
             description: Top-level parser description.
             formatter_kind: Help formatter type for new parser creation.
@@ -501,7 +506,7 @@ class ParserBuilder:
             commands: Optional command registry.
         """
         if parser is None:
-            parser = argparse.ArgumentParser(
+            parser = AxiomkitArgumentParser(
                 prog=prog,
                 description=description,
                 formatter_class=formatter_kind or SmartFormatter,

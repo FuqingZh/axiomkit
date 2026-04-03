@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING, Any
 from axiomkit._optional_deps import import_optional_attr
 
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
+from .runtime import ArgumentParser
 from .spec import GroupKey, ParamSpec
 
 __all__ = [
+    "ArgumentParser",
     "ActionCommandPrefix",
     "ActionHexColor",
     "ActionNumericRange",
