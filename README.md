@@ -91,6 +91,7 @@ df_anova_two_way = calculate_anova_two_way(
 ## Docs
 
 - Repository instructions: [AGENTS.md](AGENTS.md)
+- Naming / product / architecture audit: [docs/governance/20260408-naming-product-architecture-audit.md](docs/governance/20260408-naming-product-architecture-audit.md)
 - Python release checklist: [RELEASE.md](RELEASE.md)
 - R package: [r/README.md](r/README.md)
 - Rust workspace: [crates/](crates/)
