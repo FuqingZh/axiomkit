@@ -8,9 +8,9 @@ import pytest
 from axiomkit.io.xlsx import XlsxWriter  # noqa: E402
 from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.xlsx.spec import (  # noqa: E402
-    SheetSliceSpec,
+    SheetSlice,
     XlsxReport,
-    XlsxWriteOptionsSpec,
+    XlsxWriteOptions,
 )
 
 
@@ -28,7 +28,7 @@ def test_xlsx_rs_report_types_align_spec(tmp_path: Path) -> None:
     assert len(reports) == 1
     assert isinstance(reports[0], XlsxReport)
     assert len(reports[0].sheets) == 1
-    assert isinstance(reports[0].sheets[0], SheetSliceSpec)
+    assert isinstance(reports[0].sheets[0], SheetSlice)
 
 
 def test_xlsx_rs_writer_no_longer_accepts_addons(tmp_path: Path) -> None:
@@ -81,8 +81,8 @@ def test_xlsx_rs_writer_accepts_num_frozen_keywords(tmp_path: Path) -> None:
     assert path_file_out.exists()
 
 
-def test_xlsx_write_options_spec_accepts_should_prefixed_flags() -> None:
-    cfg_write_options = XlsxWriteOptionsSpec(
+def test_xlsx_write_options_accepts_should_prefixed_flags() -> None:
+    cfg_write_options = XlsxWriteOptions(
         should_keep_missing_values=True,
         should_infer_numeric_cols=False,
         should_infer_integer_cols=False,
@@ -91,3 +91,24 @@ def test_xlsx_write_options_spec_accepts_should_prefixed_flags() -> None:
     assert cfg_write_options.should_keep_missing_values is True
     assert cfg_write_options.should_infer_numeric_cols is False
     assert cfg_write_options.should_infer_integer_cols is False
+
+
+def test_xlsx_writer_accepts_options_write_keyword(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "options_write.xlsx"
+    cfg_write_options = XlsxWriteOptions(should_keep_missing_values=True)
+
+    with XlsxWriter(path_file_out, options_write=cfg_write_options) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet(pl.DataFrame({"a": [1, None]}), "S")
+
+    assert path_file_out.exists()
+
+
+def test_xlsx_writer_rejects_legacy_write_options_keyword(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    with pytest.raises(TypeError):
+        XlsxWriter(tmp_path / "legacy_write_options.xlsx", write_options=XlsxWriteOptions())  # type: ignore[call-arg]

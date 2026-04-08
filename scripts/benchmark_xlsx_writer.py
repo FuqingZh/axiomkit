@@ -24,7 +24,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from axiomkit.io.xlsx import XlsxWriter  # noqa: E402
-from axiomkit.io.xlsx.spec import SpecAutofitCellsPolicy  # noqa: E402
+from axiomkit.io.xlsx.spec import AutofitPolicy  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -293,8 +293,8 @@ def run_one_write(
 ) -> float:
     n_t_start = perf_counter()
     with writer_cls(path_xlsx_out) as inst_writer:
-        policy_autofit = SpecAutofitCellsPolicy(
-            rule_columns=rule_autofit_columns if should_autofit_columns else "none"
+        policy_autofit = AutofitPolicy(
+            mode=rule_autofit_columns if should_autofit_columns else "none"
         )
         inst_writer.write_sheet(
             df=df,

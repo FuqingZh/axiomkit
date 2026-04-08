@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 ////////////////////////////////////////////////////////////////////////////////
 // #region CellFormatSpecification
 
-/// Cell format specification aligned with Python `CellFormatSpec`.
+/// Cell format patch aligned with Python `CellFormatPatch`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct CellFormatSpec {
+pub struct CellFormatPatch {
     /// Font family name.
     pub font_name: Option<String>,
     /// Font size in points.
@@ -65,15 +65,15 @@ pub enum CellValue {
     Number(f64),
 }
 
-impl CellFormatSpec {
+impl CellFormatPatch {
     /// Return a new format by overlaying `patch` onto `self`.
-    pub fn with_(&self, patch: CellFormatSpec) -> CellFormatSpec {
+    pub fn with_(&self, patch: CellFormatPatch) -> CellFormatPatch {
         self.merge(&patch)
     }
 
     /// Merge two formats with right-side non-`None` overwrite semantics.
-    pub fn merge(&self, other: &CellFormatSpec) -> CellFormatSpec {
-        CellFormatSpec {
+    pub fn merge(&self, other: &CellFormatPatch) -> CellFormatPatch {
+        CellFormatPatch {
             font_name: other.font_name.clone().or_else(|| self.font_name.clone()),
             font_size: other.font_size.or(self.font_size),
             bold: other.bold.or(self.bold),
@@ -163,7 +163,7 @@ impl CellFormatSpec {
 
 /// Border tuple for top/bottom/left/right.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CellBorderSpec {
+pub struct CellBorder {
     /// Top border style.
     pub top: i64,
     /// Bottom border style.
@@ -180,11 +180,11 @@ pub struct CellBorderSpec {
 
 /// Planned final/base formats by column.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ColumnFormatPlanSpec {
+pub struct ColumnFormatPlan {
     /// Final format applied at write time.
-    pub fmts_by_col: Vec<CellFormatSpec>,
+    pub fmts_by_col: Vec<CellFormatPatch>,
     /// Base format before per-column override.
-    pub fmts_base_by_col: Vec<CellFormatSpec>,
+    pub fmts_base_by_col: Vec<CellFormatPatch>,
 }
 
 // #endregion
@@ -203,7 +203,7 @@ pub enum IntegerCoerceMode {
 
 /// Value conversion policy for missing/NaN/Inf and integer coercion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XlsxValuePolicySpec {
+pub struct XlsxValuePolicy {
     /// Replacement text for missing value when keep-missing is enabled.
     pub missing_value_str: String,
     /// Replacement text for NaN.
@@ -216,7 +216,7 @@ pub struct XlsxValuePolicySpec {
     pub integer_coerce: IntegerCoerceMode,
 }
 
-impl Default for XlsxValuePolicySpec {
+impl Default for XlsxValuePolicy {
     fn default() -> Self {
         Self {
             missing_value_str: "NA".to_string(),
@@ -230,7 +230,7 @@ impl Default for XlsxValuePolicySpec {
 
 /// Policy for selecting row chunk size in write pipeline.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XlsxRowChunkPolicySpec {
+pub struct XlsxRowChunkPolicy {
     /// Width threshold for large table.
     pub width_large: usize,
     /// Width threshold for medium table.
@@ -245,7 +245,7 @@ pub struct XlsxRowChunkPolicySpec {
     pub fixed_size: Option<usize>,
 }
 
-impl Default for XlsxRowChunkPolicySpec {
+impl Default for XlsxRowChunkPolicy {
     fn default() -> Self {
         Self {
             width_large: 8_000,
@@ -274,9 +274,9 @@ pub enum ScientificScope {
 
 /// Scientific formatting policy used in per-sheet write.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ScientificPolicySpec {
+pub struct ScientificPolicy {
     /// Scientific trigger scope.
-    pub rule_scope: ScientificScope,
+    pub scope: ScientificScope,
     /// Lower absolute bound trigger (exclusive, except zero).
     pub thr_min: f64,
     /// Upper absolute bound trigger (inclusive).
@@ -285,10 +285,10 @@ pub struct ScientificPolicySpec {
     pub height_body_inferred_max: Option<usize>,
 }
 
-impl Default for ScientificPolicySpec {
+impl Default for ScientificPolicy {
     fn default() -> Self {
         Self {
-            rule_scope: ScientificScope::Decimal,
+            scope: ScientificScope::Decimal,
             thr_min: 0.0001,
             thr_max: 1_000_000_000_000.0,
             height_body_inferred_max: Some(20_000),
@@ -298,7 +298,7 @@ impl Default for ScientificPolicySpec {
 
 /// Autofit rule for column width inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AutofitColumnsRule {
+pub enum AutofitMode {
     /// Disable autofit.
     None,
     /// Infer width from header cells only (default).
@@ -312,9 +312,9 @@ pub enum AutofitColumnsRule {
 
 /// Autofit policy for per-sheet write call.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AutofitCellsPolicySpec {
+pub struct AutofitPolicy {
     /// Autofit width inference rule.
-    pub rule_columns: AutofitColumnsRule,
+    pub mode: AutofitMode,
     /// Max body rows inspected when body-based inference is active.
     pub height_body_inferred_max: Option<usize>,
     /// Minimum final width.
@@ -325,10 +325,10 @@ pub struct AutofitCellsPolicySpec {
     pub width_cell_padding: usize,
 }
 
-impl Default for AutofitCellsPolicySpec {
+impl Default for AutofitPolicy {
     fn default() -> Self {
         Self {
-            rule_columns: AutofitColumnsRule::Header,
+            mode: AutofitMode::Header,
             height_body_inferred_max: Some(20_000),
             width_cell_min: 8,
             width_cell_max: 60,
@@ -339,9 +339,9 @@ impl Default for AutofitCellsPolicySpec {
 
 /// Writer-wide options controlling value conversion and formatting defaults.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct XlsxWriteOptionsSpec {
+pub struct XlsxWriteOptions {
     /// Value conversion policy.
-    pub value_policy: XlsxValuePolicySpec,
+    pub value_policy: XlsxValuePolicy,
     /// Keep missing/NaN/Inf as text instead of blank.
     pub should_keep_missing_values: bool,
     /// Infer numeric columns from dtypes.
@@ -349,20 +349,20 @@ pub struct XlsxWriteOptionsSpec {
     /// Infer integer subset from numeric columns.
     pub should_infer_integer_cols: bool,
     /// Row chunking policy.
-    pub row_chunk_policy: XlsxRowChunkPolicySpec,
+    pub row_chunk_policy: XlsxRowChunkPolicy,
     /// Base patch merged into all per-column formats.
-    pub base_format_patch: CellFormatSpec,
+    pub base_format_patch: CellFormatPatch,
 }
 
-impl Default for XlsxWriteOptionsSpec {
+impl Default for XlsxWriteOptions {
     fn default() -> Self {
         Self {
-            value_policy: XlsxValuePolicySpec::default(),
+            value_policy: XlsxValuePolicy::default(),
             should_keep_missing_values: false,
             should_infer_numeric_cols: true,
             should_infer_integer_cols: true,
-            row_chunk_policy: XlsxRowChunkPolicySpec::default(),
-            base_format_patch: CellFormatSpec {
+            row_chunk_policy: XlsxRowChunkPolicy::default(),
+            base_format_patch: CellFormatPatch {
                 border: Some(0),
                 top: Some(0),
                 bottom: Some(0),
@@ -380,7 +380,7 @@ impl Default for XlsxWriteOptionsSpec {
 
 /// Concrete sheet part emitted to workbook (after Excel-limit slicing).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SheetSliceSpec {
+pub struct SheetSlice {
     /// Actual unique sheet name in workbook.
     pub sheet_name: String,
     /// Inclusive source row start.
@@ -395,7 +395,7 @@ pub struct SheetSliceSpec {
 
 /// Horizontal merge plan item.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SheetHorizontalMergeSpec {
+pub struct SheetHorizontalMerge {
     /// Row index where merge is applied.
     pub row_idx_start: usize,
     /// Start column index (inclusive).
@@ -414,7 +414,7 @@ pub struct SheetHorizontalMergeSpec {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct XlsxReport {
     /// Sheet slices produced by the write call.
-    pub sheets: Vec<SheetSliceSpec>,
+    pub sheets: Vec<SheetSlice>,
     /// Non-fatal warnings.
     pub warnings: Vec<String>,
 }

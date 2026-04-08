@@ -13,11 +13,11 @@ from .constant import (
     ColumnIdentifier,
 )
 from .spec import (
-    AutofitCellsPolicySpec,
-    CellFormatSpec,
-    ScientificPolicySpec,
+    AutofitPolicy,
+    CellFormatPatch,
+    ScientificPolicy,
     XlsxReport,
-    XlsxWriteOptionsSpec,
+    XlsxWriteOptions,
 )
 
 
@@ -38,8 +38,8 @@ class ProtocolXlsxWriterBackend(Protocol):
         num_frozen_rows: int | None = None,
         should_merge_header: bool = False,
         should_keep_missing_values: bool | None = None,
-        policy_autofit: AutofitCellsPolicySpec | None = None,
-        policy_scientific: ScientificPolicySpec | None = None,
+        policy_autofit: AutofitPolicy | None = None,
+        policy_scientific: ScientificPolicy | None = None,
     ) -> Any: ...
 
 
@@ -51,10 +51,10 @@ class XlsxWriter:
     thin Python facade that preserves call signatures and return types.
     """
 
-    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, CellFormatSpec]] = (
+    DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, CellFormatPatch]] = (
         DEFAULT_XLSX_FORMATS
     )
-    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[XlsxWriteOptionsSpec] = (
+    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[XlsxWriteOptions] = (
         DEFAULT_XLSX_WRITE_OPTIONS
     )
 
@@ -62,12 +62,12 @@ class XlsxWriter:
         self,
         file_out: os.PathLike[str] | str,
         *,
-        fmt_text: CellFormatSpec | None = None,
-        fmt_integer: CellFormatSpec | None = None,
-        fmt_decimal: CellFormatSpec | None = None,
-        fmt_scientific: CellFormatSpec | None = None,
-        fmt_header: CellFormatSpec | None = None,
-        write_options: XlsxWriteOptionsSpec | None = None,
+        fmt_text: CellFormatPatch | None = None,
+        fmt_integer: CellFormatPatch | None = None,
+        fmt_decimal: CellFormatPatch | None = None,
+        fmt_scientific: CellFormatPatch | None = None,
+        fmt_header: CellFormatPatch | None = None,
+        options_write: XlsxWriteOptions | None = None,
     ):
         if not is_rs_backend_available():
             raise RuntimeError(
@@ -84,7 +84,7 @@ class XlsxWriter:
                 fmt_decimal=fmt_decimal,
                 fmt_scientific=fmt_scientific,
                 fmt_header=fmt_header,
-                write_options=write_options,
+                options_write=options_write,
             ),
         )
 
@@ -114,8 +114,8 @@ class XlsxWriter:
         num_frozen_rows: int | None = None,
         should_merge_header: bool = False,
         should_keep_missing_values: bool | None = None,
-        policy_autofit: AutofitCellsPolicySpec | None = None,
-        policy_scientific: ScientificPolicySpec | None = None,
+        policy_autofit: AutofitPolicy | None = None,
+        policy_scientific: ScientificPolicy | None = None,
     ) -> Self:
         """Write one worksheet to the workbook.
 
@@ -174,15 +174,15 @@ class XlsxWriter:
                     cols_decimal=[2],
                     num_frozen_rows=2,
                     should_keep_missing_values=True,
-                    policy_autofit=AutofitCellsPolicySpec(
-                        rule_columns="all",
+                    policy_autofit=AutofitPolicy(
+                        mode="all",
                         height_body_inferred_max=20_000,
                         width_cell_min=8,
                         width_cell_max=60,
                         width_cell_padding=2
                     ),
-                    policy_scientific=ScientificPolicySpec(
-                        rule_scope="decimal",
+                    policy_scientific=ScientificPolicy(
+                        scope="decimal",
                         thr_min=0.0001,
                         thr_max=1_000_000_000_000.0,
                         height_body_inferred_max=20_000

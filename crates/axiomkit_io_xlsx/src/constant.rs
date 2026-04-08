@@ -2,14 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::spec::{CellFormatSpec, XlsxWriteOptionsSpec};
+use crate::spec::{CellFormatPatch, XlsxWriteOptions};
 
 /// Excel worksheet maximum row count.
-pub const N_NROWS_EXCEL_MAX: usize = 1_048_576;
+pub const NROWS_EXCEL_MAX: usize = 1_048_576;
 /// Excel worksheet maximum column count.
-pub const N_NCOLS_EXCEL_MAX: usize = 16_384;
+pub const NCOLS_EXCEL_MAX: usize = 16_384;
 /// Excel sheet name maximum length.
-pub const N_LEN_EXCEL_SHEET_NAME_MAX: usize = 31;
+pub const LEN_EXCEL_SHEET_NAME_MAX: usize = 31;
 /// Characters not allowed in sheet names.
 pub const TUP_EXCEL_ILLEGAL: [&str; 7] = ["*", ":", "?", "/", "\\", "[", "]"];
 
@@ -38,8 +38,8 @@ pub enum ColumnIdentifier {
 }
 
 /// Build default named format presets used by [`crate::writer::XlsxWriter`].
-pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
-    let base_format_spec = CellFormatSpec {
+pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatPatch> {
+    let base_format_spec = CellFormatPatch {
         font_name: Some("Times New Roman".to_string()),
         font_size: Some(11),
         border: Some(1),
@@ -52,7 +52,7 @@ pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
     formats.insert("text".to_string(), base_format_spec.clone());
     formats.insert(
         "header".to_string(),
-        base_format_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatPatch {
             bold: Some(true),
             align: Some("center".to_string()),
             ..Default::default()
@@ -60,21 +60,21 @@ pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
     );
     formats.insert(
         "integer".to_string(),
-        base_format_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatPatch {
             num_format: Some("0".to_string()),
             ..Default::default()
         }),
     );
     formats.insert(
         "decimal".to_string(),
-        base_format_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatPatch {
             num_format: Some("0.0000".to_string()),
             ..Default::default()
         }),
     );
     formats.insert(
         "scientific".to_string(),
-        base_format_spec.with_(CellFormatSpec {
+        base_format_spec.with_(CellFormatPatch {
             num_format: Some("0.00E+0".to_string()),
             ..Default::default()
         }),
@@ -84,6 +84,6 @@ pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatSpec> {
 }
 
 /// Build default write options.
-pub fn derive_default_xlsx_write_options() -> XlsxWriteOptionsSpec {
-    XlsxWriteOptionsSpec::default()
+pub fn derive_default_xlsx_write_options() -> XlsxWriteOptions {
+    XlsxWriteOptions::default()
 }

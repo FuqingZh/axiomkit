@@ -7,11 +7,10 @@ use std::path::PathBuf;
 use polars::prelude::{AnyValue, DataFrame, IpcReader, SerReader};
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet, XlsxError};
 
-use crate::constant::{ColumnIdentifier, N_LEN_EXCEL_SHEET_NAME_MAX};
+use crate::constant::{ColumnIdentifier, LEN_EXCEL_SHEET_NAME_MAX};
 use crate::spec::{
-    AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, CellValue, ColumnFormatPlanSpec,
-    ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxReport, XlsxValuePolicySpec,
-    XlsxWriteOptionsSpec,
+    AutofitMode, AutofitPolicy, CellFormatPatch, CellValue, ColumnFormatPlan, ScientificPolicy,
+    ScientificScope, SheetSlice, XlsxReport, XlsxValuePolicy, XlsxWriteOptions,
 };
 use crate::util::{
     apply_vertical_run_text_blankout, calculate_row_chunk_size, convert_cell_value,
@@ -22,7 +21,7 @@ use crate::util::{
 
 /// Per-sheet call options (aligned with Python `XlsxWriter.write_sheet` kwargs).
 #[derive(Default, Debug, Clone)]
-pub struct XlsxSheetWriteOptionsSpec {
+pub struct XlsxSheetWriteOptions {
     /// Integer columns by typed name or zero-based index.
     pub cols_integer: Option<Vec<ColumnIdentifier>>,
     /// Decimal columns by typed name or zero-based index.
@@ -36,12 +35,12 @@ pub struct XlsxSheetWriteOptionsSpec {
     /// Override writer-level keep-missing behavior.
     pub should_keep_missing_values: Option<bool>,
     /// Column autofit policy.
-    pub policy_autofit: AutofitCellsPolicySpec,
+    pub policy_autofit: AutofitPolicy,
     /// Scientific-format trigger policy.
-    pub policy_scientific: ScientificPolicySpec,
+    pub policy_scientific: ScientificPolicy,
 }
 
-pub struct ColumnFormatPlanOptionsSpec<'a> {
+pub struct ColumnFormatPlanOptions<'a> {
     /// Number of columns in current sheet slice.
     pub width_data: usize,
     /// Slice-local numeric column indices.
@@ -53,29 +52,29 @@ pub struct ColumnFormatPlanOptionsSpec<'a> {
     /// Slice-local scientific column indices.
     pub cols_idx_scientific: &'a [usize],
     /// Optional per-column format overrides.
-    pub cols_fmt_overrides: &'a BTreeMap<usize, CellFormatSpec>,
+    pub cols_fmt_overrides: &'a BTreeMap<usize, CellFormatPatch>,
     /// Base text format.
-    pub fmt_text: &'a CellFormatSpec,
+    pub fmt_text: &'a CellFormatPatch,
     /// Base integer format.
-    pub fmt_integer: &'a CellFormatSpec,
+    pub fmt_integer: &'a CellFormatPatch,
     /// Base decimal format.
-    pub fmt_decimal: &'a CellFormatSpec,
+    pub fmt_decimal: &'a CellFormatPatch,
     /// Base scientific format.
-    pub fmt_scientific: &'a CellFormatSpec,
+    pub fmt_scientific: &'a CellFormatPatch,
     /// Global write options.
-    pub write_options: &'a XlsxWriteOptionsSpec,
+    pub options_write: &'a XlsxWriteOptions,
 }
 
 /// Stateful workbook writer.
 pub struct XlsxWriter {
     path_file_out: PathBuf,
     workbook: Workbook,
-    fmt_text: CellFormatSpec,
-    fmt_integer: CellFormatSpec,
-    fmt_decimal: CellFormatSpec,
-    fmt_scientific: CellFormatSpec,
-    fmt_header: CellFormatSpec,
-    write_options: XlsxWriteOptionsSpec,
+    fmt_text: CellFormatPatch,
+    fmt_integer: CellFormatPatch,
+    fmt_decimal: CellFormatPatch,
+    fmt_scientific: CellFormatPatch,
+    fmt_header: CellFormatPatch,
+    options_write: XlsxWriteOptions,
     existing_sheet_names: BTreeSet<String>,
     reports: Vec<XlsxReport>,
     is_closed: bool,
@@ -88,12 +87,12 @@ impl XlsxWriter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         path_file_out: PathBuf,
-        fmt_text: CellFormatSpec,
-        fmt_integer: CellFormatSpec,
-        fmt_decimal: CellFormatSpec,
-        fmt_scientific: CellFormatSpec,
-        fmt_header: CellFormatSpec,
-        write_options: XlsxWriteOptionsSpec,
+        fmt_text: CellFormatPatch,
+        fmt_integer: CellFormatPatch,
+        fmt_decimal: CellFormatPatch,
+        fmt_scientific: CellFormatPatch,
+        fmt_header: CellFormatPatch,
+        options_write: XlsxWriteOptions,
     ) -> Self {
         Self {
             path_file_out,
@@ -103,7 +102,7 @@ impl XlsxWriter {
             fmt_decimal,
             fmt_scientific,
             fmt_header,
-            write_options,
+            options_write,
             existing_sheet_names: BTreeSet::new(),
             reports: Vec::new(),
             is_closed: false,
@@ -138,7 +137,7 @@ impl XlsxWriter {
         df_data: &DataFrame,
         sheet_name: &str,
         df_header: Option<&DataFrame>,
-        options: &XlsxSheetWriteOptionsSpec,
+        options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
@@ -154,7 +153,7 @@ impl XlsxWriter {
         ipc_df: &[u8],
         sheet_name: &str,
         ipc_df_header: Option<&[u8]>,
-        options: &XlsxSheetWriteOptionsSpec,
+        options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
@@ -173,15 +172,15 @@ impl XlsxWriter {
         df_data: &DataFrame,
         sheet_name: &str,
         df_header: Option<&DataFrame>,
-        options: &XlsxSheetWriteOptionsSpec,
+        options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         validate_policy_autofit(&options.policy_autofit)?;
         validate_policy_scientific(&options.policy_scientific)?;
 
         let should_keep_missing_values = options
             .should_keep_missing_values
-            .unwrap_or(self.write_options.should_keep_missing_values);
-        let value_policy = self.write_options.value_policy.clone();
+            .unwrap_or(self.options_write.should_keep_missing_values);
+        let value_policy = self.options_write.value_policy.clone();
 
         let col_names: Vec<String> = df_data
             .get_column_names_str()
@@ -216,13 +215,13 @@ impl XlsxWriter {
             header_grid = derive_string_grid_from_dataframe(df_header_custom)?;
         }
 
-        let cols_idx_numeric = if self.write_options.should_infer_numeric_cols {
+        let cols_idx_numeric = if self.options_write.should_infer_numeric_cols {
             derive_numeric_column_indices(df_data)
         } else {
             vec![]
         };
 
-        let cols_idx_integer_inferred = if self.write_options.should_infer_integer_cols {
+        let cols_idx_integer_inferred = if self.options_write.should_infer_integer_cols {
             derive_integer_column_indices(df_data, &cols_idx_numeric)
         } else {
             vec![]
@@ -292,7 +291,7 @@ impl XlsxWriter {
                 sheet_slice.col_end_exclusive,
             );
 
-            let column_format_plan = plan_column_formats(ColumnFormatPlanOptionsSpec {
+            let column_format_plan = plan_column_formats(ColumnFormatPlanOptions {
                 width_data: sheet_slice.col_end_exclusive - sheet_slice.col_start_inclusive,
                 cols_idx_numeric: &cols_idx_numeric_slice,
                 cols_idx_integer: &cols_idx_integer_slice,
@@ -307,7 +306,7 @@ impl XlsxWriter {
                 fmt_integer: &self.fmt_integer,
                 fmt_decimal: &self.fmt_decimal,
                 fmt_scientific: &self.fmt_scientific,
-                write_options: &self.write_options,
+                options_write: &self.options_write,
             });
 
             let data_formats_by_col: Vec<Format> = column_format_plan
@@ -327,10 +326,7 @@ impl XlsxWriter {
             let mut header_widths_by_col = vec![0usize; data_formats_by_col.len()];
             let mut body_widths_by_col = vec![0usize; data_formats_by_col.len()];
 
-            let should_autofit_columns = !matches!(
-                options.policy_autofit.rule_columns,
-                AutofitColumnsRule::None
-            );
+            let should_autofit_columns = !matches!(options.policy_autofit.mode, AutofitMode::None);
 
             if should_autofit_columns && !data_formats_by_col.is_empty() {
                 for _col_idx in 0..data_formats_by_col.len() {
@@ -389,7 +385,7 @@ impl XlsxWriter {
             }
             let rows_chunk = calculate_row_chunk_size(
                 data_formats_by_col.len(),
-                &self.write_options.row_chunk_policy,
+                &self.options_write.row_chunk_policy,
             );
             if rows_chunk == 0 {
                 return Err("row_chunk_policy resolved to 0 rows; expected >= 1.".to_string());
@@ -467,13 +463,13 @@ impl XlsxWriter {
 
                 for _col_idx in 0..data_formats_by_col.len() {
                     let col_idx = _col_idx;
-                    let width_recorded = match options.policy_autofit.rule_columns {
-                        AutofitColumnsRule::Header => header_widths_by_col[col_idx],
-                        AutofitColumnsRule::Body => body_widths_by_col[col_idx],
-                        AutofitColumnsRule::All => {
+                    let width_recorded = match options.policy_autofit.mode {
+                        AutofitMode::Header => header_widths_by_col[col_idx],
+                        AutofitMode::Body => body_widths_by_col[col_idx],
+                        AutofitMode::All => {
                             usize::max(header_widths_by_col[col_idx], body_widths_by_col[col_idx])
                         }
-                        AutofitColumnsRule::None => header_widths_by_col[col_idx],
+                        AutofitMode::None => header_widths_by_col[col_idx],
                     };
                     let width_final = usize::min(
                         width_max,
@@ -485,7 +481,7 @@ impl XlsxWriter {
                 }
             }
 
-            report.sheets.push(SheetSliceSpec {
+            report.sheets.push(SheetSlice {
                 sheet_name: sheet_name_unique,
                 row_start_inclusive: sheet_slice.row_start_inclusive,
                 row_end_exclusive: sheet_slice.row_end_exclusive,
@@ -506,14 +502,14 @@ impl XlsxWriter {
 
         let base_name: String = name
             .chars()
-            .take(usize::max(1, N_LEN_EXCEL_SHEET_NAME_MAX - 3))
+            .take(usize::max(1, LEN_EXCEL_SHEET_NAME_MAX - 3))
             .collect();
 
         let mut idx = 2usize;
         loop {
             let candidate: String = format!("{base_name}__{idx}")
                 .chars()
-                .take(N_LEN_EXCEL_SHEET_NAME_MAX)
+                .take(LEN_EXCEL_SHEET_NAME_MAX)
                 .collect();
             if !self.existing_sheet_names.contains(&candidate) {
                 self.existing_sheet_names.insert(candidate.clone());
@@ -533,7 +529,7 @@ pub fn estimate_width_len(
     is_integer_col: bool,
     is_scientific_col: bool,
     should_keep_missing_values: bool,
-    value_policy: &XlsxValuePolicySpec,
+    value_policy: &XlsxValuePolicy,
 ) -> usize {
     match value {
         CellValue::None => {
@@ -580,8 +576,8 @@ fn estimate_unicode_string_width(s: &str) -> usize {
 }
 
 /// Build per-column base/final format plans for current sheet slice.
-pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFormatPlanSpec {
-    let ColumnFormatPlanOptionsSpec {
+pub fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan {
+    let ColumnFormatPlanOptions {
         width_data,
         cols_idx_numeric,
         cols_idx_integer,
@@ -592,7 +588,7 @@ pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFo
         fmt_integer,
         fmt_decimal,
         fmt_scientific,
-        write_options,
+        options_write,
     } = options;
 
     let numeric_cols_idx: BTreeSet<usize> = cols_idx_numeric.iter().copied().collect();
@@ -621,7 +617,7 @@ pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFo
             fmt_text.clone()
         };
 
-        fmt_base = fmt_base.merge(&write_options.base_format_patch);
+        fmt_base = fmt_base.merge(&options_write.base_format_patch);
 
         let fmt_final = if let Some(fmt_override) = cols_fmt_overrides.get(&col_idx) {
             fmt_base.merge(fmt_override)
@@ -633,7 +629,7 @@ pub fn plan_column_formats(options: ColumnFormatPlanOptionsSpec<'_>) -> ColumnFo
         fmts_by_col.push(fmt_final);
     }
 
-    ColumnFormatPlanSpec {
+    ColumnFormatPlan {
         fmts_by_col,
         fmts_base_by_col,
     }
@@ -645,7 +641,7 @@ fn derive_dataframe_from_ipc_bytes(ipc_df: &[u8]) -> Result<DataFrame, String> {
         .map_err(|err| format!("Failed to read IPC DataFrame bytes: {err}"))
 }
 
-fn validate_policy_autofit(policy_autofit: &AutofitCellsPolicySpec) -> Result<(), String> {
+fn validate_policy_autofit(policy_autofit: &AutofitPolicy) -> Result<(), String> {
     if policy_autofit.width_cell_min == 0 {
         return Err("policy_autofit.width_cell_min must be >= 1.".to_string());
     }
@@ -657,7 +653,7 @@ fn validate_policy_autofit(policy_autofit: &AutofitCellsPolicySpec) -> Result<()
     Ok(())
 }
 
-fn validate_policy_scientific(policy_scientific: &ScientificPolicySpec) -> Result<(), String> {
+fn validate_policy_scientific(policy_scientific: &ScientificPolicy) -> Result<(), String> {
     if policy_scientific.thr_min < 0.0 {
         return Err("policy_scientific.thr_min must be >= 0.".to_string());
     }
@@ -697,10 +693,9 @@ fn derive_scientific_column_indices(
     cols_idx_numeric: &[usize],
     cols_idx_integer: &[usize],
     cols_idx_decimal_specified: &[usize],
-    policy_scientific: &ScientificPolicySpec,
+    policy_scientific: &ScientificPolicy,
 ) -> Result<Vec<usize>, String> {
-    if cols_idx_numeric.is_empty() || matches!(policy_scientific.rule_scope, ScientificScope::None)
-    {
+    if cols_idx_numeric.is_empty() || matches!(policy_scientific.scope, ScientificScope::None) {
         return Ok(vec![]);
     }
 
@@ -719,7 +714,7 @@ fn derive_scientific_column_indices(
     for _col_idx in cols_idx_numeric {
         let col_idx = *_col_idx;
         let is_integer_col = integer_cols_idx.contains(&col_idx);
-        let should_include = match policy_scientific.rule_scope {
+        let should_include = match policy_scientific.scope {
             ScientificScope::None => false,
             ScientificScope::Decimal => {
                 if is_integer_col {
@@ -971,7 +966,7 @@ fn write_cell_with_format(
     Ok(())
 }
 
-fn derive_rust_xlsx_format(spec: &CellFormatSpec) -> Format {
+fn derive_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
     let mut format = Format::new();
 
     if let Some(val) = &spec.font_name {

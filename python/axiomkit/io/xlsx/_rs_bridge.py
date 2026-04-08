@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-EXPECTED_BRIDGE_ABI = 1
-EXPECTED_BRIDGE_CONTRACT = "axiomkit.xlsx.writer.v1"
+EXPECTED_BRIDGE_ABI = 2
+EXPECTED_BRIDGE_CONTRACT = "axiomkit.xlsx.writer.v2"
 EXPECTED_BRIDGE_TRANSPORT = "arrow_c_data"
 
 _mod_rs: Any | None = None
@@ -74,7 +74,7 @@ def create_xlsx_writer_via_rs(
     fmt_decimal: Any = None,
     fmt_scientific: Any = None,
     fmt_header: Any = None,
-    write_options: Any = None,
+    options_write: Any = None,
 ):
     if _XlsxWriterRs is None:  # pragma: no cover
         _raise_unavailable()
@@ -86,5 +86,5 @@ def create_xlsx_writer_via_rs(
             fmt_decimal=fmt_decimal,
             fmt_scientific=fmt_scientific,
             fmt_header=fmt_header,
-            write_options=write_options,
+            options_write=options_write,
         )

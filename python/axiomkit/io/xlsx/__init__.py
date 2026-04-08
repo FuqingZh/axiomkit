@@ -6,18 +6,18 @@ from axiomkit._optional_deps import import_optional_attr
 
 __all__ = [
     "XlsxWriter",
-    "CellFormatSpec",
-    "AutofitCellsPolicySpec",
-    "ScientificPolicySpec",
+    "CellFormatPatch",
+    "AutofitPolicy",
+    "ScientificPolicy",
 ]
 
 if TYPE_CHECKING:
-    from .spec import AutofitCellsPolicySpec, CellFormatSpec, ScientificPolicySpec
+    from .spec import AutofitPolicy, CellFormatPatch, ScientificPolicy
     from .writer import XlsxWriter
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"CellFormatSpec", "AutofitCellsPolicySpec", "ScientificPolicySpec"}:
+    if name in {"CellFormatPatch", "AutofitPolicy", "ScientificPolicy"}:
         return import_optional_attr(
             module_name=".spec",
             attr_name=name,

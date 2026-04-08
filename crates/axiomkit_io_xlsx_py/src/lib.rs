@@ -8,21 +8,32 @@ use axiomkit_io_xlsx::constant::{
     ColumnIdentifier, derive_default_xlsx_formats, derive_default_xlsx_write_options,
 };
 use axiomkit_io_xlsx::spec::{
-    AutofitCellsPolicySpec, AutofitColumnsRule, CellFormatSpec, IntegerCoerceMode,
-    ScientificPolicySpec, ScientificScope, SheetSliceSpec, XlsxValuePolicySpec,
-    XlsxWriteOptionsSpec,
+    AutofitMode, AutofitPolicy, CellFormatPatch, IntegerCoerceMode, ScientificPolicy,
+    ScientificScope, SheetSlice, XlsxValuePolicy, XlsxWriteOptions,
 };
-use axiomkit_io_xlsx::{XlsxSheetWriteOptionsSpec, XlsxWriter as RsXlsxWriter};
+use axiomkit_io_xlsx::{XlsxSheetWriteOptions, XlsxWriter as RsXlsxWriter};
 use polars::prelude::DataFrame;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::ffi as pyffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyList, PyTuple};
 
-pub const BRIDGE_ABI_VERSION: u64 = 1;
-pub const BRIDGE_CONTRACT_VERSION: &str = "axiomkit.xlsx.writer.v1";
+pub const BRIDGE_ABI_VERSION: u64 = 2;
+pub const BRIDGE_CONTRACT_VERSION: &str = "axiomkit.xlsx.writer.v2";
 pub const BRIDGE_TRANSPORT: &str = "arrow_c_data";
 const C_ARROW_ARRAY_STREAM_CAPSULE_NAME: &[u8] = b"arrow_array_stream\0";
+const PY_CLASS_SHEET_SLICE: &str = "SheetSlice";
+const PY_CLASS_XLSX_REPORT: &str = "XlsxReport";
+const PY_ARG_OPTIONS_WRITE: &str = "options_write";
+const PY_ARG_POLICY_AUTOFIT: &str = "policy_autofit";
+const PY_ARG_POLICY_SCIENTIFIC: &str = "policy_scientific";
+const PY_VISIBLE_SYMBOLS: [&str; 5] = [
+    PY_CLASS_SHEET_SLICE,
+    PY_CLASS_XLSX_REPORT,
+    PY_ARG_OPTIONS_WRITE,
+    PY_ARG_POLICY_AUTOFIT,
+    PY_ARG_POLICY_SCIENTIFIC,
+];
 
 #[pyclass(name = "XlsxWriter")]
 struct PyXlsxWriter {
@@ -41,7 +52,7 @@ impl PyXlsxWriter {
         fmt_decimal = None,
         fmt_scientific = None,
         fmt_header = None,
-        write_options = None
+        options_write = None
     ))]
     fn new(
         file_out: String,
@@ -50,7 +61,7 @@ impl PyXlsxWriter {
         fmt_decimal: Option<&Bound<'_, PyAny>>,
         fmt_scientific: Option<&Bound<'_, PyAny>>,
         fmt_header: Option<&Bound<'_, PyAny>>,
-        write_options: Option<&Bound<'_, PyAny>>,
+        options_write: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let path_file_out = PathBuf::from(&file_out);
 
@@ -76,14 +87,14 @@ impl PyXlsxWriter {
             .cloned()
             .ok_or_else(|| PyValueError::new_err("Missing default format: header"))?;
 
-        let c_fmt_text = parse_spec_cell_format(fmt_text)?.unwrap_or(cfg_fmt_text_default);
-        let c_fmt_integer = parse_spec_cell_format(fmt_integer)?.unwrap_or(cfg_fmt_int_default);
-        let c_fmt_decimal = parse_spec_cell_format(fmt_decimal)?.unwrap_or(cfg_fmt_dec_default);
+        let c_fmt_text = parse_cell_format_patch(fmt_text)?.unwrap_or(cfg_fmt_text_default);
+        let c_fmt_integer = parse_cell_format_patch(fmt_integer)?.unwrap_or(cfg_fmt_int_default);
+        let c_fmt_decimal = parse_cell_format_patch(fmt_decimal)?.unwrap_or(cfg_fmt_dec_default);
         let c_fmt_scientific =
-            parse_spec_cell_format(fmt_scientific)?.unwrap_or(cfg_fmt_sci_default);
-        let c_fmt_header = parse_spec_cell_format(fmt_header)?.unwrap_or(cfg_fmt_header_default);
+            parse_cell_format_patch(fmt_scientific)?.unwrap_or(cfg_fmt_sci_default);
+        let c_fmt_header = parse_cell_format_patch(fmt_header)?.unwrap_or(cfg_fmt_header_default);
 
-        let cfg_write_options = parse_spec_xlsx_write_options(write_options)?
+        let cfg_options_write = parse_xlsx_write_options(options_write)?
             .unwrap_or_else(derive_default_xlsx_write_options);
 
         let inner = RsXlsxWriter::new(
@@ -93,7 +104,7 @@ impl PyXlsxWriter {
             c_fmt_decimal,
             c_fmt_scientific,
             c_fmt_header,
-            cfg_write_options,
+            cfg_options_write,
         );
 
         Ok(Self { file_out, inner })
@@ -121,18 +132,18 @@ impl PyXlsxWriter {
         let l_reports = self.inner.report();
 
         let module_spec = py.import("axiomkit.io.xlsx.spec")?;
-        let cls_spec_sheet_slice = module_spec.getattr("SheetSliceSpec")?;
-        let cls_spec_xlsx_report = module_spec.getattr("XlsxReport")?;
+        let cls_sheet_slice = module_spec.getattr(PY_CLASS_SHEET_SLICE)?;
+        let cls_xlsx_report = module_spec.getattr(PY_CLASS_XLSX_REPORT)?;
 
         let mut l_report_obj = Vec::with_capacity(l_reports.len());
         for report in l_reports {
             let mut l_sheet_obj = Vec::with_capacity(report.sheets.len());
             for sheet in report.sheets {
-                l_sheet_obj.push(create_sheet_slice_object(&cls_spec_sheet_slice, &sheet)?);
+                l_sheet_obj.push(create_sheet_slice_object(&cls_sheet_slice, &sheet)?);
             }
 
             let inst_report =
-                cls_spec_xlsx_report.call1((PyList::new(py, l_sheet_obj)?, report.warnings))?;
+                cls_xlsx_report.call1((PyList::new(py, l_sheet_obj)?, report.warnings))?;
             l_report_obj.push(inst_report.unbind());
         }
 
@@ -178,17 +189,17 @@ impl PyXlsxWriter {
             None => None,
         };
 
-        let cfg_sheet_write_options = XlsxSheetWriteOptionsSpec {
+        let cfg_sheet_write_options = XlsxSheetWriteOptions {
             cols_integer: parse_column_refs(cols_integer)?,
             cols_decimal: parse_column_refs(cols_decimal)?,
             num_frozen_cols,
             num_frozen_rows,
             should_merge_header,
             should_keep_missing_values,
-            policy_autofit: parse_spec_autofit_cells_policy(policy_autofit)?
-                .unwrap_or_else(AutofitCellsPolicySpec::default),
-            policy_scientific: parse_spec_scientific_policy(policy_scientific)?
-                .unwrap_or_else(ScientificPolicySpec::default),
+            policy_autofit: parse_autofit_policy(policy_autofit)?
+                .unwrap_or_else(AutofitPolicy::default),
+            policy_scientific: parse_scientific_policy(policy_scientific)?
+                .unwrap_or_else(ScientificPolicy::default),
         };
 
         slf.inner
@@ -206,7 +217,7 @@ impl PyXlsxWriter {
 
 fn create_sheet_slice_object(
     cls_spec_sheet_slice: &Bound<'_, PyAny>,
-    sheet: &SheetSliceSpec,
+    sheet: &SheetSlice,
 ) -> PyResult<Py<PyAny>> {
     let inst_sheet = cls_spec_sheet_slice.call1((
         sheet.sheet_name.clone(),
@@ -306,7 +317,7 @@ fn derive_arrow_schema_from_stream_field(field: &ArrowField) -> PyResult<ArrowSc
     }
 }
 
-fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<CellFormatSpec>> {
+fn parse_cell_format_patch(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<CellFormatPatch>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -314,7 +325,7 @@ fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Cel
         return Ok(None);
     }
 
-    Ok(Some(CellFormatSpec {
+    Ok(Some(CellFormatPatch {
         font_name: extract_optional_attr::<String>(obj, "font_name")?,
         font_size: extract_optional_attr::<i64>(obj, "font_size")?,
         bold: extract_optional_attr::<bool>(obj, "bold")?,
@@ -333,9 +344,7 @@ fn parse_spec_cell_format(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Cel
     }))
 }
 
-fn parse_spec_xlsx_write_options(
-    obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<XlsxWriteOptionsSpec>> {
+fn parse_xlsx_write_options(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<XlsxWriteOptions>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -343,10 +352,10 @@ fn parse_spec_xlsx_write_options(
         return Ok(None);
     }
 
-    let mut cfg_write_options = derive_default_xlsx_write_options();
+    let mut cfg_options_write = derive_default_xlsx_write_options();
 
     if let Some(value_policy_obj) = extract_optional_attr_bound(obj, "value_policy")? {
-        let mut value_policy = XlsxValuePolicySpec::default();
+        let mut value_policy = XlsxValuePolicy::default();
         if let Some(v) = extract_optional_attr::<String>(&value_policy_obj, "missing_value_str")? {
             value_policy.missing_value_str = v;
         }
@@ -366,58 +375,58 @@ fn parse_spec_xlsx_write_options(
                 IntegerCoerceMode::Strict
             };
         }
-        cfg_write_options.value_policy = value_policy;
+        cfg_options_write.value_policy = value_policy;
     }
 
     if let Some(v) = extract_optional_attr::<bool>(obj, "should_keep_missing_values")? {
-        cfg_write_options.should_keep_missing_values = v;
+        cfg_options_write.should_keep_missing_values = v;
     }
     if let Some(v) = extract_optional_attr::<bool>(obj, "should_infer_numeric_cols")? {
-        cfg_write_options.should_infer_numeric_cols = v;
+        cfg_options_write.should_infer_numeric_cols = v;
     }
     if let Some(v) = extract_optional_attr::<bool>(obj, "should_infer_integer_cols")? {
-        cfg_write_options.should_infer_integer_cols = v;
+        cfg_options_write.should_infer_integer_cols = v;
     }
 
     if let Some(row_chunk_policy_obj) = extract_optional_attr_bound(obj, "row_chunk_policy")? {
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "width_large")? {
-            cfg_write_options.row_chunk_policy.width_large = v;
+            cfg_options_write.row_chunk_policy.width_large = v;
         }
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "width_medium")? {
-            cfg_write_options.row_chunk_policy.width_medium = v;
+            cfg_options_write.row_chunk_policy.width_medium = v;
         }
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "size_large")? {
-            cfg_write_options.row_chunk_policy.size_large = v;
+            cfg_options_write.row_chunk_policy.size_large = v;
         }
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "size_medium")? {
-            cfg_write_options.row_chunk_policy.size_medium = v;
+            cfg_options_write.row_chunk_policy.size_medium = v;
         }
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "size_default")? {
-            cfg_write_options.row_chunk_policy.size_default = v;
+            cfg_options_write.row_chunk_policy.size_default = v;
         }
         if let Some(v) = extract_optional_attr::<usize>(&row_chunk_policy_obj, "fixed_size")? {
-            cfg_write_options.row_chunk_policy.fixed_size = Some(v);
+            cfg_options_write.row_chunk_policy.fixed_size = Some(v);
         }
     }
 
     if let Some(base_format_patch_obj) = extract_optional_attr_bound(obj, "base_format_patch")?
-        && let Some(fmt_patch) = parse_spec_cell_format(Some(&base_format_patch_obj))?
+        && let Some(fmt_patch) = parse_cell_format_patch(Some(&base_format_patch_obj))?
     {
-        cfg_write_options.base_format_patch = fmt_patch;
+        cfg_options_write.base_format_patch = fmt_patch;
     }
 
-    Ok(Some(cfg_write_options))
+    Ok(Some(cfg_options_write))
 }
 
-fn parse_rule_autofit_columns(value: &str) -> PyResult<AutofitColumnsRule> {
+fn parse_autofit_mode(value: &str) -> PyResult<AutofitMode> {
     match value {
-        "none" => Ok(AutofitColumnsRule::None),
-        "header" => Ok(AutofitColumnsRule::Header),
-        "body" => Ok(AutofitColumnsRule::Body),
-        "all" => Ok(AutofitColumnsRule::All),
-        _ => Err(PyValueError::new_err(
-            "policy_autofit.rule_columns must be one of: 'none', 'header', 'body', 'all'.",
-        )),
+        "none" => Ok(AutofitMode::None),
+        "header" => Ok(AutofitMode::Header),
+        "body" => Ok(AutofitMode::Body),
+        "all" => Ok(AutofitMode::All),
+        _ => Err(PyValueError::new_err(format!(
+            "{PY_ARG_POLICY_AUTOFIT}.mode must be one of: 'none', 'header', 'body', 'all'."
+        ))),
     }
 }
 
@@ -427,15 +436,13 @@ fn parse_rule_scientific_scope(value: &str) -> PyResult<ScientificScope> {
         "decimal" => Ok(ScientificScope::Decimal),
         "integer" => Ok(ScientificScope::Integer),
         "all" => Ok(ScientificScope::All),
-        _ => Err(PyValueError::new_err(
-            "policy_scientific.rule_scope must be one of: 'none', 'decimal', 'integer', 'all'.",
-        )),
+        _ => Err(PyValueError::new_err(format!(
+            "{PY_ARG_POLICY_SCIENTIFIC}.scope must be one of: 'none', 'decimal', 'integer', 'all'."
+        ))),
     }
 }
 
-fn parse_spec_autofit_cells_policy(
-    obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<AutofitCellsPolicySpec>> {
+fn parse_autofit_policy(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<AutofitPolicy>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -443,10 +450,10 @@ fn parse_spec_autofit_cells_policy(
         return Ok(None);
     }
 
-    let mut policy = AutofitCellsPolicySpec::default();
+    let mut policy = AutofitPolicy::default();
 
-    if let Some(v) = extract_optional_attr::<String>(obj, "rule_columns")? {
-        policy.rule_columns = parse_rule_autofit_columns(&v)?;
+    if let Some(v) = extract_optional_attr::<String>(obj, "mode")? {
+        policy.mode = parse_autofit_mode(&v)?;
     }
     if obj.hasattr("height_body_inferred_max")? {
         let val = obj.getattr("height_body_inferred_max")?;
@@ -469,9 +476,7 @@ fn parse_spec_autofit_cells_policy(
     Ok(Some(policy))
 }
 
-fn parse_spec_scientific_policy(
-    obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<ScientificPolicySpec>> {
+fn parse_scientific_policy(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<ScientificPolicy>> {
     let Some(obj) = obj else {
         return Ok(None);
     };
@@ -479,10 +484,10 @@ fn parse_spec_scientific_policy(
         return Ok(None);
     }
 
-    let mut policy = ScientificPolicySpec::default();
+    let mut policy = ScientificPolicy::default();
 
-    if let Some(v) = extract_optional_attr::<String>(obj, "rule_scope")? {
-        policy.rule_scope = parse_rule_scientific_scope(&v)?;
+    if let Some(v) = extract_optional_attr::<String>(obj, "scope")? {
+        policy.scope = parse_rule_scientific_scope(&v)?;
     }
     if let Some(v) = extract_optional_attr::<f64>(obj, "thr_min")? {
         policy.thr_min = v;
@@ -600,6 +605,7 @@ fn extract_optional_attr_bound<'py>(
 }
 
 pub fn register_xlsx_bindings(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    debug_assert!(!PY_VISIBLE_SYMBOLS.is_empty());
     module.add_class::<PyXlsxWriter>()?;
     Ok(())
 }

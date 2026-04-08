@@ -3,22 +3,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::constant::{
-    ColumnIdentifier, N_LEN_EXCEL_SHEET_NAME_MAX, N_NCOLS_EXCEL_MAX, N_NROWS_EXCEL_MAX,
-    TUP_EXCEL_ILLEGAL,
+    ColumnIdentifier, LEN_EXCEL_SHEET_NAME_MAX, NCOLS_EXCEL_MAX, NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
 };
 use crate::spec::{
-    CellBorderSpec, CellValue, IntegerCoerceMode, SheetHorizontalMergeSpec, SheetSliceSpec,
-    XlsxReport, XlsxRowChunkPolicySpec, XlsxValuePolicySpec,
+    CellBorder, CellValue, IntegerCoerceMode, SheetHorizontalMerge, SheetSlice, XlsxReport,
+    XlsxRowChunkPolicy, XlsxValuePolicy,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // #region CellValueConversion
 
 /// Convert `NaN`/`Inf` to policy string; return error for finite values.
-pub fn convert_nan_inf_to_str(
-    x: f64,
-    value_policy: &XlsxValuePolicySpec,
-) -> Result<String, String> {
+pub fn convert_nan_inf_to_str(x: f64, value_policy: &XlsxValuePolicy) -> Result<String, String> {
     if x.is_nan() {
         return Ok(value_policy.nan_str.clone());
     }
@@ -38,7 +34,7 @@ pub fn convert_cell_value(
     is_numeric_col: bool,
     is_integer_col: bool,
     should_keep_missing_values: bool,
-    value_policy: &XlsxValuePolicySpec,
+    value_policy: &XlsxValuePolicy,
 ) -> CellValue {
     if matches!(value, CellValue::None) {
         return if should_keep_missing_values {
@@ -204,7 +200,7 @@ pub fn select_sorted_indices_from_refs(
 // #region RowChunking
 
 /// Derive row chunk size from dataframe width and chunk policy.
-pub fn calculate_row_chunk_size(width_df: usize, policy: &XlsxRowChunkPolicySpec) -> usize {
+pub fn calculate_row_chunk_size(width_df: usize, policy: &XlsxRowChunkPolicy) -> usize {
     if let Some(fixed_size) = policy.fixed_size {
         return fixed_size;
     }
@@ -244,10 +240,7 @@ pub fn sanitize_sheet_name(name: &str, replace_to: &str) -> String {
         sheet_name = "Sheet".to_string();
     }
 
-    sheet_name
-        .chars()
-        .take(N_LEN_EXCEL_SHEET_NAME_MAX)
-        .collect()
+    sheet_name.chars().take(LEN_EXCEL_SHEET_NAME_MAX).collect()
 }
 
 /// Split logical dataframe range into Excel-compliant sheet slices.
@@ -257,16 +250,14 @@ pub fn plan_sheet_slices(
     height_header: usize,
     sheet_name: &str,
     report: &mut XlsxReport,
-) -> Result<Vec<SheetSliceSpec>, String> {
+) -> Result<Vec<SheetSlice>, String> {
     if height_header == 0 {
         return Err("height_header must be >= 1.".to_string());
     }
 
-    let max_data_rows = N_NROWS_EXCEL_MAX
-        .checked_sub(height_header)
-        .ok_or_else(|| {
-            format!("Header too tall: height_header={height_header} exceeds Excel limit.")
-        })?;
+    let max_data_rows = NROWS_EXCEL_MAX.checked_sub(height_header).ok_or_else(|| {
+        format!("Header too tall: height_header={height_header} exceeds Excel limit.")
+    })?;
 
     if max_data_rows == 0 {
         return Err(format!(
@@ -277,7 +268,7 @@ pub fn plan_sheet_slices(
     let mut col_slices = Vec::new();
     let mut col_start = 0;
     while col_start < width_df {
-        let col_end = usize::min(width_df, col_start + N_NCOLS_EXCEL_MAX);
+        let col_end = usize::min(width_df, col_start + NCOLS_EXCEL_MAX);
         col_slices.push((col_start, col_end));
         col_start = col_end;
     }
@@ -308,7 +299,7 @@ pub fn plan_sheet_slices(
                 create_sheet_identifier(sheet_name, part_idx)
             };
 
-            sheet_slices.push(SheetSliceSpec {
+            sheet_slices.push(SheetSlice {
                 sheet_name: part_sheet_name,
                 row_start_inclusive: *row_start,
                 row_end_exclusive: *row_end,
@@ -332,7 +323,7 @@ pub fn plan_sheet_slices(
 /// Create suffixed sheet name (`base_1`, `base_2`, ...), respecting length cap.
 pub fn create_sheet_identifier(base_name: &str, part_idx_1based: usize) -> String {
     let sheet_name_suffix = format!("_{part_idx_1based}");
-    let base_name_max_len = N_LEN_EXCEL_SHEET_NAME_MAX.saturating_sub(sheet_name_suffix.len());
+    let base_name_max_len = LEN_EXCEL_SHEET_NAME_MAX.saturating_sub(sheet_name_suffix.len());
 
     let sheet_name_base: String = base_name
         .chars()
@@ -374,7 +365,7 @@ pub fn derive_contiguous_ranges(sorted_indices: &[usize]) -> Vec<(usize, usize)>
 /// Plan horizontal merges for repeated non-empty header text per row.
 pub fn plan_horizontal_merges(
     header_grid: &[Vec<String>],
-) -> BTreeMap<usize, Vec<SheetHorizontalMergeSpec>> {
+) -> BTreeMap<usize, Vec<SheetHorizontalMerge>> {
     let mut horizontal_merges_by_row = BTreeMap::new();
     if header_grid.is_empty() {
         return horizontal_merges_by_row;
@@ -404,7 +395,7 @@ pub fn plan_horizontal_merges(
                 horizontal_merges_by_row
                     .entry(row_idx)
                     .or_insert_with(Vec::new)
-                    .push(SheetHorizontalMergeSpec {
+                    .push(SheetHorizontalMerge {
                         row_idx_start: row_idx,
                         col_idx_start: col_idx,
                         col_idx_end: col_idx_end - 1,
@@ -466,7 +457,7 @@ pub fn _generate_vertical_runs(header_grid: &[Vec<String>]) -> Vec<(usize, usize
 /// Build border plan to simulate vertical merge visuals without merge cells.
 pub fn plan_vertical_visual_merge_borders(
     header_grid: &[Vec<String>],
-) -> BTreeMap<(usize, usize), CellBorderSpec> {
+) -> BTreeMap<(usize, usize), CellBorder> {
     let mut vertical_merge_border_plan = BTreeMap::new();
 
     for _run in _generate_vertical_runs(header_grid) {
@@ -475,7 +466,7 @@ pub fn plan_vertical_visual_merge_borders(
             let row_idx = _row_idx;
             vertical_merge_border_plan.insert(
                 (row_idx, col_idx),
-                CellBorderSpec {
+                CellBorder {
                     top: if row_idx == row_start { 1 } else { 0 },
                     bottom: if row_idx == row_end { 1 } else { 0 },
                     left: 1,
@@ -499,7 +490,7 @@ pub fn apply_vertical_run_text_blankout(header_grid: &mut [Vec<String>]) {
 
 /// Build lookup map for cells covered by a horizontal merge (excluding anchor).
 pub fn derive_horizontal_merge_tracker(
-    row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SheetHorizontalMergeSpec>>,
+    row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SheetHorizontalMerge>>,
 ) -> BTreeMap<(usize, usize), bool> {
     let mut merged_cells_tracker = BTreeMap::new();
 
