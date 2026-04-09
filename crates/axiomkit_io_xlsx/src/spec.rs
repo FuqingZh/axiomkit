@@ -262,9 +262,9 @@ impl Default for XlsxRowChunkPolicy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScientificScope {
     /// Disable scientific auto-selection entirely.
-    None,
-    /// Apply to decimal-like numeric columns (default).
     #[default]
+    None,
+    /// Apply to decimal-like numeric columns.
     Decimal,
     /// Apply to integer columns.
     Integer,
@@ -288,7 +288,7 @@ pub struct ScientificPolicy {
 impl Default for ScientificPolicy {
     fn default() -> Self {
         Self {
-            scope: ScientificScope::Decimal,
+            scope: ScientificScope::None,
             thr_min: 0.0001,
             thr_max: 1_000_000_000_000.0,
             height_body_inferred_max: Some(20_000),

@@ -33,3 +33,7 @@ Rust rename map:
 - `ColumnFormatPlanSpec` -> `ColumnFormatPlan`
 - `XlsxSheetWriteOptionsSpec` -> `XlsxSheetWriteOptions`
 - `AutofitColumnsRule` -> `AutofitMode`
+
+Behavior changes:
+- `ScientificPolicy` default now disables scientific formatting. To enable,
+  pass `ScientificPolicy(scope="decimal")` (or other scopes) explicitly.

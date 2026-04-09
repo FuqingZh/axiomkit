@@ -99,7 +99,7 @@ class XlsxWriteOptions:
 
 @dataclass(frozen=True, slots=True)
 class ScientificPolicy:
-    scope: Literal["none", "decimal", "integer", "all"] = "decimal"
+    scope: Literal["none", "decimal", "integer", "all"] = "none"
     thr_min: float = 0.0001
     thr_max: float = 1_000_000_000_000.0
     height_body_inferred_max: int | None = 20_000

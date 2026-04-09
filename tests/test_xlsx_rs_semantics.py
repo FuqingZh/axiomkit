@@ -243,6 +243,25 @@ def test_scientific_policy_scope_none_disables_scientific(tmp_path: Path) -> Non
     assert "E+" not in c_fmt
 
 
+def test_scientific_policy_default_disabled(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    df = pl.DataFrame({"metric": [1e-8, 2e-8, 3e-8]})
+    path_file_out = tmp_path / "scientific_default_disabled.xlsx"
+
+    with XlsxWriter(path_file_out) as writer:
+        writer.write_sheet(
+            df=df,
+            sheet_name="S",
+            policy_autofit=AutofitPolicy(mode="none"),
+        )
+
+    c_type, _, c_fmt = read_cell(path_file_out, "A2")
+    assert c_type != "s"
+    assert "E+" not in c_fmt
+
+
 def test_scientific_policy_scope_integer_applies_to_integer_cols(tmp_path: Path) -> None:
     if not is_rs_backend_available():
         pytest.skip("Rust xlsx backend is unavailable")
