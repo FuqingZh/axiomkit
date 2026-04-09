@@ -37,3 +37,5 @@ Rust rename map:
 Behavior changes:
 - `ScientificPolicy` default now disables scientific formatting. To enable,
   pass `ScientificPolicy(scope="decimal")` (or other scopes) explicitly.
+- `ScientificPolicy.height_body_inferred_max` has been removed (no longer used in
+  per-cell scientific formatting).

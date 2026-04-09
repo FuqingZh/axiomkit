@@ -281,8 +281,6 @@ pub struct ScientificPolicy {
     pub thr_min: f64,
     /// Upper absolute bound trigger (inclusive).
     pub thr_max: f64,
-    /// Max body rows to inspect for scientific inference (unused in per-cell mode).
-    pub height_body_inferred_max: Option<usize>,
 }
 
 impl Default for ScientificPolicy {
@@ -291,7 +289,6 @@ impl Default for ScientificPolicy {
             scope: ScientificScope::None,
             thr_min: 0.0001,
             thr_max: 1_000_000_000_000.0,
-            height_body_inferred_max: Some(20_000),
         }
     }
 }

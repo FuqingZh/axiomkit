@@ -187,8 +187,7 @@ class XlsxWriter:
                     policy_scientific=ScientificPolicy(
                         scope="decimal",
                         thr_min=0.0001,
-                        thr_max=1_000_000_000_000.0,
-                        height_body_inferred_max=20_000
+                        thr_max=1_000_000_000_000.0
                     ),
                 )
             ```

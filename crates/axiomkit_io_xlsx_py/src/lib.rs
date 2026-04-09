@@ -495,15 +495,6 @@ fn parse_scientific_policy(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Sc
     if let Some(v) = extract_optional_attr::<f64>(obj, "thr_max")? {
         policy.thr_max = v;
     }
-    if obj.hasattr("height_body_inferred_max")? {
-        let val = obj.getattr("height_body_inferred_max")?;
-        if val.is_none() {
-            policy.height_body_inferred_max = None;
-        } else {
-            policy.height_body_inferred_max = Some(val.extract::<usize>()?);
-        }
-    }
-
     Ok(Some(policy))
 }
 
