@@ -233,7 +233,7 @@ impl XlsxWriter {
         } else {
             cols_idx_integer_specified
         };
-            let header_row_count = header_grid.len();
+        let header_row_count = header_grid.len();
 
         let mut report = XlsxReport {
             sheets: vec![],
@@ -294,7 +294,9 @@ impl XlsxWriter {
                 .iter()
                 .map(derive_rust_xlsx_format)
                 .collect();
-            let fmt_scientific_patch = self.fmt_scientific.merge(&self.options_write.base_format_patch);
+            let fmt_scientific_patch = self
+                .fmt_scientific
+                .merge(&self.options_write.base_format_patch);
             let fmt_scientific = derive_rust_xlsx_format(&fmt_scientific_patch);
             let fmt_header = derive_rust_xlsx_format(&self.fmt_header);
 
