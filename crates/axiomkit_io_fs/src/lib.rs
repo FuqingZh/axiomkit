@@ -13,7 +13,7 @@ pub mod spec;
 mod util;
 
 pub use copy::copy_tree;
-pub use report::{CopyReport, CopyReportBuilder};
+pub use report::CopyReport;
 pub use spec::{
     CopyDepthLimitMode, CopyDirectoryConflictMode, CopyErrorRecord, CopyFileConflictMode,
     CopyOptionsSpec, CopyPatternMode, CopySymlinkMode, CopyTreeError,

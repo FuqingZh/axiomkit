@@ -68,7 +68,7 @@ impl fmt::Display for CopyReport {
 
 /// Mutable accumulator for copy statistics.
 #[derive(Debug, Default, Clone)]
-pub struct CopyReportBuilder {
+pub(crate) struct CopyReportBuilder {
     report: CopyReport,
 }
 
@@ -76,7 +76,7 @@ impl CopyReportBuilder {
     /// Increment one or more named counters by `value`.
     ///
     /// Unknown names are ignored intentionally to keep call-sites concise.
-    pub fn add_counts(&mut self, fields: &[&str], value: u64) {
+    pub(crate) fn add_counts(&mut self, fields: &[&str], value: u64) {
         for &_field in fields {
             match _field {
                 "cnt_matched" => self.report.cnt_matched += value,
@@ -89,42 +89,37 @@ impl CopyReportBuilder {
     }
 
     /// Increment matched count by one.
-    pub fn add_matched(&mut self) {
+    pub(crate) fn add_matched(&mut self) {
         self.report.cnt_matched += 1;
     }
 
     /// Increment scanned count by one.
-    pub fn add_scanned(&mut self) {
+    pub(crate) fn add_scanned(&mut self) {
         self.report.cnt_scanned += 1;
     }
 
     /// Increment copied count by one.
-    pub fn add_copied(&mut self) {
+    pub(crate) fn add_copied(&mut self) {
         self.report.cnt_copied += 1;
     }
 
     /// Increment skipped count by one.
-    pub fn add_skipped(&mut self) {
+    pub(crate) fn add_skipped(&mut self) {
         self.report.cnt_skipped += 1;
     }
 
     /// Add warning message.
-    pub fn add_warning(&mut self, warning: String) {
+    pub(crate) fn add_warning(&mut self, warning: String) {
         self.report.warnings.push(warning);
     }
 
     /// Add one path-scoped error.
-    pub fn add_error(&mut self, path: std::path::PathBuf, exception: String) {
+    pub(crate) fn add_error(&mut self, path: std::path::PathBuf, exception: String) {
         self.report.errors.push(CopyErrorRecord { path, exception });
     }
 
-    /// Get current report snapshot.
-    pub fn as_report(&self) -> &CopyReport {
-        &self.report
-    }
-
     /// Finalize builder into immutable report.
-    pub fn build(self) -> CopyReport {
+    pub(crate) fn build(self) -> CopyReport {
         self.report
     }
 }
