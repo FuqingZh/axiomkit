@@ -141,6 +141,7 @@ def test_infer_numeric_uses_decimal_format_by_default(tmp_path: Path) -> None:
             df=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
+            policy_scientific=ScientificPolicy(scope="decimal"),
         )
 
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
