@@ -148,8 +148,10 @@ class XlsxWriter:
                 - ``False``: Write missing, NaN, and Inf values as blank cells.
                 - ``None``: Use the writer-level option for missing value handling.
             policy_autofit: Column autofit policy applied to the sheet.
-            policy_scientific: Scientific-number formatting policy applied to the
-                sheet.
+            policy_scientific: Scientific-number formatting policy applied per
+                cell. Only numeric values that fall within the policy scope and
+                trigger thresholds use the scientific format; other cells keep
+                the column base format.
 
         Returns:
             Self: The current writer instance for fluent chaining.

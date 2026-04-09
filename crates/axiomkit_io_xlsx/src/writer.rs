@@ -49,8 +49,6 @@ struct ColumnFormatPlanOptions<'a> {
     pub cols_idx_integer: &'a [usize],
     /// Slice-local explicit decimal column indices.
     pub cols_idx_decimal: Option<&'a [usize]>,
-    /// Slice-local scientific column indices.
-    pub cols_idx_scientific: &'a [usize],
     /// Optional per-column format overrides.
     pub cols_fmt_overrides: &'a BTreeMap<usize, CellFormatPatch>,
     /// Base text format.
@@ -59,8 +57,6 @@ struct ColumnFormatPlanOptions<'a> {
     pub fmt_integer: &'a CellFormatPatch,
     /// Base decimal format.
     pub fmt_decimal: &'a CellFormatPatch,
-    /// Base scientific format.
-    pub fmt_scientific: &'a CellFormatPatch,
     /// Global write options.
     pub options_write: &'a XlsxWriteOptions,
 }
@@ -237,15 +233,7 @@ impl XlsxWriter {
         } else {
             cols_idx_integer_specified
         };
-        let cols_idx_scientific = derive_scientific_column_indices(
-            df_data,
-            &cols_idx_numeric,
-            &cols_idx_integer,
-            &cols_idx_decimal_specified,
-            &options.policy_scientific,
-        )?;
-
-        let header_row_count = header_grid.len();
+            let header_row_count = header_grid.len();
 
         let mut report = XlsxReport {
             sheets: vec![],
@@ -285,12 +273,6 @@ impl XlsxWriter {
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let cols_idx_scientific_slice = derive_slice_indices(
-                &cols_idx_scientific,
-                sheet_slice.col_start_inclusive,
-                sheet_slice.col_end_exclusive,
-            );
-
             let column_format_plan = plan_column_formats(ColumnFormatPlanOptions {
                 width_data: sheet_slice.col_end_exclusive - sheet_slice.col_start_inclusive,
                 cols_idx_numeric: &cols_idx_numeric_slice,
@@ -300,12 +282,10 @@ impl XlsxWriter {
                 } else {
                     Some(&cols_idx_decimal_slice)
                 },
-                cols_idx_scientific: &cols_idx_scientific_slice,
                 cols_fmt_overrides: &BTreeMap::new(),
                 fmt_text: &self.fmt_text,
                 fmt_integer: &self.fmt_integer,
                 fmt_decimal: &self.fmt_decimal,
-                fmt_scientific: &self.fmt_scientific,
                 options_write: &self.options_write,
             });
 
@@ -314,6 +294,8 @@ impl XlsxWriter {
                 .iter()
                 .map(derive_rust_xlsx_format)
                 .collect();
+            let fmt_scientific_patch = self.fmt_scientific.merge(&self.options_write.base_format_patch);
+            let fmt_scientific = derive_rust_xlsx_format(&fmt_scientific_patch);
             let fmt_header = derive_rust_xlsx_format(&self.fmt_header);
 
             let header_grid_slice = header_grid
@@ -344,6 +326,7 @@ impl XlsxWriter {
                                 false,
                                 false,
                                 false,
+                                &options.policy_scientific,
                                 should_keep_missing_values,
                                 &value_policy,
                             ),
@@ -370,8 +353,9 @@ impl XlsxWriter {
                 cols_idx_numeric_slice.iter().copied().collect();
             let integer_cols_idx: BTreeSet<usize> =
                 cols_idx_integer_slice.iter().copied().collect();
-            let scientific_cols_idx: BTreeSet<usize> =
-                cols_idx_scientific_slice.iter().copied().collect();
+            let decimal_cols_idx: BTreeSet<usize> =
+                cols_idx_decimal_slice.iter().copied().collect();
+            let is_decimal_explicit = !decimal_cols_idx.is_empty();
 
             let mut cols_slice = Vec::with_capacity(data_formats_by_col.len());
             let rows_data_in_sheet =
@@ -402,7 +386,13 @@ impl XlsxWriter {
                         let (col_idx, col) = _col;
                         let is_numeric_col = numeric_cols_idx.contains(&col_idx);
                         let is_integer_col = integer_cols_idx.contains(&col_idx);
-                        let is_scientific_col = scientific_cols_idx.contains(&col_idx);
+                        let is_decimal_specified = decimal_cols_idx.contains(&col_idx);
+                        let is_scientific_candidate = is_scientific_candidate_col(
+                            &options.policy_scientific,
+                            is_integer_col,
+                            is_decimal_explicit,
+                            is_decimal_specified,
+                        );
 
                         let value_raw = derive_cell_value_from_any_value(
                             col.get(row_local)
@@ -427,19 +417,32 @@ impl XlsxWriter {
                                     &value,
                                     is_numeric_col,
                                     is_integer_col,
-                                    is_scientific_col,
+                                    is_scientific_candidate,
+                                    &options.policy_scientific,
                                     should_keep_missing_values,
                                     &value_policy,
                                 ),
                             );
                         }
 
+                        let should_use_scientific = should_use_scientific_value(
+                            &value,
+                            is_numeric_col,
+                            is_scientific_candidate,
+                            &options.policy_scientific,
+                        );
+                        let fmt_cell = if should_use_scientific {
+                            &fmt_scientific
+                        } else {
+                            &data_formats_by_col[col_idx]
+                        };
+
                         write_cell_with_format(
                             worksheet,
                             header_row_count + row_local,
                             col_idx,
                             &value,
-                            &data_formats_by_col[col_idx],
+                            fmt_cell,
                         )?;
                     }
 
@@ -527,7 +530,8 @@ fn estimate_width_len(
     value: &CellValue,
     is_numeric_col: bool,
     is_integer_col: bool,
-    is_scientific_col: bool,
+    is_scientific_candidate: bool,
+    policy_scientific: &ScientificPolicy,
     should_keep_missing_values: bool,
     value_policy: &XlsxValuePolicy,
 ) -> usize {
@@ -546,9 +550,6 @@ fn estimate_width_len(
             if !is_numeric_col {
                 return estimate_unicode_string_width(s);
             }
-            if is_scientific_col && let Ok(val) = s.parse::<f64>() {
-                return format!("{val:.2E}").len();
-            }
             if is_integer_col && let Ok(val) = s.parse::<i64>() {
                 return val.to_string().len();
             }
@@ -558,7 +559,12 @@ fn estimate_width_len(
             if !is_numeric_col {
                 return estimate_unicode_string_width(&n.to_string());
             }
-            if is_scientific_col {
+            if should_use_scientific_value(
+                value,
+                is_numeric_col,
+                is_scientific_candidate,
+                policy_scientific,
+            ) {
                 return format!("{n:.2E}").len();
             }
             if is_integer_col {
@@ -582,12 +588,10 @@ fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan
         cols_idx_numeric,
         cols_idx_integer,
         cols_idx_decimal,
-        cols_idx_scientific,
         cols_fmt_overrides,
         fmt_text,
         fmt_integer,
         fmt_decimal,
-        fmt_scientific,
         options_write,
     } = options;
 
@@ -595,16 +599,12 @@ fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan
     let integer_cols_idx: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
     let decimal_cols_idx: Option<BTreeSet<usize>> =
         cols_idx_decimal.map(|vals| vals.iter().copied().collect());
-    let scientific_cols_idx: BTreeSet<usize> = cols_idx_scientific.iter().copied().collect();
-
     let mut fmts_base_by_col = Vec::with_capacity(width_data);
     let mut fmts_by_col = Vec::with_capacity(width_data);
 
     for _col_idx in 0..width_data {
         let col_idx = _col_idx;
-        let mut fmt_base = if scientific_cols_idx.contains(&col_idx) {
-            fmt_scientific.clone()
-        } else if integer_cols_idx.contains(&col_idx) {
+        let mut fmt_base = if integer_cols_idx.contains(&col_idx) {
             fmt_integer.clone()
         } else if decimal_cols_idx
             .as_ref()
@@ -666,6 +666,48 @@ fn validate_policy_scientific(policy_scientific: &ScientificPolicy) -> Result<()
     Ok(())
 }
 
+fn is_scientific_candidate_col(
+    policy_scientific: &ScientificPolicy,
+    is_integer_col: bool,
+    is_decimal_explicit: bool,
+    is_decimal_specified: bool,
+) -> bool {
+    match policy_scientific.scope {
+        ScientificScope::None => false,
+        ScientificScope::Decimal => {
+            if is_integer_col {
+                false
+            } else if is_decimal_explicit {
+                is_decimal_specified
+            } else {
+                true
+            }
+        }
+        ScientificScope::Integer => is_integer_col,
+        ScientificScope::All => true,
+    }
+}
+
+fn should_use_scientific_value(
+    value: &CellValue,
+    is_numeric_col: bool,
+    is_scientific_candidate: bool,
+    policy_scientific: &ScientificPolicy,
+) -> bool {
+    if !is_numeric_col || !is_scientific_candidate {
+        return false;
+    }
+    let CellValue::Number(value_num) = value else {
+        return false;
+    };
+    if !value_num.is_finite() {
+        return false;
+    }
+    let value_abs = value_num.abs();
+    value_abs >= policy_scientific.thr_max
+        || (value_abs > 0.0 && value_abs < policy_scientific.thr_min)
+}
+
 fn derive_numeric_column_indices(df: &DataFrame) -> Vec<usize> {
     df.get_columns()
         .iter()
@@ -686,100 +728,6 @@ fn derive_integer_column_indices(df: &DataFrame, cols_idx_numeric: &[usize]) -> 
         .copied()
         .filter(|idx| df.get_columns()[*idx].dtype().is_integer())
         .collect()
-}
-
-fn derive_scientific_column_indices(
-    df: &DataFrame,
-    cols_idx_numeric: &[usize],
-    cols_idx_integer: &[usize],
-    cols_idx_decimal_specified: &[usize],
-    policy_scientific: &ScientificPolicy,
-) -> Result<Vec<usize>, String> {
-    if cols_idx_numeric.is_empty() || matches!(policy_scientific.scope, ScientificScope::None) {
-        return Ok(vec![]);
-    }
-
-    let integer_cols_idx: BTreeSet<usize> = cols_idx_integer.iter().copied().collect();
-    let decimal_cols_idx_specified: BTreeSet<usize> =
-        cols_idx_decimal_specified.iter().copied().collect();
-    let is_decimal_explicit = !decimal_cols_idx_specified.is_empty();
-
-    let rows_sample_max = match policy_scientific.height_body_inferred_max {
-        Some(max_rows) => usize::min(df.height(), max_rows),
-        None => df.height(),
-    };
-    let cols = df.get_columns();
-
-    let mut scientific_cols = Vec::new();
-    for _col_idx in cols_idx_numeric {
-        let col_idx = *_col_idx;
-        let is_integer_col = integer_cols_idx.contains(&col_idx);
-        let should_include = match policy_scientific.scope {
-            ScientificScope::None => false,
-            ScientificScope::Decimal => {
-                if is_integer_col {
-                    false
-                } else if is_decimal_explicit {
-                    decimal_cols_idx_specified.contains(&col_idx)
-                } else {
-                    true
-                }
-            }
-            ScientificScope::Integer => is_integer_col,
-            ScientificScope::All => true,
-        };
-        if !should_include {
-            continue;
-        }
-
-        let col = &cols[col_idx];
-        let mut should_use_scientific = false;
-        for _row_idx in 0..rows_sample_max {
-            let row_idx = _row_idx;
-            let value = col
-                .get(row_idx)
-                .map_err(|err| format!("Failed to inspect scientific trigger value: {err}"))?;
-            let Some(value_num) = derive_f64_from_any_value(value) else {
-                continue;
-            };
-            if !value_num.is_finite() {
-                continue;
-            }
-
-            let value_abs = value_num.abs();
-            if value_abs >= policy_scientific.thr_max
-                || (value_abs > 0.0 && value_abs < policy_scientific.thr_min)
-            {
-                should_use_scientific = true;
-                break;
-            }
-        }
-
-        if should_use_scientific {
-            scientific_cols.push(col_idx);
-        }
-    }
-
-    Ok(scientific_cols)
-}
-
-fn derive_f64_from_any_value(value: AnyValue<'_>) -> Option<f64> {
-    match value {
-        AnyValue::UInt8(val) => Some(val as f64),
-        AnyValue::UInt16(val) => Some(val as f64),
-        AnyValue::UInt32(val) => Some(val as f64),
-        AnyValue::UInt64(val) => Some(val as f64),
-        AnyValue::Int8(val) => Some(val as f64),
-        AnyValue::Int16(val) => Some(val as f64),
-        AnyValue::Int32(val) => Some(val as f64),
-        AnyValue::Int64(val) => Some(val as f64),
-        AnyValue::Int128(val) => Some(val as f64),
-        AnyValue::Float32(val) => Some(val as f64),
-        AnyValue::Float64(val) => Some(val),
-        AnyValue::String(val) => val.parse::<f64>().ok(),
-        AnyValue::StringOwned(val) => val.parse::<f64>().ok(),
-        _ => None,
-    }
 }
 
 fn derive_string_grid_from_dataframe(df: &DataFrame) -> Result<Vec<Vec<String>>, String> {
