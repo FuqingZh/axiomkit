@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 use crate::spec::{CellFormatPatch, XlsxWriteOptions};
 
 /// Excel worksheet maximum row count.
-pub const NROWS_EXCEL_MAX: usize = 1_048_576;
+pub const NROWS_SHEET_MAX: usize = 1_048_576;
 /// Excel worksheet maximum column count.
-pub const NCOLS_EXCEL_MAX: usize = 16_384;
+pub const NCOLS_SHEET_MAX: usize = 16_384;
 /// Excel sheet name maximum length.
-pub const LEN_EXCEL_SHEET_NAME_MAX: usize = 31;
+pub const LEN_SHEET_NAME_MAX: usize = 31;
 /// Characters not allowed in sheet names.
-pub const TUP_EXCEL_ILLEGAL: [&str; 7] = ["*", ":", "?", "/", "\\", "[", "]"];
+pub const SHEET_NAME_ILLEGAL_CHRS: [&str; 7] = ["*", ":", "?", "/", "\\", "[", "]"];
 
 /// Canonical format preset keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

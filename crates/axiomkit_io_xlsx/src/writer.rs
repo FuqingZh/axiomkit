@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use polars::prelude::{AnyValue, DataFrame, IpcReader, SerReader};
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet, XlsxError};
 
-use crate::constant::{ColumnIdentifier, LEN_EXCEL_SHEET_NAME_MAX};
+use crate::constant::{ColumnIdentifier, LEN_SHEET_NAME_MAX};
 use crate::spec::{
     AutofitMode, AutofitPolicy, CellFormatPatch, CellValue, ColumnFormatPlan, ScientificPolicy,
     ScientificScope, SheetSlice, XlsxReport, XlsxValuePolicy, XlsxWriteOptions,
@@ -40,7 +40,7 @@ pub struct XlsxSheetWriteOptions {
     pub policy_scientific: ScientificPolicy,
 }
 
-pub struct ColumnFormatPlanOptions<'a> {
+struct ColumnFormatPlanOptions<'a> {
     /// Number of columns in current sheet slice.
     pub width_data: usize,
     /// Slice-local numeric column indices.
@@ -502,14 +502,14 @@ impl XlsxWriter {
 
         let base_name: String = name
             .chars()
-            .take(usize::max(1, LEN_EXCEL_SHEET_NAME_MAX - 3))
+            .take(usize::max(1, LEN_SHEET_NAME_MAX - 3))
             .collect();
 
         let mut idx = 2usize;
         loop {
             let candidate: String = format!("{base_name}__{idx}")
                 .chars()
-                .take(LEN_EXCEL_SHEET_NAME_MAX)
+                .take(LEN_SHEET_NAME_MAX)
                 .collect();
             if !self.existing_sheet_names.contains(&candidate) {
                 self.existing_sheet_names.insert(candidate.clone());
@@ -523,7 +523,7 @@ impl XlsxWriter {
 /// Estimate displayed width units for one normalized cell value.
 ///
 /// Used by autofit inference logic.
-pub fn estimate_width_len(
+fn estimate_width_len(
     value: &CellValue,
     is_numeric_col: bool,
     is_integer_col: bool,
@@ -576,7 +576,7 @@ fn estimate_unicode_string_width(s: &str) -> usize {
 }
 
 /// Build per-column base/final format plans for current sheet slice.
-pub fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan {
+fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan {
     let ColumnFormatPlanOptions {
         width_data,
         cols_idx_numeric,

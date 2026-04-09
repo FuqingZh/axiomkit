@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::constant::{
-    ColumnIdentifier, LEN_EXCEL_SHEET_NAME_MAX, NCOLS_EXCEL_MAX, NROWS_EXCEL_MAX, TUP_EXCEL_ILLEGAL,
+    ColumnIdentifier, LEN_SHEET_NAME_MAX, NCOLS_SHEET_MAX, NROWS_SHEET_MAX, SHEET_NAME_ILLEGAL_CHRS,
 };
 use crate::spec::{
     CellBorder, CellValue, IntegerCoerceMode, SheetHorizontalMerge, SheetSlice, XlsxReport,
@@ -14,7 +14,7 @@ use crate::spec::{
 // #region CellValueConversion
 
 /// Convert `NaN`/`Inf` to policy string; return error for finite values.
-pub fn convert_nan_inf_to_str(x: f64, value_policy: &XlsxValuePolicy) -> Result<String, String> {
+fn convert_nan_inf_to_str(x: f64, value_policy: &XlsxValuePolicy) -> Result<String, String> {
     if x.is_nan() {
         return Ok(value_policy.nan_str.clone());
     }
@@ -26,6 +26,64 @@ pub fn convert_nan_inf_to_str(x: f64, value_policy: &XlsxValuePolicy) -> Result<
         });
     }
     Err("Input is neither NaN nor Inf.".to_string())
+}
+
+fn convert_infinite_number(
+    value: f64,
+    should_keep_missing_values: bool,
+    value_policy: &XlsxValuePolicy,
+) -> CellValue {
+    if should_keep_missing_values {
+        CellValue::String(
+            convert_nan_inf_to_str(value, value_policy)
+                .unwrap_or_else(|_| value_policy.nan_str.clone()),
+        )
+    } else {
+        CellValue::None
+    }
+}
+
+fn convert_numeric_cell_to_integer(
+    value: f64,
+    should_keep_missing_values: bool,
+    value_policy: &XlsxValuePolicy,
+) -> CellValue {
+    if value.is_infinite() {
+        return convert_infinite_number(value, should_keep_missing_values, value_policy);
+    }
+
+    if value_policy.integer_coerce == IntegerCoerceMode::Coerce {
+        return CellValue::Number(value as i64 as f64);
+    }
+
+    if value.fract() == 0.0 {
+        return CellValue::Number(value);
+    }
+
+    CellValue::String(value.to_string())
+}
+
+fn convert_string_cell_to_integer(
+    value: &str,
+    should_keep_missing_values: bool,
+    value_policy: &XlsxValuePolicy,
+) -> CellValue {
+    if let Ok(_val) = value.parse::<i64>() {
+        return CellValue::Number(_val as f64);
+    }
+
+    if value_policy.integer_coerce == IntegerCoerceMode::Strict {
+        return CellValue::String(value.to_owned());
+    }
+
+    if let Ok(_val) = value.parse::<f64>() {
+        if _val.is_infinite() {
+            return convert_infinite_number(_val, should_keep_missing_values, value_policy);
+        }
+        return CellValue::Number(_val as i64 as f64);
+    }
+
+    CellValue::String(value.to_owned())
 }
 
 /// Normalize cell value according to numeric/integer flags and value policy.
@@ -54,79 +112,33 @@ pub fn convert_cell_value(
 
     if is_integer_col {
         return match value {
-            CellValue::Number(n) => {
-                if !n.is_finite() {
-                    if should_keep_missing_values {
-                        CellValue::String(
-                            convert_nan_inf_to_str(*n, value_policy)
-                                .unwrap_or_else(|_| value_policy.nan_str.clone()),
-                        )
-                    } else {
-                        CellValue::None
-                    }
-                } else if value_policy.integer_coerce == IntegerCoerceMode::Coerce {
-                    CellValue::Number(*n as i64 as f64)
-                } else if n.fract() == 0.0 {
-                    CellValue::Number(*n)
-                } else {
-                    CellValue::String(n.to_string())
-                }
+            CellValue::Number(_val) => {
+                convert_numeric_cell_to_integer(*_val, should_keep_missing_values, value_policy)
             }
-            CellValue::String(s) => {
-                if value_policy.integer_coerce == IntegerCoerceMode::Coerce {
-                    if let Ok(v) = s.parse::<i64>() {
-                        CellValue::Number(v as f64)
-                    } else if let Ok(v) = s.parse::<f64>() {
-                        if v.is_finite() {
-                            CellValue::Number(v as i64 as f64)
-                        } else if should_keep_missing_values {
-                            CellValue::String(
-                                convert_nan_inf_to_str(v, value_policy)
-                                    .unwrap_or_else(|_| value_policy.nan_str.clone()),
-                            )
-                        } else {
-                            CellValue::None
-                        }
-                    } else {
-                        CellValue::String(s.clone())
-                    }
-                } else if let Ok(v) = s.parse::<i64>() {
-                    CellValue::Number(v as f64)
-                } else {
-                    CellValue::String(s.clone())
-                }
+            CellValue::String(_val) => {
+                convert_string_cell_to_integer(_val, should_keep_missing_values, value_policy)
             }
             CellValue::None => CellValue::None,
         };
     }
 
     match value {
-        CellValue::Number(n) => {
-            if n.is_finite() {
-                CellValue::Number(*n)
-            } else if should_keep_missing_values {
-                CellValue::String(
-                    convert_nan_inf_to_str(*n, value_policy)
-                        .unwrap_or_else(|_| value_policy.nan_str.clone()),
-                )
+        CellValue::Number(_val) => {
+            if _val.is_finite() {
+                CellValue::Number(*_val)
             } else {
-                CellValue::None
+                convert_infinite_number(*_val, should_keep_missing_values, value_policy)
             }
         }
-        CellValue::String(s) => {
-            if let Ok(v) = s.parse::<f64>() {
+        CellValue::String(_val) => {
+            if let Ok(v) = _val.parse::<f64>() {
                 if v.is_finite() {
                     CellValue::Number(v)
-                } else if should_keep_missing_values {
-                    CellValue::String(
-                        convert_nan_inf_to_str(v, value_policy)
-                            .unwrap_or_else(|_| value_policy.nan_str.clone()),
-                    )
                 } else {
-                    CellValue::None
+                    convert_infinite_number(v, should_keep_missing_values, value_policy)
                 }
             } else {
-                CellValue::String(s.clone())
+                CellValue::String(_val.clone())
             }
         }
         CellValue::None => CellValue::None,
@@ -144,19 +156,17 @@ pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
     }
 
     let mut positions_by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
-    for _idx_name in columns.iter().enumerate() {
-        let (idx, name) = _idx_name;
-        positions_by_name.entry(name).or_default().push(idx);
+    for (_idx, _name) in columns.iter().enumerate() {
+        positions_by_name.entry(_name).or_default().push(_idx);
     }
 
     let message = positions_by_name
         .iter()
-        .filter_map(|(name, positions)| {
-            if positions.len() > 1 {
+        .filter_map(|(_name, _positions)| {
+            if _positions.len() > 1 {
                 Some(format!(
-                    "{name:?} x{} at indices {:?}",
-                    positions.len(),
-                    positions
+                    "{_name:?} x{} at indices {_positions:?}",
+                    _positions.len()
                 ))
             } else {
                 None
@@ -178,13 +188,13 @@ pub fn select_sorted_indices_from_refs(
     };
 
     let mut indices = BTreeSet::new();
-    for ref_col in refs {
-        match ref_col {
+    for _ref_col in refs {
+        match _ref_col {
             ColumnIdentifier::Index(idx) => {
                 indices.insert(*idx);
             }
             ColumnIdentifier::Name(name) => {
-                let Some(idx) = columns.iter().position(|column_name| column_name == name) else {
+                let Some(idx) = columns.iter().position(|_colname| _colname == name) else {
                     return Err(format!("Column not found: {name:?}"));
                 };
                 indices.insert(idx);
@@ -232,7 +242,7 @@ pub fn generate_row_chunks(n_rows_total: usize, size_rows_chunk: usize) -> Vec<(
 /// Replace invalid chars and trim to valid Excel sheet name.
 pub fn sanitize_sheet_name(name: &str, replace_to: &str) -> String {
     let mut sheet_name = name.to_string();
-    for _illegal in TUP_EXCEL_ILLEGAL {
+    for _illegal in SHEET_NAME_ILLEGAL_CHRS {
         sheet_name = sheet_name.replace(_illegal, replace_to);
     }
     sheet_name = sheet_name.trim().to_string();
@@ -240,7 +250,7 @@ pub fn sanitize_sheet_name(name: &str, replace_to: &str) -> String {
         sheet_name = "Sheet".to_string();
     }
 
-    sheet_name.chars().take(LEN_EXCEL_SHEET_NAME_MAX).collect()
+    sheet_name.chars().take(LEN_SHEET_NAME_MAX).collect()
 }
 
 /// Split logical dataframe range into Excel-compliant sheet slices.
@@ -255,7 +265,7 @@ pub fn plan_sheet_slices(
         return Err("height_header must be >= 1.".to_string());
     }
 
-    let max_data_rows = NROWS_EXCEL_MAX.checked_sub(height_header).ok_or_else(|| {
+    let max_data_rows = NROWS_SHEET_MAX.checked_sub(height_header).ok_or_else(|| {
         format!("Header too tall: height_header={height_header} exceeds Excel limit.")
     })?;
 
@@ -268,7 +278,7 @@ pub fn plan_sheet_slices(
     let mut col_slices = Vec::new();
     let mut col_start = 0;
     while col_start < width_df {
-        let col_end = usize::min(width_df, col_start + NCOLS_EXCEL_MAX);
+        let col_end = usize::min(width_df, col_start + NCOLS_SHEET_MAX);
         col_slices.push((col_start, col_end));
         col_start = col_end;
     }
@@ -321,9 +331,9 @@ pub fn plan_sheet_slices(
 }
 
 /// Create suffixed sheet name (`base_1`, `base_2`, ...), respecting length cap.
-pub fn create_sheet_identifier(base_name: &str, part_idx_1based: usize) -> String {
+fn create_sheet_identifier(base_name: &str, part_idx_1based: usize) -> String {
     let sheet_name_suffix = format!("_{part_idx_1based}");
-    let base_name_max_len = LEN_EXCEL_SHEET_NAME_MAX.saturating_sub(sheet_name_suffix.len());
+    let base_name_max_len = LEN_SHEET_NAME_MAX.saturating_sub(sheet_name_suffix.len());
 
     let sheet_name_base: String = base_name
         .chars()
@@ -410,7 +420,7 @@ pub fn plan_horizontal_merges(
 }
 
 /// Generate contiguous vertical runs `(col, row_start, row_end, text)`.
-pub fn _generate_vertical_runs(header_grid: &[Vec<String>]) -> Vec<(usize, usize, usize, String)> {
+fn _generate_vertical_runs(header_grid: &[Vec<String>]) -> Vec<(usize, usize, usize, String)> {
     let mut run_collection = Vec::new();
     if header_grid.is_empty() {
         return run_collection;
