@@ -156,8 +156,7 @@ def enforce_release_rust_backend() -> Path:
         raise RuntimeError(
             "Benchmark requires release Rust backend, but current module points to "
             f"{path_file_backend}. "
-            "Rebuild with `cargo build -p axiomkit_py --release` and repoint "
-            "`_axiomkit_rs.so` to `target/release/lib_axiomkit_rs.so`."
+            "Rebuild with `./scripts/rebuild_py_extension.sh --release`."
         )
 
     return path_file_backend
