@@ -161,6 +161,7 @@ def test_scientific_format_trigger_for_extreme_values(tmp_path: Path) -> None:
             df=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
+            policy_scientific=ScientificPolicy(scope="decimal"),
         )
 
     c_type, _, c_fmt = read_cell(path_file_out, "A2")
