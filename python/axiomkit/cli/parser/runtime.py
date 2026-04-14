@@ -1,10 +1,13 @@
 """Runtime parser helpers independent from optional rich formatter deps."""
 
-from __future__ import annotations
-
 import argparse
+from contextvars import ContextVar
 
 _ATTR_EXPLICIT_DESTS = "__axiomkit_cli_parser_explicit_dests__"
+_CTX_PARSE_DEPTH: ContextVar[int] = ContextVar(
+    "axiomkit_cli_parser_parse_depth",
+    default=0,
+)
 
 
 def mark_namespace_dest_explicit(
@@ -58,21 +61,33 @@ class ArgumentParser(argparse.ArgumentParser):
             if hasattr(namespace, _ATTR_EXPLICIT_DESTS)
             else None
         )
+        parse_depth_previous = _CTX_PARSE_DEPTH.get()
+        is_outermost_parse = parse_depth_previous == 0
+        token_parse_depth = _CTX_PARSE_DEPTH.set(parse_depth_previous + 1)
 
-        parsed_namespace, extras = super().parse_known_args(args=args, namespace=namespace)
-
+        parsed_namespace = namespace
+        extras: list[str] = []
         try:
-            self._finalize_lazy_defaults(
-                namespace=parsed_namespace,
-                initial_dests=initial_dests,
+            parsed_namespace, extras = super().parse_known_args(
+                args=args,
+                namespace=namespace,
             )
+            if is_outermost_parse:
+                self._finalize_lazy_defaults(
+                    namespace=parsed_namespace,
+                    initial_dests=initial_dests,
+                )
             return parsed_namespace, extras
         finally:
-            if explicit_state_previous is None:
-                if hasattr(parsed_namespace, _ATTR_EXPLICIT_DESTS):
-                    delattr(parsed_namespace, _ATTR_EXPLICIT_DESTS)
-            else:
-                setattr(parsed_namespace, _ATTR_EXPLICIT_DESTS, explicit_state_previous)
+            if is_outermost_parse:
+                if explicit_state_previous is None:
+                    if hasattr(parsed_namespace, _ATTR_EXPLICIT_DESTS):
+                        delattr(parsed_namespace, _ATTR_EXPLICIT_DESTS)
+                else:
+                    setattr(
+                        parsed_namespace, _ATTR_EXPLICIT_DESTS, explicit_state_previous
+                    )
+            _CTX_PARSE_DEPTH.reset(token_parse_depth)
 
     def parse_args(
         self,

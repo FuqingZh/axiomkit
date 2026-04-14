@@ -8,6 +8,7 @@ import pytest
 from axiomkit.cli.parser import (  # noqa: E402
     ArgumentParser,
     ActionHexColor,
+    ActionNumericRange,
     GroupKey,
     ParserBuilder,
     ParamSpec,
@@ -272,6 +273,27 @@ def test_unselected_subcommand_defaults_are_not_finalized() -> None:
     ns = parser.parse_args(["ok"])
 
     assert ns.command == "ok"
+
+
+def test_selected_subcommand_explicit_value_beats_lazy_default() -> None:
+    app = ParserBuilder(prog="demo")
+    (
+        app.command("sub", help="Selected command")
+        .group(GroupKey.THRESHOLDS)
+        .add_argument(
+            "--value",
+            action=ActionNumericRange.non_negative(value_kind="int"),
+            default=0,
+        )
+        .end()
+        .done()
+    )
+
+    parser = app.build()
+    ns = parser.parse_args(["sub", "--value", "7"])
+
+    assert ns.command == "sub"
+    assert ns.value == 7
 
 
 def test_registries_accept_should_sort_false() -> None:
