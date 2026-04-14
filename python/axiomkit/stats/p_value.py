@@ -38,11 +38,10 @@ def normalize_p_value_adjustment_mode(
 def calculate_p_adjustment_array(
     p_values: np.ndarray,
     *,
-    rule_p_adjust: PValueAdjustmentMode | PValueAdjustmentType | str | None = None,
+    rule_p_adjust: PValueAdjustmentMode | None = None,
 ) -> np.ndarray:
     if rule_p_adjust is None:
         return p_values.copy()
-    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
     p_adjust = np.full_like(p_values, np.nan, dtype=np.float64)
     mask_valid = np.isfinite(p_values)
