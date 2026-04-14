@@ -1,11 +1,13 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self
-import polars as pl
+from typing import Literal, Self
+
 import numpy as np
+import polars as pl
 
 from ...p_value import PValueAdjustmentMode
+
 
 @dataclass(frozen=True, slots=True)
 class TTestContext:
@@ -20,12 +22,16 @@ class AlternativeHypothesisMode(StrEnum):
     LESS = "less"
     GREATER = "greater"
 
+
+AlternativeHypothesisType = Literal["two-sided", "less", "greater"]
+
+
 @dataclass(frozen=True, slots=True)
 class TStatisticsResult:
     mean_diff: np.ndarray
     t_statistic: np.ndarray
     degrees_freedom: np.ndarray
-    
+
 
 @dataclass(frozen=True, slots=True)
 class ContrastSpec:
@@ -93,4 +99,3 @@ class ContrastPlan:
             group_ref_values=tuple(group_ref_values),
             group_used=tuple(group_used),
         )
-

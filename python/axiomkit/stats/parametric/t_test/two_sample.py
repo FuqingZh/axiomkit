@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 
 from ...p_value import (
-    PValueAdjustmentMode,
+    PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
@@ -29,7 +29,7 @@ from .constant import (
     SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
 )
 from .spec import (
-    AlternativeHypothesisMode,
+    AlternativeHypothesisType,
     ContrastPlan,
     ContrastSpec,
     TStatisticsResult,
@@ -131,9 +131,9 @@ def calculate_t_test_two_sample(
     *,
     contrasts: ContrastSpec | Sequence[ContrastSpec],
     col_feature: str | None = None,
-    rule_alternative: AlternativeHypothesisMode | str = "two-sided",
+    rule_alternative: AlternativeHypothesisType | str = "two-sided",
     should_assume_equal_variance: bool = False,
-    rule_p_adjust: PValueAdjustmentMode | str | None = None,
+    rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
     Calculate tidy two-sample t-tests from a long-format table.
@@ -148,14 +148,14 @@ def calculate_t_test_two_sample(
         col_group: Name of the column containing group labels for comparison.
         contrasts: Specification of group contrasts to test, as a :class:`ContrastSpec` or a sequence of :class:`ContrastSpec` items.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
-        rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisMode`.
+        rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisType`.
             - ``two-sided``: (Default) Test if means are different.
             - ``less``: Test if mean of group_test is less than mean of group_ref.
             - ``greater``: Test if mean of group_test is greater than mean of group_ref.
         should_assume_equal_variance:
             - ``False``: (Default) Use Welch's t-test, which does not assume equal population variances.
             - ``True``: Use Student's t-test, which assumes equal population variances.
-        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentMode`.
+        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentType`.
             - ``None``: (Default) No adjustment; return raw p-values.
             - ``bonferroni``: Adjust p-values using the Bonferroni correction.
             - ``bh``: Adjust p-values using the Benjamini-Hochberg procedure.
@@ -217,11 +217,7 @@ def calculate_t_test_two_sample(
     # #region Validate input arguments
     validate_column_layout_two_sample(col_value, col_group, col_feature)
     rule_alternative = normalize_alternative_hypothesis_mode(rule_alternative)
-    rule_p_adjust = (
-        normalize_p_value_adjustment_mode(rule_p_adjust)
-        if rule_p_adjust is not None
-        else None
-    )
+    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
     # #endregion
     ############################################################

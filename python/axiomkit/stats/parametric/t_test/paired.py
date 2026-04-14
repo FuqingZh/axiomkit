@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 
 from ...p_value import (
-    PValueAdjustmentMode,
+    PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
@@ -27,7 +27,7 @@ from .constant import (
     SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
 )
 from .spec import (
-    AlternativeHypothesisMode,
+    AlternativeHypothesisType,
     ContrastPlan,
     ContrastSpec,
     TStatisticsResult,
@@ -104,8 +104,8 @@ def calculate_t_test_paired(
     contrasts: ContrastSpec | Sequence[ContrastSpec],
     col_pair: str,
     col_feature: str | None = None,
-    rule_alternative: AlternativeHypothesisMode | str = "two-sided",
-    rule_p_adjust: PValueAdjustmentMode | str | None = None,
+    rule_alternative: AlternativeHypothesisType | str = "two-sided",
+    rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
     Calculate tidy paired t-tests from a long-format table.
@@ -122,12 +122,12 @@ def calculate_t_test_paired(
         contrasts: Specification of group contrasts to test, as a :class:`ContrastSpec` or a sequence of :class:`ContrastSpec` items.
         col_pair: Name of the column identifying matched pairs.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
-        rule_alternative: Alternative hypothesis for the paired t-test. See :class:`AlternativeHypothesisMode`.
+        rule_alternative: Alternative hypothesis for the paired t-test. See :class:`AlternativeHypothesisType`.
             - "two-sided": (Default) Test if the mean difference is not equal to zero.
             - "less": Test if the mean difference is less than zero.
             - "greater": Test if the mean difference is greater than zero.
-        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentMode`.
-            - None (Default): No p-value adjustment.
+        rule_p_adjust: Method for adjusting p-values for multiple testing.
+            - ``None``: (Default) No adjustment; return raw p-values.
             - "bonferroni": Adjust p-values using the Bonferroni correction.
             - "bh": Adjust p-values using the Benjamini-Hochberg procedure.
             - "by": Adjust p-values using the Benjamini-Yekutieli procedure.
@@ -153,11 +153,7 @@ def calculate_t_test_paired(
     # #region Validate input arguments
     validate_column_layout_paired(col_value, col_group, col_pair, col_feature)
     rule_alternative = normalize_alternative_hypothesis_mode(rule_alternative)
-    rule_p_adjust = (
-        normalize_p_value_adjustment_mode(rule_p_adjust)
-        if rule_p_adjust is not None
-        else None
-    )
+    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
     # #endregion
     ############################################################
     # #region Validate input DataFrame schema and normalize input data

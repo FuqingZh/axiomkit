@@ -3,11 +3,15 @@ import polars as pl
 from polars._typing import SchemaDict
 from scipy import stats as sci_stats
 
-from .spec import AlternativeHypothesisMode, TStatisticsResult
+from .spec import (
+    AlternativeHypothesisMode,
+    AlternativeHypothesisType,
+    TStatisticsResult,
+)
 
 
 def normalize_alternative_hypothesis_mode(
-    value: AlternativeHypothesisMode | str,
+    value: AlternativeHypothesisMode | AlternativeHypothesisType | str,
 ) -> AlternativeHypothesisMode:
     """Validate and normalize an alternative hypothesis mode."""
     if isinstance(value, AlternativeHypothesisMode):

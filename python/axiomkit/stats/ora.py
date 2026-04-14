@@ -5,6 +5,7 @@ from numpy.typing import ArrayLike
 from scipy import stats
 
 from axiomkit.stats.p_value import (
+    PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
@@ -81,7 +82,7 @@ def calculate_ora(
     *,
     foreground_elements: set[str],
     background_elements: set[str] | None = None,
-    rule_p_adjust: str | None = "bh",
+    rule_p_adjust: PValueAdjustmentType | str | None = "bh",
     thr_bg_hits_min: int = 0,
     thr_bg_hits_max: int | None = None,
     thr_fg_hits_min: int = 0,
@@ -114,9 +115,10 @@ def calculate_ora(
                 `BgTotal` is ``len(background_elements)`` and the mapping table is restricted to those elements.
                 The provided universe may include elements not present in ``df`` (elements without any mapping),
                 those elements contribute to ``BgTotal`` but not to ``BgHits``.
-        rule_p_adjust (PValueAdjustmentMode | str | None, optional):
-            Method for p-value adjustment. see :class:`PValueAdjustmentMode`.
+        rule_p_adjust (PValueAdjustmentType | str | None, optional):
+            Method for p-value adjustment. see :class:`PValueAdjustmentType`.
             - "bh": (Default) Benjamini–Hochberg FDR;
+            - "by": Benjamini–Yekutieli FDR;
             - "bonferroni": Bonferroni correction;
             - None: no adjustment (PAdjust == PValue).
         thr_bg_hits_min (int, optional):
@@ -184,11 +186,7 @@ def calculate_ora(
         raise ValueError(
             f"Arg `thr_fg_hits_max` must be in [`thr_fg_hits_min`, ∞) or None, yours: '{thr_fg_hits_max}'."
         )
-    rule_p_adjust = (
-        normalize_p_value_adjustment_mode(rule_p_adjust)
-        if rule_p_adjust is not None
-        else None
-    )
+    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
     # endregion
     ############################################################
     # #region createEmptyResult

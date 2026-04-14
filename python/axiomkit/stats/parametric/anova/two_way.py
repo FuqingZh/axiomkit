@@ -5,7 +5,7 @@ import polars as pl
 from polars._typing import SchemaDict
 
 from ...p_value import (
-    PValueAdjustmentMode,
+    PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
@@ -198,7 +198,7 @@ def calculate_anova_two_way(
     col_group_b: str = "GroupB",
     *,
     col_feature: str | None = None,
-    rule_p_adjust: PValueAdjustmentMode | str | None = None,
+    rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
     Calculate tidy two-way ANOVA results from a long-format table.
@@ -214,7 +214,11 @@ def calculate_anova_two_way(
         col_group_a: Name of the first factor column.
         col_group_b: Name of the second factor column.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
-        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentMode`.
+        rule_p_adjust: Method for adjusting p-values for multiple testing.
+            - ``None``: (Default) No adjustment; return raw p-values.
+            - "bonferroni": Bonferroni correction.
+            - "bh": Benjamini-Hochberg correction.
+            - "by": Benjamini-Yekutieli correction.
 
     Returns:
         A Polars DataFrame containing two-way ANOVA results for each feature.
@@ -225,11 +229,7 @@ def calculate_anova_two_way(
         col_group_b=col_group_b,
         col_feature=col_feature,
     )
-    rule_p_adjust = (
-        normalize_p_value_adjustment_mode(rule_p_adjust)
-        if rule_p_adjust is not None
-        else None
-    )
+    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
     schema_input = read_frame_schema(df)
     cols_required = create_required_columns(

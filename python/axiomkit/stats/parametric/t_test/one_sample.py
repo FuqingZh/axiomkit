@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 
 from ...p_value import (
-    PValueAdjustmentMode,
+    PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
@@ -25,7 +25,7 @@ from .constant import (
     SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
 )
 from .spec import (
-    AlternativeHypothesisMode,
+    AlternativeHypothesisType,
     TStatisticsResult,
 )
 from .util import (
@@ -93,8 +93,8 @@ def calculate_t_test_one_sample(
     *,
     popmean: float,
     col_feature: str | None = None,
-    rule_alternative: AlternativeHypothesisMode | str = "two-sided",
-    rule_p_adjust: PValueAdjustmentMode | str | None = None,
+    rule_alternative: AlternativeHypothesisType | str = "two-sided",
+    rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
     Calculate tidy one-sample t-tests from a long-format table.
@@ -108,11 +108,11 @@ def calculate_t_test_one_sample(
         col_value: Name of the column containing numeric values to compare.
         popmean: Reference population mean used by the one-sample t-test.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
-        rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisMode`.
+        rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisType`.
             - ``two-sided``: (Default) Test if mean is different from `popmean`.
             - ``less``: Test if mean is less than `popmean`.
             - ``greater``: Test if mean is greater than `popmean`.
-        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentMode`.
+        rule_p_adjust: Method for adjusting p-values for multiple testing. See :class:`PValueAdjustmentType`.
             - ``None``: (Default) No adjustment; return raw p-values.
             - ``bonferroni``: Adjust p-values using the Bonferroni correction.
             - ``bh``: Adjust p-values using the Benjamini-Hochberg procedure.
@@ -166,11 +166,7 @@ def calculate_t_test_one_sample(
     # #region Validate input arguments
     validate_column_layout_one_sample(col_value, col_feature)
     rule_alternative = normalize_alternative_hypothesis_mode(rule_alternative)
-    rule_p_adjust = (
-        normalize_p_value_adjustment_mode(rule_p_adjust)
-        if rule_p_adjust is not None
-        else None
-    )
+    rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
     try:
         popmean = float(popmean)
