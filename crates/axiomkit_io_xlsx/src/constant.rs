@@ -38,7 +38,7 @@ pub enum ColumnIdentifier {
 }
 
 /// Build default named format presets used by [`crate::writer::XlsxWriter`].
-pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatPatch> {
+pub fn create_default_xlsx_formats() -> BTreeMap<String, CellFormatPatch> {
     let base_format_spec = CellFormatPatch {
         font_name: Some("Times New Roman".to_string()),
         font_size: Some(11),
@@ -84,6 +84,6 @@ pub fn derive_default_xlsx_formats() -> BTreeMap<String, CellFormatPatch> {
 }
 
 /// Build default write options.
-pub fn derive_default_xlsx_write_options() -> XlsxWriteOptions {
+pub fn create_default_xlsx_write_options() -> XlsxWriteOptions {
     XlsxWriteOptions::default()
 }

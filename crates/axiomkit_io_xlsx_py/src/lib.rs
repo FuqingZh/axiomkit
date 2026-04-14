@@ -5,7 +5,7 @@ use arrow::array::{StructArray, TryExtend};
 use arrow::datatypes::{ArrowDataType, ArrowSchema, Field as ArrowField};
 use arrow::record_batch::RecordBatchT;
 use axiomkit_io_xlsx::constant::{
-    ColumnIdentifier, derive_default_xlsx_formats, derive_default_xlsx_write_options,
+    ColumnIdentifier, create_default_xlsx_formats, create_default_xlsx_write_options,
 };
 use axiomkit_io_xlsx::spec::{
     AutofitMode, AutofitPolicy, CellFormatPatch, IntegerCoerceMode, ScientificPolicy,
@@ -65,7 +65,7 @@ impl PyXlsxWriter {
     ) -> PyResult<Self> {
         let path_file_out = PathBuf::from(&file_out);
 
-        let dict_default_fmts = derive_default_xlsx_formats();
+        let dict_default_fmts = create_default_xlsx_formats();
         let cfg_fmt_text_default = dict_default_fmts
             .get("text")
             .cloned()
@@ -95,7 +95,7 @@ impl PyXlsxWriter {
         let c_fmt_header = parse_cell_format_patch(fmt_header)?.unwrap_or(cfg_fmt_header_default);
 
         let cfg_options_write = parse_xlsx_write_options(options_write)?
-            .unwrap_or_else(derive_default_xlsx_write_options);
+            .unwrap_or_else(create_default_xlsx_write_options);
 
         let inner = RsXlsxWriter::new(
             path_file_out,
@@ -352,7 +352,7 @@ fn parse_xlsx_write_options(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<X
         return Ok(None);
     }
 
-    let mut cfg_options_write = derive_default_xlsx_write_options();
+    let mut cfg_options_write = create_default_xlsx_write_options();
 
     if let Some(value_policy_obj) = extract_optional_attr_bound(obj, "value_policy")? {
         let mut value_policy = XlsxValuePolicy::default();
