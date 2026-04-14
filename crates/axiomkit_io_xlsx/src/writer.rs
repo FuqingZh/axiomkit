@@ -14,7 +14,7 @@ use crate::spec::{
 };
 use crate::util::{
     apply_vertical_run_text_blankout, calculate_row_chunk_size, convert_cell_value,
-    derive_horizontal_merge_tracker, generate_row_chunks, plan_horizontal_merges,
+    create_horizontal_merge_tracker, generate_row_chunks, plan_horizontal_merges,
     plan_sheet_slices, sanitize_sheet_name, select_sorted_indices_from_refs,
     validate_unique_columns,
 };
@@ -122,7 +122,7 @@ impl XlsxWriter {
         }
         self.workbook
             .save(&self.path_file_out)
-            .map_err(derive_xlsx_error_text)?;
+            .map_err(format_xlsx_error_text)?;
         self.is_closed = true;
         Ok(())
     }
@@ -155,9 +155,9 @@ impl XlsxWriter {
             return Err("Cannot write after close().".to_string());
         }
 
-        let df_data = derive_dataframe_from_ipc_bytes(ipc_df)?;
+        let df_data = read_dataframe_from_ipc_bytes(ipc_df)?;
         let df_header = match ipc_df_header {
-            Some(val) => Some(derive_dataframe_from_ipc_bytes(val)?),
+            Some(val) => Some(read_dataframe_from_ipc_bytes(val)?),
             None => None,
         };
         self.write_sheet_from_dataframes(&df_data, sheet_name, df_header.as_ref(), options)
@@ -178,23 +178,20 @@ impl XlsxWriter {
             .unwrap_or(self.options_write.should_keep_missing_values);
         let value_policy = self.options_write.value_policy.clone();
 
-        let col_names: Vec<String> = df_data
-            .get_column_names_str()
-            .into_iter()
-            .map(ToString::to_string)
-            .collect();
+        let col_names: Vec<&str> = df_data.get_column_names_str();
         validate_unique_columns(&col_names)?;
 
         let width_df = col_names.len();
         let height_df = df_data.height();
 
-        let mut header_grid = vec![col_names.clone()];
+        let mut header_grid = vec![
+            col_names
+                .iter()
+                .map(|&_val| _val.to_string())
+                .collect::<Vec<String>>(),
+        ];
         if let Some(df_header_custom) = df_header {
-            let header_cols: Vec<String> = df_header_custom
-                .get_column_names_str()
-                .into_iter()
-                .map(ToString::to_string)
-                .collect();
+            let header_cols: Vec<&str> = df_header_custom.get_column_names_str();
             validate_unique_columns(&header_cols)?;
 
             let header_height = df_header_custom.height();
@@ -208,17 +205,17 @@ impl XlsxWriter {
                 return Err("df_header.width must equal df.width.".to_string());
             }
 
-            header_grid = derive_string_grid_from_dataframe(df_header_custom)?;
+            header_grid = extract_string_grid_from_dataframe(df_header_custom)?;
         }
 
         let cols_idx_numeric = if self.options_write.should_infer_numeric_cols {
-            derive_numeric_column_indices(df_data)
+            select_numeric_column_indices(df_data)
         } else {
             vec![]
         };
 
         let cols_idx_integer_inferred = if self.options_write.should_infer_integer_cols {
-            derive_integer_column_indices(df_data, &cols_idx_numeric)
+            select_integer_column_indices(df_data, &cols_idx_numeric)
         } else {
             vec![]
         };
@@ -252,23 +249,23 @@ impl XlsxWriter {
 
         for _sheet_slice in sheet_slices {
             let sheet_slice = _sheet_slice;
-            let sheet_name_unique = self.derive_unique_sheet_name(&sheet_slice.sheet_name);
+            let sheet_name_unique = self.ensure_unique_sheet_name(&sheet_slice.sheet_name);
             let worksheet = self.workbook.add_worksheet();
             worksheet
                 .set_name(&sheet_name_unique)
-                .map_err(derive_xlsx_error_text)?;
+                .map_err(format_xlsx_error_text)?;
 
-            let cols_idx_numeric_slice = derive_slice_indices(
+            let cols_idx_numeric_slice = calculate_slice_indices(
                 &cols_idx_numeric,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let cols_idx_integer_slice = derive_slice_indices(
+            let cols_idx_integer_slice = calculate_slice_indices(
                 &cols_idx_integer,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
             );
-            let cols_idx_decimal_slice = derive_slice_indices(
+            let cols_idx_decimal_slice = calculate_slice_indices(
                 &cols_idx_decimal_specified,
                 sheet_slice.col_start_inclusive,
                 sheet_slice.col_end_exclusive,
@@ -292,13 +289,13 @@ impl XlsxWriter {
             let data_formats_by_col: Vec<Format> = column_format_plan
                 .fmts_by_col
                 .iter()
-                .map(derive_rust_xlsx_format)
+                .map(create_rust_xlsx_format)
                 .collect();
             let fmt_scientific_patch = self
                 .fmt_scientific
                 .merge(&self.options_write.base_format_patch);
-            let fmt_scientific = derive_rust_xlsx_format(&fmt_scientific_patch);
-            let fmt_header = derive_rust_xlsx_format(&self.fmt_header);
+            let fmt_scientific = create_rust_xlsx_format(&fmt_scientific_patch);
+            let fmt_header = create_rust_xlsx_format(&self.fmt_header);
 
             let header_grid_slice = header_grid
                 .iter()
@@ -349,7 +346,7 @@ impl XlsxWriter {
                     cast_row_num(num_frozen_rows)?,
                     cast_col_num(options.num_frozen_cols)?,
                 )
-                .map_err(derive_xlsx_error_text)?;
+                .map_err(format_xlsx_error_text)?;
 
             let numeric_cols_idx: BTreeSet<usize> =
                 cols_idx_numeric_slice.iter().copied().collect();
@@ -396,7 +393,7 @@ impl XlsxWriter {
                             is_decimal_specified,
                         );
 
-                        let value_raw = derive_cell_value_from_any_value(
+                        let value_raw = convert_any_value_to_cell_value(
                             col.get(row_local)
                                 .map_err(|err| format!("Failed to access cell value: {err}"))?,
                         );
@@ -482,7 +479,7 @@ impl XlsxWriter {
                     );
                     worksheet
                         .set_column_width(cast_col_num(col_idx)?, width_final as f64)
-                        .map_err(derive_xlsx_error_text)?;
+                        .map_err(format_xlsx_error_text)?;
                 }
             }
 
@@ -499,7 +496,7 @@ impl XlsxWriter {
         Ok(())
     }
 
-    fn derive_unique_sheet_name(&mut self, name: &str) -> String {
+    fn ensure_unique_sheet_name(&mut self, name: &str) -> String {
         if !self.existing_sheet_names.contains(name) {
             self.existing_sheet_names.insert(name.to_string());
             return name.to_string();
@@ -637,7 +634,7 @@ fn plan_column_formats(options: ColumnFormatPlanOptions<'_>) -> ColumnFormatPlan
     }
 }
 
-fn derive_dataframe_from_ipc_bytes(ipc_df: &[u8]) -> Result<DataFrame, String> {
+fn read_dataframe_from_ipc_bytes(ipc_df: &[u8]) -> Result<DataFrame, String> {
     IpcReader::new(Cursor::new(ipc_df))
         .finish()
         .map_err(|err| format!("Failed to read IPC DataFrame bytes: {err}"))
@@ -710,7 +707,7 @@ fn should_use_scientific_value(
         || (value_abs > 0.0 && value_abs < policy_scientific.thr_min)
 }
 
-fn derive_numeric_column_indices(df: &DataFrame) -> Vec<usize> {
+fn select_numeric_column_indices(df: &DataFrame) -> Vec<usize> {
     df.get_columns()
         .iter()
         .enumerate()
@@ -724,7 +721,7 @@ fn derive_numeric_column_indices(df: &DataFrame) -> Vec<usize> {
         .collect()
 }
 
-fn derive_integer_column_indices(df: &DataFrame, cols_idx_numeric: &[usize]) -> Vec<usize> {
+fn select_integer_column_indices(df: &DataFrame, cols_idx_numeric: &[usize]) -> Vec<usize> {
     cols_idx_numeric
         .iter()
         .copied()
@@ -732,27 +729,25 @@ fn derive_integer_column_indices(df: &DataFrame, cols_idx_numeric: &[usize]) -> 
         .collect()
 }
 
-fn derive_string_grid_from_dataframe(df: &DataFrame) -> Result<Vec<Vec<String>>, String> {
+fn extract_string_grid_from_dataframe(df: &DataFrame) -> Result<Vec<Vec<String>>, String> {
     let height = df.height();
     let width = df.width();
     let cols = df.get_columns();
 
     let mut grid = vec![vec![String::new(); width]; height];
-    for _row in grid.iter_mut().enumerate() {
-        let (row_idx, row_values) = _row;
-        for _cell in row_values.iter_mut().enumerate() {
-            let (col_idx, cell_value) = _cell;
-            let value = cols[col_idx]
-                .get(row_idx)
+    for (_row_index, _row_values) in grid.iter_mut().enumerate() {
+        for (_col_index, _cell_value) in _row_values.iter_mut().enumerate() {
+            let value = cols[_col_index]
+                .get(_row_index)
                 .map_err(|err| format!("Failed to read header cell value: {err}"))?;
-            *cell_value = derive_header_text_from_any_value(value);
+            *_cell_value = format_header_text_from_any_value(value);
         }
     }
 
     Ok(grid)
 }
 
-fn derive_header_text_from_any_value(value: AnyValue<'_>) -> String {
+fn format_header_text_from_any_value(value: AnyValue<'_>) -> String {
     match value {
         AnyValue::Null => String::new(),
         // Keep raw string payload for header cells; AnyValue::to_string() wraps
@@ -763,7 +758,7 @@ fn derive_header_text_from_any_value(value: AnyValue<'_>) -> String {
     }
 }
 
-fn derive_cell_value_from_any_value(value: AnyValue<'_>) -> CellValue {
+fn convert_any_value_to_cell_value(value: AnyValue<'_>) -> CellValue {
     match value {
         AnyValue::Null => CellValue::None,
         AnyValue::String(val) => CellValue::String(val.to_string()),
@@ -784,7 +779,7 @@ fn derive_cell_value_from_any_value(value: AnyValue<'_>) -> CellValue {
     }
 }
 
-fn derive_slice_indices(
+fn calculate_slice_indices(
     indices: &[usize],
     col_start_inclusive: usize,
     col_end_exclusive: usize,
@@ -801,6 +796,30 @@ fn derive_slice_indices(
         .collect()
 }
 
+fn write_header_cell(
+    worksheet: &mut Worksheet,
+    row_idx: usize,
+    col_idx: usize,
+    text: &str,
+    fmt_header: &Format,
+) -> Result<(), String> {
+    if text.is_empty() {
+        worksheet
+            .write_blank(cast_row_num(row_idx)?, cast_col_num(col_idx)?, fmt_header)
+            .map_err(format_xlsx_error_text)?;
+    } else {
+        worksheet
+            .write_string_with_format(
+                cast_row_num(row_idx)?,
+                cast_col_num(col_idx)?,
+                text,
+                fmt_header,
+            )
+            .map_err(format_xlsx_error_text)?;
+    }
+    Ok(())
+}
+
 fn write_header(
     worksheet: &mut Worksheet,
     mut header_grid: Vec<Vec<String>>,
@@ -808,22 +827,9 @@ fn write_header(
     fmt_header: &Format,
 ) -> Result<(), String> {
     if !should_merge {
-        for (row_idx, row_values) in header_grid.iter().enumerate() {
-            for (col_idx, cell_value) in row_values.iter().enumerate() {
-                if cell_value.is_empty() {
-                    worksheet
-                        .write_blank(cast_row_num(row_idx)?, cast_col_num(col_idx)?, fmt_header)
-                        .map_err(derive_xlsx_error_text)?;
-                } else {
-                    worksheet
-                        .write_string_with_format(
-                            cast_row_num(row_idx)?,
-                            cast_col_num(col_idx)?,
-                            cell_value,
-                            fmt_header,
-                        )
-                        .map_err(derive_xlsx_error_text)?;
-                }
+        for (_row_idx, _row_values) in header_grid.iter().enumerate() {
+            for (_col_idx, _cell_value) in _row_values.iter().enumerate() {
+                write_header_cell(worksheet, _row_idx, _col_idx, _cell_value, fmt_header)?;
             }
         }
         return Ok(());
@@ -831,47 +837,34 @@ fn write_header(
 
     apply_vertical_run_text_blankout(&mut header_grid);
     let horizontal_merges_by_row = plan_horizontal_merges(&header_grid);
-    let horizontal_merge_tracker = derive_horizontal_merge_tracker(&horizontal_merges_by_row);
+    let horizontal_merge_tracker = create_horizontal_merge_tracker(&horizontal_merges_by_row);
 
-    for (row_idx, row_values) in header_grid.iter().enumerate() {
-        for (col_idx, cell_value) in row_values.iter().enumerate() {
+    for (_row_idx, _row_values) in header_grid.iter().enumerate() {
+        for (_col_idx, _cell_value) in _row_values.iter().enumerate() {
             if horizontal_merge_tracker
-                .get(&(row_idx, col_idx))
+                .get(&(_row_idx, _col_idx))
                 .copied()
                 .unwrap_or(false)
             {
                 continue;
             }
 
-            if cell_value.is_empty() {
-                worksheet
-                    .write_blank(cast_row_num(row_idx)?, cast_col_num(col_idx)?, fmt_header)
-                    .map_err(derive_xlsx_error_text)?;
-            } else {
-                worksheet
-                    .write_string_with_format(
-                        cast_row_num(row_idx)?,
-                        cast_col_num(col_idx)?,
-                        cell_value,
-                        fmt_header,
-                    )
-                    .map_err(derive_xlsx_error_text)?;
-            }
+            write_header_cell(worksheet, _row_idx, _col_idx, _cell_value, fmt_header)?;
         }
 
-        if let Some(merges) = horizontal_merges_by_row.get(&row_idx) {
+        if let Some(merges) = horizontal_merges_by_row.get(&_row_idx) {
             for _merge in merges {
                 let merge = _merge;
                 worksheet
                     .merge_range(
-                        cast_row_num(row_idx)?,
+                        cast_row_num(_row_idx)?,
                         cast_col_num(merge.col_idx_start)?,
-                        cast_row_num(row_idx)?,
+                        cast_row_num(_row_idx)?,
                         cast_col_num(merge.col_idx_end)?,
                         &merge.text,
                         fmt_header,
                     )
-                    .map_err(derive_xlsx_error_text)?;
+                    .map_err(format_xlsx_error_text)?;
             }
         }
     }
@@ -890,7 +883,7 @@ fn write_cell_with_format(
         CellValue::None => {
             worksheet
                 .write_blank(cast_row_num(row_idx)?, cast_col_num(col_idx)?, format)
-                .map_err(derive_xlsx_error_text)?;
+                .map_err(format_xlsx_error_text)?;
         }
         CellValue::String(val) => {
             worksheet
@@ -900,7 +893,7 @@ fn write_cell_with_format(
                     val,
                     format,
                 )
-                .map_err(derive_xlsx_error_text)?;
+                .map_err(format_xlsx_error_text)?;
         }
         CellValue::Number(val) => {
             worksheet
@@ -910,13 +903,13 @@ fn write_cell_with_format(
                     *val,
                     format,
                 )
-                .map_err(derive_xlsx_error_text)?;
+                .map_err(format_xlsx_error_text)?;
         }
     }
     Ok(())
 }
 
-fn derive_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
+fn create_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
     let mut format = Format::new();
 
     if let Some(val) = &spec.font_name {
@@ -933,12 +926,12 @@ fn derive_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
     }
 
     if let Some(val) = &spec.align
-        && let Some(align) = derive_format_align(val)
+        && let Some(align) = parse_format_align(val)
     {
         format = format.set_align(align);
     }
     if let Some(val) = &spec.valign
-        && let Some(align) = derive_format_align(val)
+        && let Some(align) = parse_format_align(val)
     {
         format = format.set_align(align);
     }
@@ -954,19 +947,19 @@ fn derive_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
     }
 
     if let Some(val) = spec.border {
-        format = format.set_border(derive_format_border(val));
+        format = format.set_border(parse_format_border(val));
     }
     if let Some(val) = spec.top {
-        format = format.set_border_top(derive_format_border(val));
+        format = format.set_border_top(parse_format_border(val));
     }
     if let Some(val) = spec.bottom {
-        format = format.set_border_bottom(derive_format_border(val));
+        format = format.set_border_bottom(parse_format_border(val));
     }
     if let Some(val) = spec.left {
-        format = format.set_border_left(derive_format_border(val));
+        format = format.set_border_left(parse_format_border(val));
     }
     if let Some(val) = spec.right {
-        format = format.set_border_right(derive_format_border(val));
+        format = format.set_border_right(parse_format_border(val));
     }
 
     if spec.text_wrap.unwrap_or(false) {
@@ -976,7 +969,7 @@ fn derive_rust_xlsx_format(spec: &CellFormatPatch) -> Format {
     format
 }
 
-fn derive_format_border(border: i64) -> FormatBorder {
+fn parse_format_border(border: i64) -> FormatBorder {
     match border {
         0 => FormatBorder::None,
         1 => FormatBorder::Thin,
@@ -996,7 +989,7 @@ fn derive_format_border(border: i64) -> FormatBorder {
     }
 }
 
-fn derive_format_align(align: &str) -> Option<FormatAlign> {
+fn parse_format_align(align: &str) -> Option<FormatAlign> {
     let value = align.trim().to_ascii_lowercase();
     match value.as_str() {
         "general" => Some(FormatAlign::General),
@@ -1024,6 +1017,6 @@ fn cast_col_num(value: usize) -> Result<u16, String> {
     u16::try_from(value).map_err(|_| format!("column index overflow: {value}"))
 }
 
-fn derive_xlsx_error_text(err: XlsxError) -> String {
+fn format_xlsx_error_text(err: XlsxError) -> String {
     format!("xlsx write error: {err}")
 }

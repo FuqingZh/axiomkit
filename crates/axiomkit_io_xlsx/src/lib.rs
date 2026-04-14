@@ -18,8 +18,8 @@ pub use spec::{
     XlsxValuePolicy, XlsxWriteOptions,
 };
 pub use util::{
-    apply_vertical_run_text_blankout, calculate_row_chunk_size, derive_contiguous_ranges,
-    derive_horizontal_merge_tracker, plan_horizontal_merges, plan_sheet_slices,
+    apply_vertical_run_text_blankout, calculate_row_chunk_size, create_horizontal_merge_tracker,
+    derive_contiguous_ranges, plan_horizontal_merges, plan_sheet_slices,
     plan_vertical_visual_merge_borders, sanitize_sheet_name,
 };
 pub use writer::{XlsxSheetWriteOptions, XlsxWriter};

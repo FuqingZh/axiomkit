@@ -150,7 +150,7 @@ pub fn convert_cell_value(
 // #region DataFrameLikeUtils
 
 /// Validate that `columns` has no duplicated names.
-pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
+pub fn validate_unique_columns(columns: &[&str]) -> Result<(), String> {
     if columns.len() == columns.iter().collect::<BTreeSet<_>>().len() {
         return Ok(());
     }
@@ -180,7 +180,7 @@ pub fn validate_unique_columns(columns: &[String]) -> Result<(), String> {
 
 /// Resolve mixed refs (`name` or `index`) to sorted unique indices.
 pub fn select_sorted_indices_from_refs(
-    columns: &[String],
+    columns: &[&str],
     refs: Option<&[ColumnIdentifier]>,
 ) -> Result<Vec<usize>, String> {
     let Some(refs) = refs else {
@@ -499,7 +499,7 @@ pub fn apply_vertical_run_text_blankout(header_grid: &mut [Vec<String>]) {
 }
 
 /// Build lookup map for cells covered by a horizontal merge (excluding anchor).
-pub fn derive_horizontal_merge_tracker(
+pub fn create_horizontal_merge_tracker(
     row_horizontal_merge_mapping: &BTreeMap<usize, Vec<SheetHorizontalMerge>>,
 ) -> BTreeMap<(usize, usize), bool> {
     let mut merged_cells_tracker = BTreeMap::new();
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_select_sorted_indices_from_refs_respects_typed_selectors() {
-        let columns = vec!["x".to_string(), "0".to_string(), "y".to_string()];
+        let columns: Vec<&str> = vec!["x", "0", "y"];
 
         assert_eq!(
             select_sorted_indices_from_refs(
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_select_sorted_indices_from_refs_rejects_missing_name() {
-        let columns = vec!["x".to_string(), "y".to_string()];
+        let columns = vec!["x", "y"];
 
         let err = select_sorted_indices_from_refs(
             &columns,
