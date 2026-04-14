@@ -5,13 +5,12 @@ import math
 import numpy as np
 import polars as pl
 import pytest
-from scipy import stats
-
 from axiomkit.stats import (
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
 )
+from scipy import stats
 
 
 def calculate_expected_two_way_balanced(
@@ -25,33 +24,29 @@ def calculate_expected_two_way_balanced(
     grand_total = sum(values_all)
     correction = grand_total**2 / n_total
 
-    ss_cells = sum((sum(values) ** 2) / len(values) for values in cells.values()) - correction
+    ss_cells = (
+        sum((sum(values) ** 2) / len(values) for values in cells.values()) - correction
+    )
     ss_within = sum(
         sum((value - (sum(values) / len(values))) ** 2 for value in values)
         for values in cells.values()
     )
-    ss_a = sum(
-        (
-            sum(
-                sum(cells[(factor_a, factor_b)])
-                for factor_b in levels_b
-            )
-            ** 2
+    ss_a = (
+        sum(
+            (sum(sum(cells[(factor_a, factor_b)]) for factor_b in levels_b) ** 2)
+            / (len(levels_b) * cell_size)
+            for factor_a in levels_a
         )
-        / (len(levels_b) * cell_size)
-        for factor_a in levels_a
-    ) - correction
-    ss_b = sum(
-        (
-            sum(
-                sum(cells[(factor_a, factor_b)])
-                for factor_a in levels_a
-            )
-            ** 2
+        - correction
+    )
+    ss_b = (
+        sum(
+            (sum(sum(cells[(factor_a, factor_b)]) for factor_a in levels_a) ** 2)
+            / (len(levels_a) * cell_size)
+            for factor_b in levels_b
         )
-        / (len(levels_a) * cell_size)
-        for factor_b in levels_b
-    ) - correction
+        - correction
+    )
     ss_interaction = ss_cells - ss_a - ss_b
 
     df_a = len(levels_a) - 1
@@ -92,9 +87,7 @@ def calculate_expected_one_way_welch(
         (1.0 / (n_group - 1.0)) * ((1.0 - (weight_group / weight_total)) ** 2)
     )
     degrees_freedom_between = num_groups - 1.0
-    correction = 1.0 + (
-        (2.0 * (num_groups - 2.0) / ((num_groups**2) - 1.0)) * sum_term
-    )
+    correction = 1.0 + ((2.0 * (num_groups - 2.0) / ((num_groups**2) - 1.0)) * sum_term)
     f_statistic = (
         np.sum(weight_group * ((mean_group - mean_weighted) ** 2))
         / degrees_freedom_between
@@ -265,9 +258,16 @@ def test_calculate_anova_one_way_welch_matches_manual_formula() -> None:
     df_values = pl.DataFrame(
         {
             "Group": [
-                "A", "A", "A",
-                "B", "B", "B",
-                "C", "C", "C", "C",
+                "A",
+                "A",
+                "A",
+                "B",
+                "B",
+                "B",
+                "C",
+                "C",
+                "C",
+                "C",
             ],
             "Value": groups["A"] + groups["B"] + groups["C"],
         }
@@ -304,16 +304,55 @@ def test_calculate_anova_one_way_welch_supports_feature_order_and_p_adjust() -> 
     df_values = pl.DataFrame(
         {
             "FeatureId": [
-                "f2", "f2", "f2", "f2", "f2",
-                "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
             ],
             "Group": [
-                "A", "A", "B", "B", "C",
-                "A", "A", "A", "B", "B", "B", "C", "C", "C", "C",
+                "A",
+                "A",
+                "B",
+                "B",
+                "C",
+                "A",
+                "A",
+                "A",
+                "B",
+                "B",
+                "B",
+                "C",
+                "C",
+                "C",
+                "C",
             ],
             "Value": [
-                1.0, 1.0, 2.0, 2.0, 3.0,
-                1.0, 2.0, 1.5, 5.0, 7.0, 8.0, 3.0, 4.0, 3.5, 4.5,
+                1.0,
+                1.0,
+                2.0,
+                2.0,
+                3.0,
+                1.0,
+                2.0,
+                1.5,
+                5.0,
+                7.0,
+                8.0,
+                3.0,
+                4.0,
+                3.5,
+                4.5,
             ],
         }
     )
@@ -514,20 +553,76 @@ def test_calculate_anova_two_way_supports_feature_order_and_p_adjust() -> None:
     df_values = pl.DataFrame(
         {
             "FeatureId": [
-                "f2", "f2", "f2", "f2", "f2", "f2", "f2", "f2",
-                "f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
             ],
             "GroupA": [
-                "A1", "A1", "A1", "A1", "A2", "A2", "A2", "A2",
-                "A1", "A1", "A1", "A1", "A2", "A2", "A2", "A2",
+                "A1",
+                "A1",
+                "A1",
+                "A1",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
+                "A1",
+                "A1",
+                "A1",
+                "A1",
+                "A2",
+                "A2",
+                "A2",
+                "A2",
             ],
             "GroupB": [
-                "B1", "B1", "B2", "B2", "B1", "B1", "B2", "B2",
-                "B1", "B1", "B2", "B2", "B1", "B1", "B2", "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B2",
             ],
             "Value": [
-                5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
-                8.0, 10.0, 6.0, 8.0, 4.0, 5.0, 3.0, 6.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                5.0,
+                8.0,
+                10.0,
+                6.0,
+                8.0,
+                4.0,
+                5.0,
+                3.0,
+                6.0,
             ],
         }
     )
@@ -556,20 +651,56 @@ def test_calculate_anova_two_way_keeps_unbalanced_feature_as_nan() -> None:
     df_values = pl.DataFrame(
         {
             "FeatureId": [
-                "f1", "f1", "f1", "f1", "f1", "f1", "f1",
-                "f2", "f2", "f2", "f2",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f1",
+                "f2",
+                "f2",
+                "f2",
+                "f2",
             ],
             "GroupA": [
-                "A1", "A1", "A1", "A1", "A2", "A2", "A2",
-                "A1", "A1", "A2", "A2",
+                "A1",
+                "A1",
+                "A1",
+                "A1",
+                "A2",
+                "A2",
+                "A2",
+                "A1",
+                "A1",
+                "A2",
+                "A2",
             ],
             "GroupB": [
-                "B1", "B1", "B2", "B2", "B1", "B1", "B2",
-                "B1", "B2", "B1", "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B2",
+                "B1",
+                "B1",
+                "B2",
+                "B1",
+                "B2",
+                "B1",
+                "B2",
             ],
             "Value": [
-                8.0, 10.0, 6.0, 8.0, 4.0, 5.0, 3.0,
-                1.0, 2.0, 3.0, 4.0,
+                8.0,
+                10.0,
+                6.0,
+                8.0,
+                4.0,
+                5.0,
+                3.0,
+                1.0,
+                2.0,
+                3.0,
+                4.0,
             ],
         }
     )
