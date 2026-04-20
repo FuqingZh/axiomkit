@@ -12,7 +12,6 @@ from ..spec import ParametricFrameAdapter
 from ..util import (
     create_required_columns,
     create_summary_stat_columns,
-    validate_required_columns,
 )
 from .spec import OneWayStatisticalResult
 from .util import calculate_f_test_p_values, create_one_way_stats_columns
