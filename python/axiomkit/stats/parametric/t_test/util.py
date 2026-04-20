@@ -1,6 +1,5 @@
 import numpy as np
 import polars as pl
-from polars._typing import SchemaDict
 from scipy import stats as sci_stats
 
 from .spec import (
@@ -71,13 +70,3 @@ def create_t_stat_columns(
         pl.Series(name="PValue", values=p_values, dtype=pl.Float64),
         pl.Series(name="PAdjust", values=p_adjust, dtype=pl.Float64),
     ]
-
-
-def create_required_columns(*cols: str | None) -> list[str]:
-    cols_ = list(cols)
-    cols_ = [_col for _col in cols_ if _col is not None]
-    return cols_
-
-
-def read_frame_schema(df: pl.DataFrame | pl.LazyFrame) -> SchemaDict:
-    return dict(df.schema if isinstance(df, pl.DataFrame) else df.collect_schema())
