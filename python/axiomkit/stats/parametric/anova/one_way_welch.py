@@ -11,15 +11,10 @@ from ..constant import (
     COL_FEATURE_ORDER,
     COLS_SUMMARY_STATS,
 )
+from ..spec import ParametricFrameAdapter
 from ..util import (
-    create_feature_frame,
     create_required_columns,
-    create_result_schema,
     create_summary_stat_columns,
-    normalize_value_frame,
-    read_frame_schema,
-    select_result_columns,
-    validate_required_columns,
 )
 from .one_way import SCHEMA_ANOVA_ONE_WAY_RESULT, validate_column_layout_anova_one_way
 from .spec import OneWayStatisticalResult
@@ -38,21 +33,24 @@ def calculate_one_way_welch_statistics(
     degrees_freedom_within = np.full(len(feature_keys), np.nan, dtype=np.float64)
     f_statistic = np.full(len(feature_keys), np.nan, dtype=np.float64)
 
+    def _canonicalize_feature_key(feature_key: object) -> object:
+        return tuple(feature_key) if isinstance(feature_key, list) else feature_key
+
     feature_slices: dict[object, tuple[int, int]] = {}
     idx_start = 0
     while idx_start < len(group_feature_keys):
-        feature_key = group_feature_keys[idx_start]
+        feature_key = _canonicalize_feature_key(group_feature_keys[idx_start])
         idx_end = idx_start + 1
         while (
             idx_end < len(group_feature_keys)
-            and group_feature_keys[idx_end] == feature_key
+            and _canonicalize_feature_key(group_feature_keys[idx_end]) == feature_key
         ):
             idx_end += 1
         feature_slices[feature_key] = (idx_start, idx_end)
         idx_start = idx_end
 
     for idx_feature, feature_key in enumerate(feature_keys):
-        slice_feature = feature_slices.get(feature_key)
+        slice_feature = feature_slices.get(_canonicalize_feature_key(feature_key))
         if slice_feature is None:
             continue
 
@@ -149,27 +147,17 @@ def calculate_anova_one_way_welch(
     validate_column_layout_anova_one_way(col_value, col_group, col_feature)
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
-    schema_input = read_frame_schema(df)
-    cols_required = create_required_columns(col_value, col_group, col_feature)
-    validate_required_columns(
-        cols_in=list(schema_input.keys()), cols_required=cols_required
-    )
-    schema_result = create_result_schema(
-        col_feature=col_feature,
-        dtype_feature=schema_input.get(col_feature)
-        if col_feature is not None
-        else None,
-        schema_result=SCHEMA_ANOVA_ONE_WAY_RESULT,
-    )
-
-    lf_values = normalize_value_frame(
+    pf_adapter = ParametricFrameAdapter(
         df,
-        cols_required,
-        cols_float=col_value,
-        cols_string=col_group,
         col_feature=col_feature,
+    ).select_required_cols(
+        cols_required=create_required_columns(col_value, col_group, col_feature)
     )
-    lf_features = create_feature_frame(lf_values)
+    schema_result = pf_adapter.create_result_schema(SCHEMA_ANOVA_ONE_WAY_RESULT)
+
+    pf_adapter.cast_cols(cols_float=col_value, cols_string=col_group).create_feature_key()
+    lf_values = pf_adapter.lf
+    lf_features = pf_adapter.create_feature_frame()
     lf_group_stats = (
         lf_values.group_by([COL_FEATURE_INTERNAL, col_group], maintain_order=True)
         .agg(*create_summary_stat_columns(col_value))
@@ -227,10 +215,9 @@ def calculate_anova_one_way_welch(
             one_way_result, p_values=p_value, p_adjust=p_adjust
         )
     )
-    df_result = select_result_columns(
+    df_result = pf_adapter.create_result_frame(
         df_result,
         cols_selected=list(SCHEMA_ANOVA_ONE_WAY_RESULT.keys()),
-        col_feature=col_feature,
     )
 
     return df_result

@@ -10,15 +10,10 @@ from ...p_value import (
     normalize_p_value_adjustment_mode,
 )
 from ..constant import COL_FEATURE_INTERNAL, COL_FEATURE_ORDER
+from ..spec import ParametricFrameAdapter
 from ..util import (
-    create_feature_frame,
     create_required_columns,
-    create_result_schema,
     create_summary_stat_columns,
-    normalize_value_frame,
-    read_frame_schema,
-    select_result_columns,
-    validate_required_columns,
 )
 from .util import calculate_f_test_p_values
 
@@ -231,27 +226,22 @@ def calculate_anova_two_way(
     )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
-    schema_input = read_frame_schema(df)
-    cols_required = create_required_columns(
-        col_value, col_group_a, col_group_b, col_feature
-    )
-    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
-    schema_result = create_result_schema(
-        col_feature=col_feature,
-        dtype_feature=schema_input.get(col_feature)
-        if col_feature is not None
-        else None,
-        schema_result=SCHEMA_ANOVA_TWO_WAY_RESULT,
-    )
-
-    lf_values = normalize_value_frame(
+    pf_adapter = ParametricFrameAdapter(
         df,
-        cols_required,
+        col_feature=col_feature,
+    ).select_required_cols(
+        cols_required=create_required_columns(
+            col_value, col_group_a, col_group_b, col_feature
+        )
+    )
+    schema_result = pf_adapter.create_result_schema(SCHEMA_ANOVA_TWO_WAY_RESULT)
+
+    pf_adapter.cast_cols(
         cols_float=col_value,
         cols_string=[col_group_a, col_group_b],
-        col_feature=col_feature,
-    )
-    lf_features = create_feature_frame(lf_values)
+    ).create_feature_key()
+    lf_values = pf_adapter.lf
+    lf_features = pf_adapter.create_feature_frame()
 
     lf_cell_stats = (
         lf_values.group_by(
@@ -433,10 +423,9 @@ def calculate_anova_two_way(
             name="PAdjustInteraction", values=p_adjust_interaction, dtype=pl.Float64
         ),
     )
-    df_result = select_result_columns(
+    df_result = pf_adapter.create_result_frame(
         df_result,
         cols_selected=list(SCHEMA_ANOVA_TWO_WAY_RESULT.keys()),
-        col_feature=col_feature,
     )
 
     return df_result

@@ -396,6 +396,142 @@ def test_calculate_t_test_two_sample_supports_feature_and_multiple_contrasts() -
     assert row_f2["PAdjust"] >= row_f2["PValue"]
 
 
+def test_calculate_t_test_two_sample_supports_comparison_and_validity_gate() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": [
+                "B_vs_A",
+                "B_vs_A",
+                "B_vs_A",
+                "B_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+                "C_vs_A",
+            ],
+            "FeatureId": [
+                "T1",
+                "T1",
+                "T1",
+                "T1",
+                "T1",
+                "T1",
+                "T1",
+                "T1",
+                "T2",
+                "T2",
+                "T2",
+                "T2",
+            ],
+            "Group": [
+                "A",
+                "A",
+                "B",
+                "B",
+                "A",
+                "A",
+                "C",
+                "C",
+                "A",
+                "A",
+                "C",
+                "C",
+            ],
+            "Value": [10.0, 11.0, 20.0, 22.0, 10.0, 10.0, 0.0, 0.0, 4.0, 5.0, 7.0, 9.0],
+            "IsValid": [
+                True,
+                True,
+                True,
+                True,
+                False,
+                False,
+                False,
+                False,
+                True,
+                True,
+                True,
+                True,
+            ],
+        }
+    )
+
+    df_result = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        col_is_valid="IsValid",
+        contrasts=[
+            ContrastSpec(group_test="B", group_ref="A"),
+            ContrastSpec(group_test="C", group_ref="A"),
+        ],
+        rule_p_adjust="bonferroni",
+    )
+
+    assert df_result.columns == [
+        "Comparison",
+        "FeatureId",
+        "ContrastId",
+        "GroupTest",
+        "GroupRef",
+        "NGroupTest",
+        "NGroupRef",
+        "MeanGroupTest",
+        "MeanGroupRef",
+        "MeanDiff",
+        "TStatistic",
+        "DegreesFreedom",
+        "PValue",
+        "PAdjust",
+    ]
+    assert (
+        df_result.select("Comparison", "FeatureId", "ContrastId")
+        .sort(["Comparison", "FeatureId"])
+        .rows()
+    ) == [
+        ("B_vs_A", "T1", ["B", "A"]),
+        ("C_vs_A", "T2", ["C", "A"]),
+    ]
+
+    row_b = (
+        df_result.filter(pl.col("Comparison") == "B_vs_A").row(0, named=True)
+    )
+    row_c = (
+        df_result.filter(pl.col("Comparison") == "C_vs_A").row(0, named=True)
+    )
+    expected_b = stats.ttest_ind([20.0, 22.0], [10.0, 11.0], equal_var=False)
+    expected_c = stats.ttest_ind([7.0, 9.0], [4.0, 5.0], equal_var=False)
+
+    assert row_b["PValue"] == pytest.approx(expected_b.pvalue)
+    assert row_c["PValue"] == pytest.approx(expected_c.pvalue)
+
+
+def test_calculate_t_test_two_sample_supports_comparison_without_validity_gate() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1", "cmp2", "cmp2", "cmp2", "cmp2"],
+            "FeatureId": ["f1", "f1", "f1", "f1", "f1", "f1", "f1", "f1"],
+            "Group": ["A", "A", "B", "B", "A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 4.0, 5.0, 2.0, 3.0, 6.0, 8.0],
+        }
+    )
+
+    df_result = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+    )
+
+    assert df_result.select("Comparison", "FeatureId", "ContrastId").rows() == [
+        ("cmp1", "f1", ["B", "A"]),
+        ("cmp2", "f1", ["B", "A"]),
+    ]
+
+
 def test_calculate_t_test_two_sample_builds_contrast_id_as_pair() -> None:
     df_values = pl.DataFrame(
         {
@@ -515,6 +651,40 @@ def test_calculate_t_test_two_sample_rejects_invalid_contrast_inputs() -> None:
             df_values,
             contrasts=ContrastSpec(group_test="A", group_ref="B"),
             rule_p_adjust="bad",
+        )
+
+    with pytest.raises(ValueError, match="`col_feature` is required"):
+        calculate_t_test_two_sample(
+            df_values,
+            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            col_comparison="Comparison",
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` must be different"):
+        calculate_t_test_two_sample(
+            df_values.rename({"Group": "Comparison"}),
+            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            col_group="Comparison",
+            col_comparison="Comparison",
+            col_feature="FeatureId",
+        )
+
+    df_validity = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1"],
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "Group": ["A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 3.0, 4.0],
+            "IsValid": [True, False, True, False],
+        }
+    )
+    with pytest.raises(ValueError, match="must be consistent within each"):
+        calculate_t_test_two_sample(
+            df_validity,
+            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            col_is_valid="IsValid",
         )
 
 

@@ -3,6 +3,8 @@ from collections.abc import Sequence
 import numpy as np
 import polars as pl
 
+from axiomkit.stats.parametric.spec import ParametricFrameAdapter
+
 from ...p_value import (
     PValueAdjustmentType,
     calculate_p_adjustment_array,
@@ -13,13 +15,9 @@ from ..constant import (
     COL_FEATURE_ORDER,
 )
 from ..util import (
-    create_feature_frame,
     create_required_columns,
-    create_result_schema,
     create_summary_stat_columns,
-    normalize_value_frame,
     read_frame_schema,
-    select_result_columns,
     validate_required_columns,
 )
 from .constant import (
@@ -45,12 +43,36 @@ def validate_column_layout_two_sample(
     col_value: str,
     col_group: str,
     col_feature: str | None,
+    col_comparison: str | None = None,
+    col_is_valid: str | None = None,
 ) -> None:
     if col_value == col_group:
         raise ValueError("Args `col_value` and `col_group` must be different.")
     if col_feature is not None and col_feature in {col_value, col_group}:
         raise ValueError(
             "Arg `col_feature` must be different from `col_value` and `col_group`."
+        )
+    if col_comparison is None:
+        return
+
+    if col_feature is None:
+        raise ValueError(
+            "Arg `col_feature` is required when `col_comparison` is provided."
+        )
+    if col_comparison in {col_value, col_group, col_feature}:
+        raise ValueError(
+            "Arg `col_comparison` must be different from `col_value`, "
+            "`col_group`, and `col_feature`."
+        )
+    if col_is_valid is not None and col_is_valid in {
+        col_value,
+        col_group,
+        col_feature,
+        col_comparison,
+    }:
+        raise ValueError(
+            "Arg `col_is_valid` must be different from `col_value`, "
+            "`col_group`, `col_feature`, and `col_comparison`."
         )
 
 
@@ -130,7 +152,9 @@ def calculate_t_test_two_sample(
     col_group: str = "Group",
     *,
     contrasts: ContrastSpec | Sequence[ContrastSpec],
+    col_comparison: str | None = None,
     col_feature: str | None = None,
+    col_is_valid: str | None = None,
     rule_alternative: AlternativeHypothesisType | str = "two-sided",
     should_assume_equal_variance: bool = False,
     rule_p_adjust: PValueAdjustmentType | str | None = None,
@@ -215,39 +239,48 @@ def calculate_t_test_two_sample(
     """
     ############################################################
     # #region Validate input arguments
-    validate_column_layout_two_sample(col_value, col_group, col_feature)
+    validate_column_layout_two_sample(
+        col_value,
+        col_group,
+        col_feature,
+        col_comparison=col_comparison,
+        col_is_valid=col_is_valid,
+    )
     rule_alternative = normalize_alternative_hypothesis_mode(rule_alternative)
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
     # #endregion
     ############################################################
     # #region Validate input DataFrame schema and normalize input data
-    schema_input = read_frame_schema(df)
-    cols_required = create_required_columns(col_value, col_group, col_feature)
-    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
-
-    schema_result = create_result_schema(
+    pf_adapter = ParametricFrameAdapter(
+        df,
         col_feature=col_feature,
-        dtype_feature=schema_input.get(col_feature)
-        if col_feature is not None
-        else None,
-        schema_result=SCHEMA_T_TEST_TWO_SAMPLE_RESULT,
+        col_comparison=col_comparison,
+        col_is_valid=col_is_valid,
+    ).select_required_cols(
+        cols_required=create_required_columns(
+            col_value,
+            col_group,
+            col_feature,
+            col_comparison,
+            col_is_valid if col_comparison is not None else None,
+        )
     )
+    schema_result = pf_adapter.create_result_schema(SCHEMA_T_TEST_TWO_SAMPLE_RESULT)
     contrast_plan = ContrastPlan.from_inputs(contrasts)
     if not contrast_plan.group_used:
         return pl.DataFrame(schema=schema_result)
     # #endregion
     ############################################################
     # #region Calculate summary statistics for each group and prepare data for t-test calculations
-    lf_values = normalize_value_frame(
-        df,
-        cols_required,
+    pf_adapter.cast_cols(
         cols_float=col_value,
         cols_string=col_group,
-        col_feature=col_feature,
-    )
-    lf_features = create_feature_frame(lf_values)
-    lf_summary = lf_values.group_by(
+        cols_boolean=col_is_valid if col_comparison is not None else None,
+    ).create_feature_key()
+    lf_features = pf_adapter.create_feature_frame()
+
+    lf_summary = pf_adapter.lf.group_by(
         [COL_FEATURE_INTERNAL, col_group], maintain_order=True
     ).agg(
         *create_summary_stat_columns(col_value),
@@ -288,6 +321,10 @@ def calculate_t_test_two_sample(
         )
         .sort([COL_FEATURE_ORDER, "ContrastOrder"])
     )
+    if col_comparison is not None:
+        lf_stats = lf_stats.filter(
+            pl.col("NGroupTest").is_not_null() & pl.col("NGroupRef").is_not_null()
+        )
 
     df_stats = lf_stats.collect()
     if df_stats.height == 0:
@@ -324,10 +361,9 @@ def calculate_t_test_two_sample(
     df_result = df_stats.with_columns(
         *create_t_stat_columns(t_test_result, p_values=p_value, p_adjust=p_adjust)
     )
-    df_result = select_result_columns(
+    df_result = pf_adapter.create_result_frame(
         df_result,
         cols_selected=list(SCHEMA_T_TEST_TWO_SAMPLE_RESULT.keys()),
-        col_feature=col_feature,
     )
     # #endregion
     ############################################################

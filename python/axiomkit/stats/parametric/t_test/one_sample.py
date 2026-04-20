@@ -11,15 +11,10 @@ from ..constant import (
     COL_FEATURE_ORDER,
     COLS_SUMMARY_STATS,
 )
+from ..spec import ParametricFrameAdapter
 from ..util import (
-    create_feature_frame,
     create_required_columns,
-    create_result_schema,
     create_summary_stat_columns,
-    normalize_value_frame,
-    read_frame_schema,
-    select_result_columns,
-    validate_required_columns,
 )
 from .constant import (
     SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
@@ -179,29 +174,25 @@ def calculate_t_test_one_sample(
     # #endregion
     ############################################################
     # #region Validate input DataFrame schema and normalize input data
-    schema_input = read_frame_schema(df)
-    cols_required = create_required_columns(col_value, col_feature)
-    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
-    schema_result = create_result_schema(
+    pf_adapter = ParametricFrameAdapter(
+        df,
         col_feature=col_feature,
-        dtype_feature=schema_input.get(col_feature)
-        if col_feature is not None
-        else None,
-        schema_result=SCHEMA_T_TEST_ONE_SAMPLE_RESULT,
+    ).select_required_cols(
+        cols_required=create_required_columns(col_value, col_feature)
     )
+    schema_result = pf_adapter.create_result_schema(SCHEMA_T_TEST_ONE_SAMPLE_RESULT)
     # #endregion
     ############################################################
     # #region Calculate summary statistics for each feature and prepare data for t-test calculations
-    lf_values = normalize_value_frame(
-        df, cols_required, cols_float=col_value, col_feature=col_feature
-    )
+    pf_adapter.cast_cols(cols_float=col_value).create_feature_key()
+    lf_values = pf_adapter.lf
     df_stats = (
         lf_values.group_by(COL_FEATURE_INTERNAL, maintain_order=True)
         .agg(
             *create_summary_stat_columns(col_value),
         )
         .join(
-            create_feature_frame(lf_values),
+            pf_adapter.create_feature_frame(),
             on=COL_FEATURE_INTERNAL,
             how="left",
         )
@@ -235,11 +226,9 @@ def calculate_t_test_one_sample(
         ),
         *create_t_stat_columns(t_test_result, p_values=p_value, p_adjust=p_adjust),
     )
-
-    df_result = select_result_columns(
+    df_result = pf_adapter.create_result_frame(
         df_result,
         cols_selected=list(SCHEMA_T_TEST_ONE_SAMPLE_RESULT.keys()),
-        col_feature=col_feature,
     )
     # #endregion
     ############################################################

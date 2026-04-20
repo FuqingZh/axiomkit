@@ -8,18 +8,14 @@ from ...p_value import (
     normalize_p_value_adjustment_mode,
 )
 from ..constant import COL_FEATURE_INTERNAL, COL_FEATURE_ORDER
+from ..spec import ParametricFrameAdapter
 from ..util import (
-    create_feature_frame,
     create_required_columns,
-    create_result_schema,
     create_summary_stat_columns,
-    normalize_value_frame,
-    read_frame_schema,
-    select_result_columns,
     validate_required_columns,
 )
 from .spec import OneWayStatisticalResult
-from .util import calculate_f_test_p_values
+from .util import calculate_f_test_p_values, create_one_way_stats_columns
 
 SCHEMA_ANOVA_ONE_WAY_RESULT: SchemaDict = {
     "NumGroups": pl.Int64,
@@ -36,12 +32,36 @@ def validate_column_layout_anova_one_way(
     col_value: str,
     col_group: str,
     col_feature: str | None,
+    col_comparison: str | None = None,
+    col_is_valid: str | None = None,
 ) -> None:
     if col_value == col_group:
         raise ValueError("Args `col_value` and `col_group` must be different.")
     if col_feature is not None and col_feature in {col_value, col_group}:
         raise ValueError(
             "Arg `col_feature` must be different from `col_value` and `col_group`."
+        )
+    if col_comparison is None:
+        return
+
+    if col_feature is None:
+        raise ValueError(
+            "Arg `col_feature` is required when `col_comparison` is provided."
+        )
+    if col_comparison in {col_value, col_group, col_feature}:
+        raise ValueError(
+            "Arg `col_comparison` must be different from `col_value`, "
+            "`col_group`, and `col_feature`."
+        )
+    if col_is_valid is not None and col_is_valid in {
+        col_value,
+        col_group,
+        col_feature,
+        col_comparison,
+    }:
+        raise ValueError(
+            "Arg `col_is_valid` must be different from `col_value`, "
+            "`col_group`, `col_feature`, and `col_comparison`."
         )
 
 
@@ -111,6 +131,8 @@ def calculate_anova_one_way(
     col_group: str = "Group",
     *,
     col_feature: str | None = None,
+    col_comparison: str | None = None,
+    col_is_valid: str | None = None,
     rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
@@ -121,6 +143,12 @@ def calculate_anova_one_way(
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
+        col_comparison: Optional name of the column defining comparison-specific
+            statistical units. When provided, the effective feature key becomes
+            ``col_comparison x col_feature``.
+        col_is_valid: Optional boolean column indicating whether a
+            ``col_comparison x col_feature`` unit should enter testing. Ignored
+            unless ``col_comparison`` is provided.
         rule_p_adjust: Method for adjusting p-values for multiple testing.
             - ``None``: (Default) No adjustment; return raw p-values.
             - "bonferroni": Bonferroni correction.
@@ -130,28 +158,42 @@ def calculate_anova_one_way(
     Returns:
         A Polars DataFrame containing one-way ANOVA results for each feature.
     """
-    validate_column_layout_anova_one_way(col_value, col_group, col_feature)
+    validate_column_layout_anova_one_way(
+        col_value,
+        col_group,
+        col_feature,
+        col_comparison=col_comparison,
+        col_is_valid=col_is_valid,
+    )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
 
-    schema_input = read_frame_schema(df)
-    cols_required = create_required_columns(col_value, col_group, col_feature)
-    validate_required_columns(cols_in=schema_input, cols_required=cols_required)
-    schema_result = create_result_schema(
-        col_feature=col_feature,
-        dtype_feature=schema_input.get(col_feature)
-        if col_feature is not None
-        else None,
-        schema_result=SCHEMA_ANOVA_ONE_WAY_RESULT,
+    pf_adapter = (
+        ParametricFrameAdapter(
+            df,
+            col_feature=col_feature,
+            col_comparison=col_comparison,
+            col_is_valid=col_is_valid,
+        )
+        .select_required_cols(
+            cols_required=create_required_columns(
+                col_value,
+                col_group,
+                col_feature,
+                col_comparison,
+                col_is_valid if col_comparison is not None else None,
+            )
+        )
+        .cast_cols(
+            cols_float=col_value,
+            cols_string=col_group,
+            cols_boolean=col_is_valid if col_comparison is not None else None,
+        )
+        .create_feature_key()
     )
+    schema_result = pf_adapter.create_result_schema(SCHEMA_ANOVA_ONE_WAY_RESULT)
 
-    lf_values = normalize_value_frame(
-        df,
-        cols_required,
-        cols_float=col_value,
-        cols_string=col_group,
-        col_feature=col_feature,
-    )
-    lf_features = create_feature_frame(lf_values)
+    lf_values = pf_adapter.lf
+    lf_features = pf_adapter.create_feature_frame()
     lf_group_stats = (
         lf_values.group_by([COL_FEATURE_INTERNAL, col_group], maintain_order=True)
         .agg(*create_summary_stat_columns(col_value))
@@ -213,24 +255,15 @@ def calculate_anova_one_way(
     p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
 
     df_result = df_stats.with_columns(
-        pl.Series(
-            name="DegreesFreedomBetween",
-            values=anova_result.degrees_freedom_between,
-            dtype=pl.Float64,
-        ),
-        pl.Series(
-            name="DegreesFreedomWithin",
-            values=anova_result.degrees_freedom_within,
-            dtype=pl.Float64,
-        ),
-        pl.Series(name="FStatistic", values=anova_result.f_statistic, dtype=pl.Float64),
-        pl.Series(name="PValue", values=p_value, dtype=pl.Float64),
-        pl.Series(name="PAdjust", values=p_adjust, dtype=pl.Float64),
+        *create_one_way_stats_columns(
+            anova_result,
+            p_values=p_value,
+            p_adjust=p_adjust,
+        )
     )
-    df_result = select_result_columns(
+    df_result = pf_adapter.create_result_frame(
         df_result,
         cols_selected=list(SCHEMA_ANOVA_ONE_WAY_RESULT.keys()),
-        col_feature=col_feature,
     )
 
     return df_result
