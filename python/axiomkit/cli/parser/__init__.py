@@ -1,31 +1,25 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 from axiomkit._optional_deps import import_optional_attr
 
 from .action import ActionCommandPrefix, ActionHexColor, ActionNumericRange, ActionPath
-from .runtime import ArgumentParser
-from .spec import GroupKey, ParamSpec
+from .spec import GroupKey
 
 __all__ = [
-    "ArgumentParser",
     "ActionCommandPrefix",
     "ActionHexColor",
     "ActionNumericRange",
     "ActionPath",
     "ParserBuilder",
-    "CommandBuilder",
-    "ParamSpec",
     "GroupKey",
 ]
 
 if TYPE_CHECKING:
-    from .builder import CommandBuilder, ParserBuilder
+    from .builder import ParserBuilder
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"ParserBuilder", "CommandBuilder"}:
+    if name in {"ParserBuilder"}:
         return import_optional_attr(
             module_name=".builder",
             attr_name=name,
