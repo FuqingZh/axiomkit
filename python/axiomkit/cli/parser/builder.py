@@ -7,7 +7,7 @@ This module provides a thin layered API:
 - ``ParserBuilder`` materializes specs into an ``argparse.ArgumentParser``.
 
 The runtime parse step stays with argparse, using
-``axiomkit.cli.parser.ArgumentParser`` by default so compatible actions can
+``axiomkit.cli.parser.runtime.ArgumentParser`` by default so compatible actions can
 finalize lazy defaults after parsing:
 
     >>> app = ParserBuilder(prog="demo")
@@ -497,7 +497,7 @@ class ParserBuilder:
             parser:
                 Existing parser instance. When provided, ``prog`` and
                 ``description`` are ignored. When omitted, a
-                :class:`axiomkit.cli.parser.ArgumentParser` is created so lazy
+                :class:`axiomkit.cli.parser.runtime.ArgumentParser` is created so lazy
                 action defaults are finalized automatically after parsing.
             prog: Program name used when a new parser is created.
             description: Top-level parser description.

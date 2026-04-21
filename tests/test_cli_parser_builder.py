@@ -6,13 +6,13 @@ from enum import StrEnum
 import pytest
 
 from axiomkit.cli.parser import (  # noqa: E402
-    ArgumentParser,
     ActionHexColor,
     ActionNumericRange,
     GroupKey,
     ParserBuilder,
-    ParamSpec,
 )
+from axiomkit.cli.parser.runtime import ArgumentParser  # noqa: E402
+from axiomkit.cli.parser.spec import ParamSpec  # noqa: E402
 
 
 class ParamKey(StrEnum):

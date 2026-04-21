@@ -132,7 +132,7 @@ class ActionPath(_LazyDefaultAction):
     Notes:
         - Parsed values stored in ``argparse.Namespace`` are always
           ``pathlib.Path`` objects (resolved absolute paths) when used with
-          :class:`axiomkit.cli.parser.ArgumentParser`.
+          :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
         - Defaults are normalized lazily after parsing rather than during
           parser construction.
         - Invalid non-``None`` defaults fail only if parsing completes without
@@ -373,7 +373,7 @@ class ActionPath(_LazyDefaultAction):
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
               including lazy default finalization when used with
-              :class:`axiomkit.cli.parser.ArgumentParser`.
+              :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
 
         Args:
             spec: Path specification to enforce.
@@ -406,7 +406,7 @@ class ActionPath(_LazyDefaultAction):
         Notes:
             - Validation semantics are the same as :class:`ActionPath`,
               including lazy default finalization when used with
-              :class:`axiomkit.cli.parser.ArgumentParser`.
+              :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
 
         Args:
             entry_kind: Expected entry type.
@@ -454,7 +454,7 @@ class ActionPath(_LazyDefaultAction):
 
         Notes:
             - Non-``None`` defaults are finalized lazily after parsing when
-              used with :class:`axiomkit.cli.parser.ArgumentParser`.
+              used with :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
             - Invalid defaults therefore do not block ``--help`` output.
 
         Args:
@@ -497,7 +497,7 @@ class ActionPath(_LazyDefaultAction):
 
         Notes:
             - Non-``None`` defaults are finalized lazily after parsing when
-              used with :class:`axiomkit.cli.parser.ArgumentParser`.
+              used with :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
             - Invalid defaults therefore do not block ``--help`` output.
 
         Args:
@@ -527,7 +527,7 @@ class ActionPath(_LazyDefaultAction):
 
         Notes:
             - Non-``None`` defaults are finalized lazily after parsing when
-              used with :class:`axiomkit.cli.parser.ArgumentParser`.
+              used with :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
             - When used as ``action=ActionPath.exe(), default=\"some_tool\"``,
               ``--help`` remains available even if ``some_tool`` is not
               resolvable in current PATH.
@@ -922,7 +922,7 @@ class ActionNumericRange(_LazyDefaultAction):
         - ``allowed_values`` are accepted even if outside min/max.
         - When ``value_kind="float"`` and ``is_finite=True``, rejects NaN/Inf.
         - Defaults are validated lazily after parsing when used with
-          :class:`axiomkit.cli.parser.ArgumentParser`.
+          :class:`axiomkit.cli.parser.runtime.ArgumentParser`.
     """
 
     def __init__(

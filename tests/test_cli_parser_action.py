@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 
 from axiomkit.cli.parser import (  # noqa: E402
-    ArgumentParser,
     ActionCommandPrefix,
     ActionHexColor,
     ActionNumericRange,
     ActionPath,
 )
+from axiomkit.cli.parser.runtime import ArgumentParser  # noqa: E402
 
 
 def _build_parser() -> ArgumentParser:
