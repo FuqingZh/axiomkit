@@ -55,7 +55,7 @@ def test_write_sheet_smoke_multiline_header_has_unquoted_strings(tmp_path: Path)
     out_file = tmp_path / "smoke_header.xlsx"
 
     df = pl.DataFrame({"_ProteinId": ["P1"], "_GO": ["GO:0001"]})
-    df_header = pl.DataFrame(
+    header = pl.DataFrame(
         {
             "_ProteinId": ["蛋白 ID", "Protein ID"],
             "_GO": ["GO 注释", "GO"],
@@ -63,7 +63,7 @@ def test_write_sheet_smoke_multiline_header_has_unquoted_strings(tmp_path: Path)
     )
 
     with XlsxWriter(out_file) as xf:
-        xf.write_sheet(df, "Sheet1", df_header=df_header)
+        xf.write_sheet(df, "Sheet1", header=header)
 
     shared_strings = _read_shared_strings(out_file)
     assert "蛋白 ID" in shared_strings

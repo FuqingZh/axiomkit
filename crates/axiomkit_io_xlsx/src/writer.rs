@@ -130,44 +130,44 @@ impl XlsxWriter {
     /// Write one sheet from in-memory dataframes.
     pub fn write_sheet_from_dataframes(
         &mut self,
-        df_data: &DataFrame,
+        body: &DataFrame,
         sheet_name: &str,
-        df_header: Option<&DataFrame>,
+        header: Option<&DataFrame>,
         options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
         }
-        self.write_sheet(df_data, sheet_name, df_header, options)
+        self.write_sheet(body, sheet_name, header, options)
     }
 
     /// Write one sheet from IPC-serialized dataframe bytes.
     ///
-    /// `ipc_df` and optional `ipc_df_header` must be valid Polars IPC payloads.
+    /// `ipc_body` and optional `ipc_header` must be valid Polars IPC payloads.
     pub fn write_sheet_from_ipc_bytes(
         &mut self,
-        ipc_df: &[u8],
+        ipc_body: &[u8],
         sheet_name: &str,
-        ipc_df_header: Option<&[u8]>,
+        ipc_header: Option<&[u8]>,
         options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         if self.is_closed {
             return Err("Cannot write after close().".to_string());
         }
 
-        let df_data = read_dataframe_from_ipc_bytes(ipc_df)?;
-        let df_header = match ipc_df_header {
+        let df_body = read_dataframe_from_ipc_bytes(ipc_body)?;
+        let header = match ipc_header {
             Some(val) => Some(read_dataframe_from_ipc_bytes(val)?),
             None => None,
         };
-        self.write_sheet_from_dataframes(&df_data, sheet_name, df_header.as_ref(), options)
+        self.write_sheet_from_dataframes(&df_body, sheet_name, header.as_ref(), options)
     }
 
     fn write_sheet(
         &mut self,
-        df_data: &DataFrame,
+        body: &DataFrame,
         sheet_name: &str,
-        df_header: Option<&DataFrame>,
+        header: Option<&DataFrame>,
         options: &XlsxSheetWriteOptions,
     ) -> Result<(), String> {
         validate_policy_autofit(&options.policy_autofit)?;
@@ -178,11 +178,11 @@ impl XlsxWriter {
             .unwrap_or(self.options_write.should_keep_missing_values);
         let value_policy = self.options_write.value_policy.clone();
 
-        let col_names: Vec<&str> = df_data.get_column_names_str();
+        let col_names: Vec<&str> = body.get_column_names_str();
         validate_unique_columns(&col_names)?;
 
-        let width_df = col_names.len();
-        let height_df = df_data.height();
+        let width_body = col_names.len();
+        let height_body = body.height();
 
         let mut header_grid = vec![
             col_names
@@ -190,32 +190,30 @@ impl XlsxWriter {
                 .map(|&_val| _val.to_string())
                 .collect::<Vec<String>>(),
         ];
-        if let Some(df_header_custom) = df_header {
+        if let Some(df_header_custom) = header {
             let header_cols: Vec<&str> = df_header_custom.get_column_names_str();
             validate_unique_columns(&header_cols)?;
 
             let header_height = df_header_custom.height();
             if header_height == 0 {
-                return Err(
-                    "df_header must have >= 1 row (0-row header is not allowed).".to_string(),
-                );
+                return Err("header must have >= 1 row (0-row header is not allowed).".to_string());
             }
             let header_width = df_header_custom.width();
-            if header_width != width_df {
-                return Err("df_header.width must equal df.width.".to_string());
+            if header_width != width_body {
+                return Err("header.width must equal body.width.".to_string());
             }
 
             header_grid = extract_string_grid_from_dataframe(df_header_custom)?;
         }
 
         let cols_idx_numeric = if self.options_write.should_infer_numeric_cols {
-            select_numeric_column_indices(df_data)
+            select_numeric_column_indices(body)
         } else {
             vec![]
         };
 
         let cols_idx_integer_inferred = if self.options_write.should_infer_integer_cols {
-            select_integer_column_indices(df_data, &cols_idx_numeric)
+            select_integer_column_indices(body, &cols_idx_numeric)
         } else {
             vec![]
         };
@@ -238,8 +236,8 @@ impl XlsxWriter {
         };
 
         let sheet_slices = plan_sheet_slices(
-            height_df,
-            width_df,
+            height_body,
+            width_body,
             header_row_count,
             &sanitize_sheet_name(sheet_name, "_"),
             &mut report,
@@ -362,7 +360,7 @@ impl XlsxWriter {
             for _col_idx_abs in sheet_slice.col_start_inclusive..sheet_slice.col_end_exclusive {
                 let col_idx_abs = _col_idx_abs;
                 cols_slice.push(
-                    df_data.get_columns()[col_idx_abs]
+                    body.get_columns()[col_idx_abs]
                         .slice(sheet_slice.row_start_inclusive as i64, rows_data_in_sheet),
                 );
             }

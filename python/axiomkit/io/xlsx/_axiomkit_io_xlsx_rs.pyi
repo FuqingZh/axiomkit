@@ -39,10 +39,10 @@ class XlsxWriter:
 
     def write_sheet(
         self,
-        df: Any,
+        body: Any,
         sheet_name: str,
         *,
-        df_header: Any | None = ...,
+        header: Any | None = ...,
         cols_integer: Sequence[str | int] | str | int | None = ...,
         cols_decimal: Sequence[str | int] | str | int | Literal[False] | None = ...,
         num_frozen_cols: int = ...,

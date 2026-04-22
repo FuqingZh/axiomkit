@@ -152,9 +152,9 @@ impl PyXlsxWriter {
     }
 
     #[pyo3(signature = (
-        df,
+        body,
         sheet_name,
-        df_header = None,
+        header = None,
         cols_integer = None,
         cols_decimal = None,
         num_frozen_cols = 0,
@@ -168,9 +168,9 @@ impl PyXlsxWriter {
     fn write_sheet<'py>(
         mut slf: PyRefMut<'py, Self>,
         py: Python<'py>,
-        df: &Bound<'py, PyAny>,
+        body: &Bound<'py, PyAny>,
         sheet_name: &str,
-        df_header: Option<&Bound<'py, PyAny>>,
+        header: Option<&Bound<'py, PyAny>>,
         cols_integer: Option<&Bound<'py, PyAny>>,
         cols_decimal: Option<&Bound<'py, PyAny>>,
         num_frozen_cols: usize,
@@ -180,10 +180,10 @@ impl PyXlsxWriter {
         policy_autofit: Option<&Bound<'py, PyAny>>,
         policy_scientific: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<PyRefMut<'py, Self>> {
-        let df_data = derive_dataframe_from_any_dataframe(py, df)?;
-        let df_header_data = match df_header {
-            Some(df_header_raw) if !df_header_raw.is_none() => {
-                Some(derive_dataframe_from_any_dataframe(py, df_header_raw)?)
+        let df_body = derive_dataframe_from_any_dataframe(py, body)?;
+        let df_header = match header {
+            Some(header_raw) if !header_raw.is_none() => {
+                Some(derive_dataframe_from_any_dataframe(py, header_raw)?)
             }
             Some(_) => None,
             None => None,
@@ -204,9 +204,9 @@ impl PyXlsxWriter {
 
         slf.inner
             .write_sheet_from_dataframes(
-                &df_data,
+                &df_body,
                 sheet_name,
-                df_header_data.as_ref(),
+                df_header.as_ref(),
                 &cfg_sheet_write_options,
             )
             .map_err(PyValueError::new_err)?;

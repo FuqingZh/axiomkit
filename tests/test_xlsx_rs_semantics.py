@@ -99,7 +99,7 @@ def test_integer_strict_vs_coerce_semantics(tmp_path: Path) -> None:
     path_file_strict = tmp_path / "strict.xlsx"
     with XlsxWriter(path_file_strict) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             cols_integer=["x"],
             policy_autofit=AutofitPolicy(mode="none"),
@@ -118,7 +118,7 @@ def test_integer_strict_vs_coerce_semantics(tmp_path: Path) -> None:
     )
     with XlsxWriter(path_file_coerce, options_write=opts_coerce) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             cols_integer=["x"],
             policy_autofit=AutofitPolicy(mode="none"),
@@ -138,7 +138,7 @@ def test_infer_numeric_uses_decimal_format_by_default(tmp_path: Path) -> None:
 
     with XlsxWriter(path_file_out) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
             policy_scientific=ScientificPolicy(scope="decimal"),
@@ -158,7 +158,7 @@ def test_scientific_format_trigger_for_extreme_values(tmp_path: Path) -> None:
 
     with XlsxWriter(path_file_out) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
             policy_scientific=ScientificPolicy(scope="decimal"),
@@ -180,7 +180,7 @@ def test_numeric_string_selector_targets_named_column_and_warns(tmp_path: Path) 
         warnings.simplefilter("always")
         with XlsxWriter(path_file_out) as writer:
             writer.write_sheet(
-                df=df,
+                body=df,
                 sheet_name="S",
                 cols_integer=["0"],
                 policy_autofit=AutofitPolicy(mode="none"),
@@ -208,7 +208,7 @@ def test_integer_index_selector_uses_zero_based_index_without_warning(tmp_path: 
         warnings.simplefilter("always")
         with XlsxWriter(path_file_out) as writer:
             writer.write_sheet(
-                df=df,
+                body=df,
                 sheet_name="S",
                 cols_integer=[0],
                 policy_autofit=AutofitPolicy(mode="none"),
@@ -234,7 +234,7 @@ def test_scientific_policy_scope_none_disables_scientific(tmp_path: Path) -> Non
 
     with XlsxWriter(path_file_out) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
             policy_scientific=ScientificPolicy(scope="none"),
@@ -254,7 +254,7 @@ def test_scientific_policy_default_disabled(tmp_path: Path) -> None:
 
     with XlsxWriter(path_file_out) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
         )
@@ -273,7 +273,7 @@ def test_scientific_policy_scope_integer_applies_to_integer_cols(tmp_path: Path)
 
     with XlsxWriter(path_file_out) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
             policy_scientific=ScientificPolicy(
@@ -300,7 +300,7 @@ def test_row_chunk_policy_is_active_in_write_path(tmp_path: Path) -> None:
     with XlsxWriter(tmp_path / "bad_chunk.xlsx", options_write=opts_bad) as writer:
         with pytest.raises(ValueError, match="row_chunk_policy"):
             writer.write_sheet(
-                df=df,
+                body=df,
                 sheet_name="S",
                 policy_autofit=AutofitPolicy(mode="none"),
             )
@@ -311,7 +311,7 @@ def test_row_chunk_policy_is_active_in_write_path(tmp_path: Path) -> None:
     path_file_ok = tmp_path / "ok_chunk.xlsx"
     with XlsxWriter(path_file_ok, options_write=opts_ok) as writer:
         writer.write_sheet(
-            df=df,
+            body=df,
             sheet_name="S",
             policy_autofit=AutofitPolicy(mode="none"),
         )

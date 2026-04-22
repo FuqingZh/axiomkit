@@ -28,10 +28,10 @@ class ProtocolXlsxWriterBackend(Protocol):
 
     def write_sheet(
         self,
-        df: Any,
+        body: Any,
         sheet_name: str,
         *,
-        df_header: Any | None = None,
+        header: Any | None = None,
         cols_integer: Sequence[ColumnIdentifier] | None = None,
         cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         num_frozen_cols: int = 0,
@@ -104,10 +104,10 @@ class XlsxWriter:
 
     def write_sheet(
         self,
-        df: Any,
+        body: Any,
         sheet_name: str,
         *,
-        df_header: Any | None = None,
+        header: Any | None = None,
         cols_integer: Sequence[ColumnIdentifier] | None = None,
         cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         num_frozen_cols: int = 0,
@@ -120,12 +120,12 @@ class XlsxWriter:
         """Write one worksheet to the workbook.
 
         Args:
-            df: Tabular data to write. The object must be convertible to a Polars
+            body: Tabular data to write. The object must be convertible to a Polars
                 DataFrame by the Rust bridge.
             sheet_name: Requested worksheet name before Excel sanitization and
                 uniqueness adjustments.
-            df_header: Optional custom header grid. When provided, it must have the
-                same width as ``df`` and at least one row.
+            header: Optional custom header grid. When provided, it must have the
+                same width as ``body`` and at least one row.
             cols_integer:
                 Optional column identifiers that should use integer formatting and
                 integer conversion rules. Use ``str`` for literal column names and
@@ -196,9 +196,9 @@ class XlsxWriter:
         _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
 
         self._writer.write_sheet(
-            df=df,
-            sheet_name=sheet_name,
-            df_header=df_header,
+            body,
+            sheet_name,
+            header,
             cols_integer=cols_integer,
             cols_decimal=cols_decimal,
             num_frozen_cols=num_frozen_cols,
