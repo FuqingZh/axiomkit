@@ -63,10 +63,10 @@ def calculate_ora(
 
     should_include_comparison = len(comparisons_resolved) > 1
     should_include_fg_members = any(
-        item.options.should_keep_fg_members for item in comparisons_resolved
+        _item.options.should_keep_fg_members for _item in comparisons_resolved
     )
     should_include_bg_members = any(
-        item.options.should_keep_bg_members for item in comparisons_resolved
+        _item.options.should_keep_bg_members for _item in comparisons_resolved
     )
     df_empty = create_empty_result(
         should_include_comparison=should_include_comparison,
@@ -88,31 +88,31 @@ def calculate_ora(
     fg_element_lists: list[list[str]] = []
     bg_element_lists: list[list[str] | None] = []
     config_columns: dict[str, list[Any]] = {COL_COMPARISON: []} | {
-        column: [] for column in SCHEMA_ORA_CONFIG_FIELDS
+        _column: [] for _column in SCHEMA_ORA_CONFIG_FIELDS
     }
     ids_bg_derived: list[str] = []
-    for item in comparisons_resolved:
-        comparison_ids.append(item.comparison_id)
-        fg_element_lists.append(list(item.foreground_elements))
-        if item.background_elements is None:
-            ids_bg_derived.append(item.comparison_id)
+    for _item in comparisons_resolved:
+        comparison_ids.append(_item.comparison_id)
+        fg_element_lists.append(list(_item.foreground_elements))
+        if _item.background_elements is None:
+            ids_bg_derived.append(_item.comparison_id)
             bg_element_lists.append(None)
         else:
-            bg_element_lists.append(list(item.background_elements))
+            bg_element_lists.append(list(_item.background_elements))
 
-        config_columns[COL_COMPARISON].append(item.comparison_id)
-        config_columns["RulePAdjust"].append(item.options.rule_p_adjust)
-        config_columns["ThrBgHitsMin"].append(item.options.thr_bg_hits_min)
-        config_columns["ThrBgHitsMax"].append(item.options.thr_bg_hits_max)
-        config_columns["ThrFgHitsMin"].append(item.options.thr_fg_hits_min)
-        config_columns["ThrFgHitsMax"].append(item.options.thr_fg_hits_max)
-        config_columns["ThrPValue"].append(item.options.thr_p_value)
-        config_columns["ThrPAdjust"].append(item.options.thr_p_adjust)
+        config_columns[COL_COMPARISON].append(_item.comparison_id)
+        config_columns["RulePAdjust"].append(_item.options.rule_p_adjust)
+        config_columns["ThrBgHitsMin"].append(_item.options.thr_bg_hits_min)
+        config_columns["ThrBgHitsMax"].append(_item.options.thr_bg_hits_max)
+        config_columns["ThrFgHitsMin"].append(_item.options.thr_fg_hits_min)
+        config_columns["ThrFgHitsMax"].append(_item.options.thr_fg_hits_max)
+        config_columns["ThrPValue"].append(_item.options.thr_p_value)
+        config_columns["ThrPAdjust"].append(_item.options.thr_p_adjust)
         config_columns["ShouldKeepFgMembers"].append(
-            item.options.should_keep_fg_members
+            _item.options.should_keep_fg_members
         )
         config_columns["ShouldKeepBgMembers"].append(
-            item.options.should_keep_bg_members
+            _item.options.should_keep_bg_members
         )
 
     schema_ora_config = {COL_COMPARISON: pl.String} | SCHEMA_ORA_CONFIG_FIELDS
@@ -123,8 +123,8 @@ def calculate_ora(
             "BackgroundElements": pl.Series(bg_element_lists),
         }
         | {
-            column: pl.Series(values, dtype=schema_ora_config[column])
-            for column, values in config_columns.items()
+            _column: pl.Series(_values, dtype=schema_ora_config[_column])
+            for _column, _values in config_columns.items()
         }
     )
     lf_fg_elements = (
@@ -184,12 +184,12 @@ def calculate_ora(
     df_invalid = df_totals.filter(
         pl.col("BgTotal").le(0) | pl.col("FgTotal").le(0)
     )
-    for row in df_invalid.iter_rows(named=True):
+    for _row in df_invalid.iter_rows(named=True):
         logger.warning(
             "Skipping comparison `%s` because BgTotal=%s and FgTotal=%s.",
-            row[COL_COMPARISON],
-            row["BgTotal"],
-            row["FgTotal"],
+            _row[COL_COMPARISON],
+            _row["BgTotal"],
+            _row["FgTotal"],
         )
     df_config_valid = df_totals.filter(
         pl.col("BgTotal").gt(0) & pl.col("FgTotal").gt(0)
@@ -246,8 +246,8 @@ def calculate_ora(
     nd_p_adj = np.empty_like(nd_p_vals)
     arr_comparison = df_ora[COL_COMPARISON].to_numpy()
     arr_rule = df_ora["RulePAdjust"].to_numpy()
-    for comparison_id in dict.fromkeys(arr_comparison.tolist()):
-        mask = arr_comparison == comparison_id
+    for _comparison_id in dict.fromkeys(arr_comparison.tolist()):
+        mask = arr_comparison == _comparison_id
         rule_p_adjust = normalize_p_value_adjustment_mode(arr_rule[mask][0])
         nd_p_adj[mask] = calculate_p_adjustment_array(
             nd_p_vals[mask],

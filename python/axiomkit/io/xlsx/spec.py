@@ -88,18 +88,20 @@ class CellFormatPatch:
     def merge(self, other: "CellFormatPatch") -> "CellFormatPatch":
         # 右侧非 None 覆盖左侧
         data = {
-            k: (
-                getattr(other, k) if getattr(other, k) is not None else getattr(self, k)
+            _k: (
+                getattr(other, _k)
+                if getattr(other, _k) is not None
+                else getattr(self, _k)
             )
-            for k in self.__dataclass_fields__
+            for _k in self.__dataclass_fields__
         }
         return CellFormatPatch(**data)
 
     def to_xlsxwriter(self) -> dict[str, Any]:
         return {
-            k: getattr(self, k)
-            for k in self.__dataclass_fields__
-            if getattr(self, k) is not None
+            _k: getattr(self, _k)
+            for _k in self.__dataclass_fields__
+            if getattr(self, _k) is not None
         }
 
 

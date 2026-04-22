@@ -76,7 +76,7 @@ def normalize_comparisons(
             items = tuple(comparisons)
     if len(items) == 0:
         raise ValueError("Arg `comparisons` must not be empty.")
-    if any(not isinstance(item, OraComparison) for item in items):
+    if any(not isinstance(_item, OraComparison) for _item in items):
         raise ValueError(
             "Arg `comparisons` must be an OraComparison or a sequence of OraComparison items."
         )
@@ -90,8 +90,8 @@ def resolve_comparisons(
     num_comparisons = len(comparisons)
     ids_seen: set[str] = set()
     items_resolved: list[ResolvedOraComparison] = []
-    for comparison in comparisons:
-        comparison_id = comparison.comparison_id
+    for _comparison in comparisons:
+        comparison_id = _comparison.comparison_id
         if num_comparisons == 1:
             comparison_id = comparison_id or "default"
         elif comparison_id is None:
@@ -103,7 +103,7 @@ def resolve_comparisons(
             raise ValueError("Duplicate comparison ids are not allowed.")
         ids_seen.add(comparison_id)
 
-        option_override = comparison.option_override
+        option_override = _comparison.option_override
         if (
             option_override is not None
             and "background_elements" in option_override.model_fields_set
@@ -120,7 +120,7 @@ def resolve_comparisons(
         items_resolved.append(
             ResolvedOraComparison(
                 comparison_id=comparison_id,
-                foreground_elements=frozenset(comparison.foreground_elements),
+                foreground_elements=frozenset(_comparison.foreground_elements),
                 background_elements=background_elements,
                 options=ResolvedOraOptions.from_options(
                     base=options, override=option_override
