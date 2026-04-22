@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING, Any
 
 from axiomkit._optional_deps import import_optional_attr
 
-__all__ = ["FastaHeaderRecord", "read_fasta", "calculate_mw_kda"]
+__all__ = ["MwResult", "read_fasta", "calculate_mw_kda"]
 
 if TYPE_CHECKING:
-    from .reader import FastaHeaderRecord, calculate_mw_kda, read_fasta
+    from .reader import MwResult, calculate_mw_kda, read_fasta
 
 
 def __getattr__(name: str) -> Any:
