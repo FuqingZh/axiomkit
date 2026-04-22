@@ -196,9 +196,9 @@ class XlsxWriter:
         _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
 
         self._writer.write_sheet(
-            body,
-            sheet_name,
-            header,
+            body=body,
+            sheet_name=sheet_name,
+            header=header,
             cols_integer=cols_integer,
             cols_decimal=cols_decimal,
             num_frozen_cols=num_frozen_cols,
