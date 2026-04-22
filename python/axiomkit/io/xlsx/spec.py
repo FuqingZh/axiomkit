@@ -1,7 +1,12 @@
-# "Facts/Results/Plans" generated from processing DataFrame to Excel XLSX files.
-
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any, Literal, Self, cast
+
+
+class _MissingType:
+    __slots__ = ()
+
+
+_FORMAT_UNSET = _MissingType()
 
 
 ################################################################################
@@ -28,8 +33,57 @@ class CellFormatPatch:
     bg_color: str | None = None
     font_color: str | None = None
 
-    def with_(self, **kwargs: Any) -> "CellFormatPatch":
-        return replace(self, **kwargs)
+    def with_(
+        self,
+        *,
+        font_name: str | None = cast(Any, _FORMAT_UNSET),
+        font_size: int | None = cast(Any, _FORMAT_UNSET),
+        bold: bool | None = cast(Any, _FORMAT_UNSET),
+        italic: bool | None = cast(Any, _FORMAT_UNSET),
+        align: str | None = cast(Any, _FORMAT_UNSET),
+        valign: str | None = cast(Any, _FORMAT_UNSET),
+        border: int | None = cast(Any, _FORMAT_UNSET),
+        text_wrap: bool | None = cast(Any, _FORMAT_UNSET),
+        top: int | None = cast(Any, _FORMAT_UNSET),
+        bottom: int | None = cast(Any, _FORMAT_UNSET),
+        left: int | None = cast(Any, _FORMAT_UNSET),
+        right: int | None = cast(Any, _FORMAT_UNSET),
+        num_format: str | None = cast(Any, _FORMAT_UNSET),
+        bg_color: str | None = cast(Any, _FORMAT_UNSET),
+        font_color: str | None = cast(Any, _FORMAT_UNSET),
+    ) -> Self:
+        data: dict[str, Any] = {}
+        if font_name is not _FORMAT_UNSET:
+            data["font_name"] = font_name
+        if font_size is not _FORMAT_UNSET:
+            data["font_size"] = font_size
+        if bold is not _FORMAT_UNSET:
+            data["bold"] = bold
+        if italic is not _FORMAT_UNSET:
+            data["italic"] = italic
+        if align is not _FORMAT_UNSET:
+            data["align"] = align
+        if valign is not _FORMAT_UNSET:
+            data["valign"] = valign
+        if border is not _FORMAT_UNSET:
+            data["border"] = border
+        if text_wrap is not _FORMAT_UNSET:
+            data["text_wrap"] = text_wrap
+        if top is not _FORMAT_UNSET:
+            data["top"] = top
+        if bottom is not _FORMAT_UNSET:
+            data["bottom"] = bottom
+        if left is not _FORMAT_UNSET:
+            data["left"] = left
+        if right is not _FORMAT_UNSET:
+            data["right"] = right
+        if num_format is not _FORMAT_UNSET:
+            data["num_format"] = num_format
+        if bg_color is not _FORMAT_UNSET:
+            data["bg_color"] = bg_color
+        if font_color is not _FORMAT_UNSET:
+            data["font_color"] = font_color
+        return replace(self, **data)
 
     def merge(self, other: "CellFormatPatch") -> "CellFormatPatch":
         # 右侧非 None 覆盖左侧
