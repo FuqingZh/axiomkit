@@ -27,7 +27,7 @@ explicit taxonomy for `Spec`, `Options`, `Policy`, `Patch`, `Plan`, `Layout`,
 
 | Example | Current role | Verdict | Notes |
 | --- | --- | --- | --- |
-| `ContrastSpec` | caller-authored contrast declaration | keep | Good `Spec -> Plan` split with `ContrastPlan` |
+| `TTestContrast` | caller-authored t-test contrast declaration | keep | Domain-specific name is clearer than generic `ContrastSpec` at the current scope |
 | `ContrastPlan` | normalized execution-ready contrast set | keep | `Plan` is accurate and useful |
 | `WorkspaceLayoutSpec` | declared layout contract before `WorkspacePlan` | keep for now | Accurate today; reevaluate only if workspace API collapses declaration and materialization |
 | `WorkspacePaths` | resolved path facts | keep | Bare domain noun is sufficient |
@@ -40,10 +40,11 @@ explicit taxonomy for `Spec`, `Options`, `Policy`, `Patch`, `Plan`, `Layout`,
 
 ### Named Decisions
 
-- `ContrastSpec`: reasonable, keep.
-  It is a high-frequency public input type used directly in README examples and
-  tests. The name tells the user they are declaring a contrast, not executing
-  one. The downstream `ContrastPlan` strengthens that model.
+- `TTestContrast`: keep.
+  The public type is high-frequency and user-authored, but `ContrastSpec` was
+  too generic for the current scope. `TTestContrast` tells the caller exactly
+  which statistical surface it belongs to, while `ContrastPlan` still carries
+  the normalized execution role.
 
 - `WorkspaceLayoutSpec`: acceptable, keep in the short term.
   The type really is a declared layout contract that is later validated and
@@ -171,7 +172,7 @@ explicit taxonomy for `Spec`, `Options`, `Policy`, `Patch`, `Plan`, `Layout`,
 
 ### Preserve
 
-- Keep `ContrastSpec` / `ContrastPlan`.
+- Keep `TTestContrast` / `ContrastPlan`.
 - Keep `WorkspaceLayoutSpec` / `WorkspacePlan` for now.
 - Keep the Rust-core plus Python-facade direction.
 - Keep optional dependency gating and lazy import behavior.

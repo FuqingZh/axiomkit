@@ -11,7 +11,7 @@ Personal, portable engineering toolkit (Python/R/Rust).
 ```python
 import polars as pl
 from axiomkit.stats import (
-    ContrastSpec,
+    TTestContrast,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
@@ -31,7 +31,7 @@ df_values = pl.DataFrame(
 df_t = calculate_t_test_two_sample(
     df_values,
     col_feature="FeatureId",
-    contrasts=[ContrastSpec(group_test="case", group_ref="ctrl")],
+    contrasts=[TTestContrast(group_test="case", group_ref="ctrl")],
     rule_p_adjust="bh",
 )
 
@@ -52,7 +52,7 @@ df_paired = calculate_t_test_paired(
     ),
     col_feature="FeatureId",
     col_pair="PairId",
-    contrasts=ContrastSpec(group_test="case", group_ref="ctrl"),
+    contrasts=TTestContrast(group_test="case", group_ref="ctrl"),
 )
 
 df_anova = calculate_anova_one_way(

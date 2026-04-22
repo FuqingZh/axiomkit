@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 
 from axiomkit.stats import (
-    ContrastSpec,
+    TTestContrast,
     calculate_anova_one_way,
     calculate_t_test_two_sample,
 )
@@ -94,8 +94,8 @@ def test_calculate_t_test_two_sample_performance_regression(
         measure_runs=measure_runs,
         col_feature="FeatureId",
         contrasts=[
-            ContrastSpec(group_test="B", group_ref="A"),
-            ContrastSpec(group_test="C", group_ref="A"),
+            TTestContrast(group_test="B", group_ref="A"),
+            TTestContrast(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bh",
     )

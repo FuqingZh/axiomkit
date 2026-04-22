@@ -3,7 +3,9 @@ from typing import TYPE_CHECKING, Any
 from axiomkit._optional_deps import import_optional_attr
 
 __all__ = [
-    "ContrastSpec",
+    "TTestContrast",
+    "OraComparison",
+    "OraOptions",
     "calculate_anova_one_way",
     "calculate_anova_one_way_welch",
     "calculate_anova_two_way",
@@ -15,10 +17,10 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from .ora import calculate_ora
+    from .ora import OraComparison, OraOptions, calculate_ora
     from .p_value import calculate_adjusted_p_values
     from .parametric import (
-        ContrastSpec,
+        TTestContrast,
         calculate_anova_one_way,
         calculate_anova_one_way_welch,
         calculate_anova_two_way,
@@ -63,9 +65,27 @@ def __getattr__(name: str) -> Any:
             package=__name__,
             feature="axiomkit.stats",
             extras=("stats",),
-            required_modules=("numpy", "scipy", "polars"),
+            required_modules=("numpy", "scipy", "polars", "pydantic"),
         )
-    if name == "ContrastSpec":
+    if name == "OraComparison":
+        return import_optional_attr(
+            module_name=".ora",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars", "pydantic"),
+        )
+    if name == "OraOptions":
+        return import_optional_attr(
+            module_name=".ora",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars", "pydantic"),
+        )
+    if name == "TTestContrast":
         return import_optional_attr(
             module_name=".parametric",
             attr_name=name,

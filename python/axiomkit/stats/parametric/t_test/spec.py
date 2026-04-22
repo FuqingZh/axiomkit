@@ -34,7 +34,7 @@ class TStatisticsResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ContrastSpec:
+class TTestContrast:
     group_test: str
     group_ref: str
 
@@ -61,21 +61,21 @@ class ContrastPlan:
     @classmethod
     def from_inputs(
         cls,
-        contrasts: ContrastSpec | Sequence[ContrastSpec],
+        contrasts: TTestContrast | Sequence[TTestContrast],
     ) -> Self:
-        items_contrast: Sequence[ContrastSpec]
-        if isinstance(contrasts, ContrastSpec):
+        items_contrast: Sequence[TTestContrast]
+        if isinstance(contrasts, TTestContrast):
             items_contrast = [contrasts]
         elif isinstance(contrasts, Sequence) and not isinstance(contrasts, str):
             items_contrast = contrasts
         else:
             raise ValueError(
-                "Arg `contrasts` must be a ContrastSpec or a sequence of ContrastSpec items."
+                "Arg `contrasts` must be a TTestContrast or a sequence of TTestContrast items."
             )
 
-        if any(not isinstance(_item, ContrastSpec) for _item in items_contrast):
+        if any(not isinstance(_item, TTestContrast) for _item in items_contrast):
             raise ValueError(
-                "Arg `contrasts` must be a ContrastSpec or a sequence of ContrastSpec items."
+                "Arg `contrasts` must be a TTestContrast or a sequence of TTestContrast items."
             )
 
         pairs_seen = set()

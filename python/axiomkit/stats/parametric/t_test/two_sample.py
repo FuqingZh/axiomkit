@@ -27,7 +27,7 @@ from .constant import (
 from .spec import (
     AlternativeHypothesisType,
     ContrastPlan,
-    ContrastSpec,
+    TTestContrast,
     TStatisticsResult,
 )
 from .util import (
@@ -149,7 +149,7 @@ def calculate_t_test_two_sample(
     col_value: str = "Value",
     col_group: str = "Group",
     *,
-    contrasts: ContrastSpec | Sequence[ContrastSpec],
+    contrasts: TTestContrast | Sequence[TTestContrast],
     col_comparison: str | None = None,
     col_feature: str | None = None,
     col_is_valid: str | None = None,
@@ -168,7 +168,7 @@ def calculate_t_test_two_sample(
         df: Input data in long format, with one row per observation.
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
-        contrasts: Specification of group contrasts to test, as a :class:`ContrastSpec` or a sequence of :class:`ContrastSpec` items.
+        contrasts: Specification of group contrasts to test, as a :class:`TTestContrast` or a sequence of :class:`TTestContrast` items.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisType`.
             - ``two-sided``: (Default) Test if means are different.
@@ -188,7 +188,7 @@ def calculate_t_test_two_sample(
             If any of the following conditions are met:
             - `col_value` and `col_group` are the same.
             - `col_feature` is the same as `col_value` or `col_group`.
-            - `contrasts` is not a `ContrastSpec` or a sequence of `ContrastSpec` items.
+            - `contrasts` is not a `TTestContrast` or a sequence of `TTestContrast` items.
             - Any specified contrast has identical `group_test` and `group_ref`.
             - `rule_alternative` is not one of "two-sided", "less", or "greater".
             - `rule_p_adjust` is not a valid p-value adjustment method.
@@ -211,7 +211,7 @@ def calculate_t_test_two_sample(
     Examples:
         ```python
         import polars as pl
-        from axiomkit.stats import ContrastSpec, calculate_t_test_two_sample
+        from axiomkit.stats import TTestContrast, calculate_t_test_two_sample
         # Example DataFrame
         df = pl.DataFrame({
             "Feature": ["A", "A", "A", "B", "B", "B"],
@@ -219,8 +219,8 @@ def calculate_t_test_two_sample(
             "Value": [1.2, 1.5, 1.3, 2.1, 2.4, 2.3]
         })
         # Define contrasts
-        contrast1 = ContrastSpec(group_test="X", group_ref="Y")
-        contrast2 = ContrastSpec(group_test="Y", group_ref="X")
+        contrast1 = TTestContrast(group_test="X", group_ref="Y")
+        contrast2 = TTestContrast(group_test="Y", group_ref="X")
         # Calculate t-tests
         result = calculate_t_test_two_sample(
             df,

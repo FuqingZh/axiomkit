@@ -5,7 +5,7 @@ import math
 import polars as pl
 
 from axiomkit.stats import (
-    ContrastSpec,
+    TTestContrast,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
@@ -118,7 +118,7 @@ def test_parametric_stats_golden_paired() -> None:
         df_values,
         col_pair="PairId",
         col_feature="FeatureId",
-        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        contrasts=TTestContrast(group_test="B", group_ref="A"),
         rule_p_adjust="bonferroni",
     )
 
@@ -215,8 +215,8 @@ def test_parametric_stats_golden_two_sample_comparison() -> None:
         col_comparison="Comparison",
         col_is_valid="IsValid",
         contrasts=[
-            ContrastSpec(group_test="B", group_ref="A"),
-            ContrastSpec(group_test="C", group_ref="A"),
+            TTestContrast(group_test="B", group_ref="A"),
+            TTestContrast(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )

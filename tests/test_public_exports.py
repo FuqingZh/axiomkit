@@ -15,6 +15,11 @@ def test_root_exports_stable_subsystem_modules() -> None:
     assert axiomkit.workspace.__name__ == "axiomkit.workspace"
 
 
+def test_stats_exposes_public_ora_models() -> None:
+    assert axiomkit.stats.OraComparison.__name__ == "OraComparison"
+    assert axiomkit.stats.OraOptions.__name__ == "OraOptions"
+
+
 def test_root_deprecated_module_aliases_still_work_with_warning() -> None:
     with pytest.warns(DeprecationWarning, match="axiomkit.io_fasta"):
         io_fasta = axiomkit.io_fasta

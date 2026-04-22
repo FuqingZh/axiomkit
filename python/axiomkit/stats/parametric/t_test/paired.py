@@ -24,7 +24,7 @@ from .constant import (
 from .spec import (
     AlternativeHypothesisType,
     ContrastPlan,
-    ContrastSpec,
+    TTestContrast,
     TStatisticsResult,
 )
 from .util import (
@@ -96,7 +96,7 @@ def calculate_t_test_paired(
     col_value: str = "Value",
     col_group: str = "Group",
     *,
-    contrasts: ContrastSpec | Sequence[ContrastSpec],
+    contrasts: TTestContrast | Sequence[TTestContrast],
     col_pair: str,
     col_feature: str | None = None,
     rule_alternative: AlternativeHypothesisType | str = "two-sided",
@@ -114,7 +114,7 @@ def calculate_t_test_paired(
         df: Input data in long format, with one row per paired observation.
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
-        contrasts: Specification of group contrasts to test, as a :class:`ContrastSpec` or a sequence of :class:`ContrastSpec` items.
+        contrasts: Specification of group contrasts to test, as a :class:`TTestContrast` or a sequence of :class:`TTestContrast` items.
         col_pair: Name of the column identifying matched pairs.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         rule_alternative: Alternative hypothesis for the paired t-test. See :class:`AlternativeHypothesisType`.

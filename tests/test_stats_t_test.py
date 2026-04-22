@@ -7,7 +7,7 @@ import pytest
 from scipy import stats
 
 from axiomkit.stats import (
-    ContrastSpec,
+    TTestContrast,
     calculate_t_test_one_sample,
     calculate_t_test_paired,
     calculate_t_test_two_sample,
@@ -127,7 +127,7 @@ def test_calculate_t_test_paired_matches_scipy_for_single_contrast() -> None:
     df_result = calculate_t_test_paired(
         df_values,
         col_pair="PairId",
-        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        contrasts=TTestContrast(group_test="B", group_ref="A"),
     )
 
     assert df_result.columns == [
@@ -188,8 +188,8 @@ def test_calculate_t_test_paired_supports_feature_and_multiple_contrasts() -> No
         col_pair="PairId",
         col_feature="FeatureId",
         contrasts=[
-            ContrastSpec(group_test="B", group_ref="A"),
-            ContrastSpec(group_test="C", group_ref="A"),
+            TTestContrast(group_test="B", group_ref="A"),
+            TTestContrast(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
@@ -229,7 +229,7 @@ def test_calculate_t_test_paired_supports_rule_alternative() -> None:
     df_result = calculate_t_test_paired(
         df_values,
         col_pair="PairId",
-        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        contrasts=TTestContrast(group_test="B", group_ref="A"),
         rule_alternative="less",
     )
 
@@ -251,7 +251,7 @@ def test_calculate_t_test_paired_rejects_missing_pairs() -> None:
         calculate_t_test_paired(
             df_values,
             col_pair="PairId",
-            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+            contrasts=TTestContrast(group_test="B", group_ref="A"),
         )
 
 
@@ -268,7 +268,7 @@ def test_calculate_t_test_paired_rejects_duplicate_pairs() -> None:
         calculate_t_test_paired(
             df_values,
             col_pair="PairId",
-            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+            contrasts=TTestContrast(group_test="B", group_ref="A"),
         )
 
 
@@ -282,7 +282,7 @@ def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=ContrastSpec(group_test="A", group_ref="B"),
+        contrasts=TTestContrast(group_test="A", group_ref="B"),
     )
 
     assert df_result.columns == [
@@ -357,8 +357,8 @@ def test_calculate_t_test_two_sample_supports_feature_and_multiple_contrasts() -
         df_values,
         col_feature="FeatureId",
         contrasts=[
-            ContrastSpec(group_test="B", group_ref="A"),
-            ContrastSpec(group_test="C", group_ref="A"),
+            TTestContrast(group_test="B", group_ref="A"),
+            TTestContrast(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
@@ -465,8 +465,8 @@ def test_calculate_t_test_two_sample_supports_comparison_and_validity_gate() -> 
         col_comparison="Comparison",
         col_is_valid="IsValid",
         contrasts=[
-            ContrastSpec(group_test="B", group_ref="A"),
-            ContrastSpec(group_test="C", group_ref="A"),
+            TTestContrast(group_test="B", group_ref="A"),
+            TTestContrast(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
@@ -523,7 +523,7 @@ def test_calculate_t_test_two_sample_supports_comparison_without_validity_gate()
         df_values,
         col_feature="FeatureId",
         col_comparison="Comparison",
-        contrasts=ContrastSpec(group_test="B", group_ref="A"),
+        contrasts=TTestContrast(group_test="B", group_ref="A"),
     )
 
     assert df_result.select("Comparison", "FeatureId", "ContrastId").rows() == [
@@ -542,7 +542,7 @@ def test_calculate_t_test_two_sample_builds_contrast_id_as_pair() -> None:
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=ContrastSpec(group_test="case", group_ref="ctrl"),
+        contrasts=TTestContrast(group_test="case", group_ref="ctrl"),
     )
 
     assert df_result["ContrastId"].to_list() == [["case", "ctrl"]]
@@ -558,7 +558,7 @@ def test_calculate_t_test_two_sample_normalizes_group_values_to_strings() -> Non
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=ContrastSpec(group_test=0, group_ref=1),
+        contrasts=TTestContrast(group_test=0, group_ref=1),
     )
 
     row = df_result.row(0, named=True)
@@ -577,7 +577,7 @@ def test_calculate_t_test_two_sample_supports_rule_alternative_and_equal_varianc
 
     df_result = calculate_t_test_two_sample(
         df_values.lazy(),
-        contrasts=ContrastSpec(group_test="A", group_ref="B"),
+        contrasts=TTestContrast(group_test="A", group_ref="B"),
         rule_alternative="less",
         should_assume_equal_variance=True,
     )
@@ -600,7 +600,7 @@ def test_calculate_t_test_two_sample_keeps_insufficient_rows_with_nan_stats() ->
     df_result = calculate_t_test_two_sample(
         df_values,
         col_feature="FeatureId",
-        contrasts=[ContrastSpec(group_test="A", group_ref="B")],
+        contrasts=[TTestContrast(group_test="A", group_ref="B")],
         rule_p_adjust="bh",
     )
 
@@ -619,51 +619,51 @@ def test_calculate_t_test_two_sample_keeps_insufficient_rows_with_nan_stats() ->
 def test_calculate_t_test_two_sample_rejects_invalid_contrast_inputs() -> None:
     df_values = pl.DataFrame({"Group": ["A", "B"], "Value": [1.0, 2.0]})
 
-    with pytest.raises(ValueError, match="ContrastSpec or a sequence"):
+    with pytest.raises(ValueError, match="TTestContrast or a sequence"):
         calculate_t_test_two_sample(
             df_values,
             contrasts="A_vs_B",
         )
 
-    with pytest.raises(ValueError, match="ContrastSpec or a sequence"):
+    with pytest.raises(ValueError, match="TTestContrast or a sequence"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=[ContrastSpec(group_test="A", group_ref="B"), "bad"],
+            contrasts=[TTestContrast(group_test="A", group_ref="B"), "bad"],
         )
 
     with pytest.raises(ValueError, match="Duplicate contrast pairs"):
         calculate_t_test_two_sample(
             df_values,
             contrasts=[
-                ContrastSpec(group_test="A", group_ref="B"),
-                ContrastSpec(group_test="A", group_ref="B"),
+                TTestContrast(group_test="A", group_ref="B"),
+                TTestContrast(group_test="A", group_ref="B"),
             ],
         )
 
     with pytest.raises(ValueError, match="must be different from `group_ref`"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=[ContrastSpec(group_test="A", group_ref="A")],
+            contrasts=[TTestContrast(group_test="A", group_ref="A")],
         )
 
     with pytest.raises(ValueError, match="Invalid p-value adjustment mode"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            contrasts=TTestContrast(group_test="A", group_ref="B"),
             rule_p_adjust="bad",
         )
 
     with pytest.raises(ValueError, match="`col_feature` is required"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            contrasts=TTestContrast(group_test="A", group_ref="B"),
             col_comparison="Comparison",
         )
 
     with pytest.raises(ValueError, match="`col_comparison` must be different"):
         calculate_t_test_two_sample(
             df_values.rename({"Group": "Comparison"}),
-            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            contrasts=TTestContrast(group_test="A", group_ref="B"),
             col_group="Comparison",
             col_comparison="Comparison",
             col_feature="FeatureId",
@@ -681,7 +681,7 @@ def test_calculate_t_test_two_sample_rejects_invalid_contrast_inputs() -> None:
     with pytest.raises(ValueError, match="must be consistent within each"):
         calculate_t_test_two_sample(
             df_validity,
-            contrasts=ContrastSpec(group_test="B", group_ref="A"),
+            contrasts=TTestContrast(group_test="B", group_ref="A"),
             col_feature="FeatureId",
             col_comparison="Comparison",
             col_is_valid="IsValid",
@@ -702,5 +702,5 @@ def test_calculate_t_test_two_sample_rejects_non_numeric_value_column() -> None:
     ):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=ContrastSpec(group_test="A", group_ref="B"),
+            contrasts=TTestContrast(group_test="A", group_ref="B"),
         )
