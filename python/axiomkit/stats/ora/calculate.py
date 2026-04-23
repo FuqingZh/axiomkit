@@ -42,6 +42,18 @@ def calculate_ora(
     """
     Over-representation analysis (ORA) using a comparison-aware batch model.
 
+    Notes:
+        - Statistical model (per term):
+            - Universe size: M = BgTotal
+            - Number of "success" states in universe: n = BgHits
+            - Sample size (foreground): N = FgTotal
+            - Observed successes in sample: k = FgHits
+            - P-value is computed as P(X >= k) where X ~ Hypergeometric(M, n, N)
+        - `ComparisonId` output rule:
+            - Included for multi-comparison input
+            - Included for single comparisons with an explicit `comparison_id`
+            - Omitted only for single comparisons without an identifier
+
     Args:
         annotation:
             Mapping table with at least ``col_elements`` and ``col_terms``.
@@ -50,16 +62,32 @@ def calculate_ora(
         col_terms:
             Name of the term identifier column in ``annotation``.
         comparisons:
-            One :class:`OraComparison` or a sequence of comparisons. A single
+            One :class:`OraComparison` or an iterable of comparisons. A single
             comparison is treated as a batch of size 1.
         options:
             Query-level default options. When omitted, built-in defaults are used.
 
+    Raises:
+        ValueError:
+            If required annotation columns are missing, if `comparisons` is
+            empty or contains invalid items, or if comparison identifiers are
+            missing or duplicated in multi-comparison input.
+
     Returns:
-        A Polars DataFrame containing ORA results. Single-comparison results omit
-        ``ComparisonId`` only when ``comparison_id`` is not provided; results
-        include it for multi-comparison input and for single comparisons with an
-        explicit ``comparison_id``.
+        pl.DataFrame: DataFrame with ORA results and columns:
+            - `ComparisonId` (optional): Included for multi-comparison input and
+              for single comparisons with an explicit `comparison_id`; omitted
+              only for single comparisons without an identifier.
+            - Column named by `col_terms` (default: `TermId`): Term identifier
+            - `FgHits`: Number of foreground hits
+            - `FgTotal`: Total number of foreground elements
+            - `BgHits`: Number of background hits
+            - `BgTotal`: Total number of background elements
+            - `FoldEnrichment`: Fold enrichment of foreground hits over background hits
+            - `PValue`: Raw p-value from hypergeometric test
+            - `PAdjust`: Adjusted p-value
+            - `FgMembers` (optional): List of foreground members for each term
+            - `BgMembers` (optional): List of background members for each term
     """
     options = OraOptions() if options is None else options
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
 import numpy as np
 import polars as pl
