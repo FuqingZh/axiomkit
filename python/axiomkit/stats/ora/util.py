@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 import polars as pl
+import polars.selectors as pl_sel
 from numpy.typing import ArrayLike
 from polars._typing import SchemaDict
 from scipy import stats
-import polars.selectors as pl_sel
+
 from .constant import (
-    SCHEMA_ORA_STATS,
     COL_COMPARISON,
     COL_TERM,
+    SCHEMA_ORA_STATS,
 )
 from .spec import OraComparison, OraOptions, ResolvedOraComparison, ResolvedOraOptions
 
@@ -66,21 +67,37 @@ def create_empty_result(
 
 
 def normalize_comparisons(
-    comparisons: OraComparison | Sequence[OraComparison],
+    comparisons: OraComparison | Iterable[OraComparison],
 ) -> tuple[OraComparison, ...]:
-    items: tuple[OraComparison, ...]
-    match comparisons:
-        case OraComparison():
-            items = (comparisons,)
-        case Sequence():
-            items = tuple(comparisons)
-    if len(items) == 0:
-        raise ValueError("Arg `comparisons` must not be empty.")
-    if any(not isinstance(_item, OraComparison) for _item in items):
+    if isinstance(comparisons, OraComparison):
+        items = (comparisons,)
+    elif isinstance(comparisons, Iterable):
+        items = tuple(comparisons)
+    else:
         raise ValueError(
-            "Arg `comparisons` must be an OraComparison or a sequence of OraComparison items."
+            "Arg `comparisons` must be an OraComparison or an iterable of OraComparison items."
         )
     return items
+
+
+def validate_comparisons(comparisons: tuple[OraComparison, ...]) -> None:
+    if not comparisons:
+        raise ValueError("Arg `comparisons` must not be empty.")
+    if any(not isinstance(_item, OraComparison) for _item in comparisons):
+        raise ValueError(
+            "Arg `comparisons` must be an OraComparison or an iterable of OraComparison items."
+        )
+    if len(comparisons) > 1 and any(
+        _item.comparison_id is None for _item in comparisons
+    ):
+        raise ValueError(
+            "Arg `comparison_id` is required for each comparison when multiple comparisons are provided."
+        )
+    ids_comparison = [
+        _item.comparison_id for _item in comparisons if _item.comparison_id is not None
+    ]
+    if len(ids_comparison) != len(set(ids_comparison)):
+        raise ValueError("Duplicate comparison ids are not allowed.")
 
 
 def resolve_comparisons(
@@ -88,20 +105,15 @@ def resolve_comparisons(
     options: OraOptions,
 ) -> tuple[ResolvedOraComparison, ...]:
     num_comparisons = len(comparisons)
-    ids_seen: set[str] = set()
     items_resolved: list[ResolvedOraComparison] = []
     for _comparison in comparisons:
         comparison_id = _comparison.comparison_id
         if num_comparisons == 1:
             comparison_id = comparison_id or "default"
-        elif comparison_id is None:
+        if comparison_id is None:
             raise ValueError(
                 "Arg `comparison_id` is required for each comparison when multiple comparisons are provided."
             )
-        
-        if comparison_id in ids_seen:
-            raise ValueError("Duplicate comparison ids are not allowed.")
-        ids_seen.add(comparison_id)
 
         option_override = _comparison.option_override
         if (
@@ -124,7 +136,7 @@ def resolve_comparisons(
                 background_elements=background_elements,
                 options=ResolvedOraOptions.from_options(
                     base=options, override=option_override
-                )
+                ),
             )
         )
 
@@ -132,8 +144,7 @@ def resolve_comparisons(
 
 
 def select_required_columns(
-    annotation: pl.DataFrame | pl.LazyFrame,
-    *cols: str
+    annotation: pl.DataFrame | pl.LazyFrame, *cols: str
 ) -> pl.LazyFrame:
     lf = annotation.lazy() if isinstance(annotation, pl.DataFrame) else annotation
     schema = dict(lf.collect_schema())
@@ -143,5 +154,5 @@ def select_required_columns(
             + ", ".join(sorted(missing))
             + "."
         )
-    
+
     return lf.select(pl_sel.by_name(cols).cast(pl.String))

@@ -37,6 +37,26 @@ def test_calculate_ora_single_comparison_omits_comparison_id() -> None:
     assert df_result.height == 2
 
 
+def test_calculate_ora_single_comparison_with_id_keeps_comparison_id() -> None:
+    df_result = calculate_ora(
+        _annotation_frame(),
+        comparisons=OraComparison(
+            comparison_id="cmp_a",
+            foreground_elements={"g1", "g2"},
+        ),
+        options=OraOptions(
+            background_elements={"g1", "g2", "g3", "g4"},
+            thr_bg_hits_min=0,
+            thr_fg_hits_min=0,
+            thr_p_value=1.0,
+            thr_p_adjust=1.0,
+        ),
+    )
+
+    assert df_result.columns[0] == "ComparisonId"
+    assert set(df_result["ComparisonId"].to_list()) == {"cmp_a"}
+
+
 def test_calculate_ora_can_drop_fg_members_and_keep_bg_members() -> None:
     df_result = calculate_ora(
         _annotation_frame(),
@@ -99,6 +119,23 @@ def test_calculate_ora_multiple_comparisons_include_comparison_id() -> None:
 
     assert df_result.columns[0] == "ComparisonId"
     assert set(df_result["ComparisonId"].to_list()) == {"cmp_a", "cmp_b"}
+
+
+def test_calculate_ora_multiple_comparisons_reject_duplicate_comparison_id() -> None:
+    with pytest.raises(ValueError, match="Duplicate comparison ids"):
+        calculate_ora(
+            _annotation_frame(),
+            comparisons=[
+                OraComparison(
+                    comparison_id="cmp_a",
+                    foreground_elements={"g1", "g2"},
+                ),
+                OraComparison(
+                    comparison_id="cmp_a",
+                    foreground_elements={"g3", "g4"},
+                ),
+            ],
+        )
 
 
 def test_calculate_ora_option_override_inherits_unspecified_fields() -> None:

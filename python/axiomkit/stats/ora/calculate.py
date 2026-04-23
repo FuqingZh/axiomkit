@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
@@ -12,12 +13,12 @@ from axiomkit.stats.p_value import (
 )
 
 from .constant import (
-    COLS_COMPARISON_UNIT,
-    SCHEMA_COMPARISON,
-    SCHEMA_ORA_CONFIG_FIELDS,
     COL_COMPARISON,
     COL_ELEMENT,
     COL_TERM,
+    COLS_COMPARISON_UNIT,
+    SCHEMA_COMPARISON,
+    SCHEMA_ORA_CONFIG_FIELDS,
 )
 from .spec import OraComparison, OraOptions
 from .util import (
@@ -26,6 +27,7 @@ from .util import (
     normalize_comparisons,
     resolve_comparisons,
     select_required_columns,
+    validate_comparisons,
 )
 
 
@@ -34,7 +36,7 @@ def calculate_ora(
     col_elements: str = "ElementId",
     col_terms: str = "TermId",
     *,
-    comparisons: OraComparison | tuple[OraComparison, ...],
+    comparisons: OraComparison | Iterable[OraComparison],
     options: OraOptions | None = None,
 ) -> pl.DataFrame:
     """
@@ -55,13 +57,20 @@ def calculate_ora(
 
     Returns:
         A Polars DataFrame containing ORA results. Single-comparison results omit
-        ``ComparisonId``; multi-comparison results include it as the leading column.
+        ``ComparisonId`` only when ``comparison_id`` is not provided; results
+        include it for multi-comparison input and for single comparisons with an
+        explicit ``comparison_id``.
     """
-    comparisons_normalized = normalize_comparisons(comparisons)
     options = OraOptions() if options is None else options
+
+    comparisons_normalized = normalize_comparisons(comparisons)
+    validate_comparisons(comparisons_normalized)
+    assert len(comparisons_normalized) >= 1
+    should_include_comparison_column = len(comparisons_normalized) > 1 or (
+        comparisons_normalized[0].comparison_id is not None
+    )
     comparisons_resolved = resolve_comparisons(comparisons_normalized, options)
 
-    should_include_comparison = len(comparisons_resolved) > 1
     should_include_fg_members = any(
         _item.options.should_keep_fg_members for _item in comparisons_resolved
     )
@@ -69,21 +78,20 @@ def calculate_ora(
         _item.options.should_keep_bg_members for _item in comparisons_resolved
     )
     df_empty = create_empty_result(
-        should_include_comparison=should_include_comparison,
+        should_include_comparison=should_include_comparison_column,
         should_include_fg_members=should_include_fg_members,
         should_include_bg_members=should_include_bg_members,
     )
 
-    lf_annotation = select_required_columns(
-        annotation,
-        col_elements,
-        col_terms,
-    ).rename(
-        {
-            col_elements: COL_ELEMENT,
-            col_terms: COL_TERM
-        }
-    ).unique()
+    lf_annotation = (
+        select_required_columns(
+            annotation,
+            col_elements,
+            col_terms,
+        )
+        .rename({col_elements: COL_ELEMENT, col_terms: COL_TERM})
+        .unique()
+    )
     comparison_ids: list[str] = []
     fg_element_lists: list[list[str]] = []
     bg_element_lists: list[list[str] | None] = []
@@ -128,15 +136,13 @@ def calculate_ora(
         }
     )
     lf_fg_elements = (
-        lf_comparison
-        .explode("ForegroundElements")
+        lf_comparison.explode("ForegroundElements")
         .select(COL_COMPARISON, pl.col("ForegroundElements").alias(COL_ELEMENT))
         .drop_nulls(COL_ELEMENT)
         .unique(COLS_COMPARISON_UNIT)
     )
     lf_bg_explicit = (
-        lf_comparison
-        .explode("BackgroundElements")
+        lf_comparison.explode("BackgroundElements")
         .select(COL_COMPARISON, pl.col("BackgroundElements").alias(COL_ELEMENT))
         .drop_nulls(COL_ELEMENT)
         .unique(COLS_COMPARISON_UNIT)
@@ -146,9 +152,7 @@ def calculate_ora(
         .unique()
         .join(lf_annotation.select(COL_ELEMENT).unique(), how="cross")
         if ids_bg_derived
-        else pl.LazyFrame(
-            schema=SCHEMA_COMPARISON
-        ).drop(COL_TERM)
+        else pl.LazyFrame(schema=SCHEMA_COMPARISON).drop(COL_TERM)
     )
     lf_bg_elements = pl.concat([lf_bg_explicit, lf_bg_derived], how="vertical").unique(
         COLS_COMPARISON_UNIT
@@ -160,8 +164,7 @@ def calculate_ora(
     ).unique(COLS_COMPARISON_UNIT)
     lf_config = lf_comparison.select(COL_COMPARISON, *SCHEMA_ORA_CONFIG_FIELDS)
     df_totals = (
-        lf_config
-        .join(
+        lf_config.join(
             lf_bg_elements.group_by(COL_COMPARISON).agg(
                 BgTotal=pl.len().cast(pl.Int64),
             ),
@@ -181,9 +184,7 @@ def calculate_ora(
         )
         .collect()
     )
-    df_invalid = df_totals.filter(
-        pl.col("BgTotal").le(0) | pl.col("FgTotal").le(0)
-    )
+    df_invalid = df_totals.filter(pl.col("BgTotal").le(0) | pl.col("FgTotal").le(0))
     for _row in df_invalid.iter_rows(named=True):
         logger.warning(
             "Skipping comparison `%s` because BgTotal=%s and FgTotal=%s.",
@@ -210,16 +211,19 @@ def calculate_ora(
         lf_mappings_marked.group_by([COL_COMPARISON, COL_TERM])
         .agg(
             BgHits=pl.col(COL_ELEMENT).n_unique().cast(pl.Int64),
-            FgHits=pl.col(COL_ELEMENT).filter(pl.col("_IsFg")).n_unique().cast(pl.Int64),
+            FgHits=pl.col(COL_ELEMENT)
+            .filter(pl.col("_IsFg"))
+            .n_unique()
+            .cast(pl.Int64),
         )
         .join(df_config_valid.lazy(), on=COL_COMPARISON, how="inner")
         .filter(
-            pl.col("BgHits").ge(pl.col("ThrBgHitsMin")) &
-            pl.when(pl.col("ThrBgHitsMax").is_null())
+            pl.col("BgHits").ge(pl.col("ThrBgHitsMin"))
+            & pl.when(pl.col("ThrBgHitsMax").is_null())
             .then(True)
-            .otherwise(pl.col("BgHits").le(pl.col("ThrBgHitsMax"))) &
-            pl.col("FgHits").ge(pl.col("ThrFgHitsMin")) &
-            pl.when(pl.col("ThrFgHitsMax").is_null())
+            .otherwise(pl.col("BgHits").le(pl.col("ThrBgHitsMax")))
+            & pl.col("FgHits").ge(pl.col("ThrFgHitsMin"))
+            & pl.when(pl.col("ThrFgHitsMax").is_null())
             .then(True)
             .otherwise(pl.col("FgHits").le(pl.col("ThrFgHitsMax")))
         )
@@ -275,10 +279,7 @@ def calculate_ora(
             .group_by([COL_COMPARISON, COL_TERM])
             .agg(
                 pl.col(COL_ELEMENT).unique().alias("BgMembers"),
-                pl.col(COL_ELEMENT)
-                .filter(pl.col("_IsFg"))
-                .unique()
-                .alias("FgMembers"),
+                pl.col(COL_ELEMENT).filter(pl.col("_IsFg")).unique().alias("FgMembers"),
             )
             .collect()
         )
@@ -299,13 +300,13 @@ def calculate_ora(
 
     sort_cols = [COL_COMPARISON, "PAdjust", "PValue", "FoldEnrichment", COL_TERM]
     sort_desc = [False, False, False, True, False]
-    if not should_include_comparison:
+    if not should_include_comparison_column:
         sort_cols = sort_cols[1:]
         sort_desc = sort_desc[1:]
     df_ora = df_ora.sort(sort_cols, descending=sort_desc)
 
     cols_select = []
-    if should_include_comparison:
+    if should_include_comparison_column:
         cols_select.append(COL_COMPARISON)
     cols_select.extend(
         [
@@ -323,5 +324,5 @@ def calculate_ora(
         cols_select.append("FgMembers")
     if should_include_bg_members:
         cols_select.append("BgMembers")
-        
+
     return df_ora.select(cols_select)
