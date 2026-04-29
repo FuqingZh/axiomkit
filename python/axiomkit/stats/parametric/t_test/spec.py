@@ -35,6 +35,35 @@ class TStatisticsResult:
 
 @dataclass(frozen=True, slots=True)
 class TTestContrast:
+    """Specify the direction of a two-group t-test contrast.
+
+    A contrast compares the mean of ``group_test`` against the mean of
+    ``group_ref``. The reported mean difference and t statistic numerator use
+    the direction ``mean(group_test) - mean(group_ref)``.
+
+    ``group_ref`` is the reference or baseline group for the contrast. It is
+    not the denominator of the t statistic; the t statistic denominator is the
+    standard error of the mean difference.
+
+    Attributes:
+        group_test: Group label on the test side of the contrast. For a
+            one-sided ``greater`` alternative, this is the group whose mean is
+            tested as greater than ``group_ref``. For ``less``, it is tested as
+            less than ``group_ref``.
+        group_ref: Reference or baseline group label. The contrast direction is
+            defined relative to this group.
+
+    Raises:
+        ValueError: If ``group_test`` and ``group_ref`` refer to the same group.
+
+    Examples:
+        >>> TTestContrast(group_test="B", group_ref="A")
+        TTestContrast(group_test='B', group_ref='A')
+
+        This contrast represents ``mean(B) - mean(A)``. With a ``greater``
+        alternative, it tests whether ``mean(B) > mean(A)``.
+    """
+
     group_test: str
     group_ref: str
 
