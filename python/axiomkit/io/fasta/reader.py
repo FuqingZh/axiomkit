@@ -393,6 +393,7 @@ def read_fasta(
     cnt_replaced_characters = 0
     cnt_empty_seqs_after_sanitize = 0
     cnt_chunks = 0
+    cnt_input_order = 0
 
     tmpdir_context = None
     if dir_tmp is None:
@@ -447,6 +448,7 @@ def read_fasta(
                         )
 
                     row = {
+                        "_InputOrder": cnt_input_order,
                         "File": str(_file),
                         "ProteinId": protein_id_parsed,
                         "ProteinSymbol": spec_header_parsed.symbol,
@@ -458,6 +460,7 @@ def read_fasta(
                     if should_include_sequence:
                         row["Sequence"] = seq_sanitized
                     rows_parsed.append(row)
+                    cnt_input_order += 1
 
                     if len(rows_parsed) >= NROWS_PER_PARQUET_CHUNK:
                         cnt_chunks = _write_rows_to_parquet(
@@ -470,6 +473,7 @@ def read_fasta(
 
         if cnt_chunks == 0:
             schema = {
+                "_InputOrder": pl.Int64,
                 "File": pl.Utf8,
                 "ProteinId": pl.Utf8,
                 "ProteinSymbol": pl.Utf8,
@@ -480,7 +484,7 @@ def read_fasta(
             }
             if should_include_sequence:
                 schema["Sequence"] = pl.Utf8
-            return pl.DataFrame(schema=schema)
+            return pl.DataFrame(schema=schema).drop("_InputOrder")
 
         lf_fasta = pl.scan_parquet(dir_tmp)
 
@@ -500,9 +504,15 @@ def read_fasta(
                     "; ".join(map(str, protein_ids_duplicate[:200])),
                 )
 
-            df_fasta = lf_fasta.unique(subset=["ProteinId"], keep="first").collect()
+            df_fasta = (
+                lf_fasta.sort("_InputOrder")
+                .unique(subset=["ProteinId"], keep="first")
+                .sort("_InputOrder")
+                .collect()
+                .drop("_InputOrder")
+            )
         else:
-            df_fasta = lf_fasta.collect()
+            df_fasta = lf_fasta.sort("_InputOrder").collect().drop("_InputOrder")
 
         if cnt_sanitized_seqs > 0:
             logger.warning(

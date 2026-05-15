@@ -49,8 +49,8 @@ def test_read_fasta_accepts_varargs_and_iterable_inputs(tmp_path) -> None:
     df_varargs = read_fasta(path_a, path_b)
     df_iterable = read_fasta([path_a, path_b])
 
-    assert sorted(df_varargs.get_column("ProteinId").to_list()) == ["P00001", "P00002"]
-    assert sorted(df_iterable.get_column("ProteinId").to_list()) == ["P00001", "P00002"]
+    assert df_varargs.get_column("ProteinId").to_list() == ["P00001", "P00002"]
+    assert df_iterable.get_column("ProteinId").to_list() == ["P00001", "P00002"]
 
 
 def test_read_fasta_rejects_invalid_iterable_items(tmp_path) -> None:
@@ -59,3 +59,21 @@ def test_read_fasta_rejects_invalid_iterable_items(tmp_path) -> None:
 
     with pytest.raises(TypeError, match="Unsupported file input type in iterable"):
         read_fasta([path_fasta, object()])
+
+
+def test_read_fasta_deduplicates_by_first_input_order(tmp_path) -> None:
+    path_a = tmp_path / "a.fasta"
+    path_b = tmp_path / "b.fasta"
+    path_a.write_text(
+        ">sp|P00001|FIRST_HUMAN First protein\nMPEPTIDE\n",
+        encoding="utf-8",
+    )
+    path_b.write_text(
+        ">sp|P00001|SECOND_HUMAN Second protein\nMPEPTIDER\n",
+        encoding="utf-8",
+    )
+
+    df_fasta = read_fasta(path_a, path_b)
+
+    assert df_fasta.get_column("ProteinId").to_list() == ["P00001"]
+    assert df_fasta.row(0, named=True)["ProteinSymbol"] == "FIRST_HUMAN"
