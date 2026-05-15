@@ -38,3 +38,24 @@ def test_read_fasta_no_longer_accepts_rules_fallback(tmp_path) -> None:
 
     with pytest.raises(TypeError, match="rules_fallback"):
         read_fasta(path_fasta, rules_fallback=False)
+
+
+def test_read_fasta_accepts_varargs_and_iterable_inputs(tmp_path) -> None:
+    path_a = tmp_path / "a.fasta"
+    path_b = tmp_path / "b.fasta"
+    path_a.write_text(">sp|P00001|A_HUMAN A protein\nMPEPTIDE\n", encoding="utf-8")
+    path_b.write_text(">sp|P00002|B_HUMAN B protein\nMPEPTIDER\n", encoding="utf-8")
+
+    df_varargs = read_fasta(path_a, path_b)
+    df_iterable = read_fasta([path_a, path_b])
+
+    assert sorted(df_varargs.get_column("ProteinId").to_list()) == ["P00001", "P00002"]
+    assert sorted(df_iterable.get_column("ProteinId").to_list()) == ["P00001", "P00002"]
+
+
+def test_read_fasta_rejects_invalid_iterable_items(tmp_path) -> None:
+    path_fasta = tmp_path / "proteins.fasta"
+    path_fasta.write_text(">sp|P12345|FOO_HUMAN Foo protein\nMPEPTIDE\n", encoding="utf-8")
+
+    with pytest.raises(TypeError, match="Unsupported file input type in iterable"):
+        read_fasta([path_fasta, object()])

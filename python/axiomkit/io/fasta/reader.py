@@ -226,9 +226,7 @@ def _parse_fasta_header(
 
     # 2) Only if Pyteomics info is incomplete, run private rules to backfill.
     # Treat name as optional to avoid running private rules on most headers.
-    is_fallback_rules_needed = not (
-        spec_header_parsed.id and spec_header_parsed.symbol
-    )
+    is_fallback_rules_needed = not (spec_header_parsed.id and spec_header_parsed.symbol)
     if is_fallback_rules_needed:
         spec_header_fallback = _parse_fasta_header_with_rules(header)
     else:
@@ -304,6 +302,27 @@ def calculate_mw_kda(seq: str) -> MwResult:
 NROWS_PER_PARQUET_CHUNK = 20_000
 
 
+def _iter_files_in(
+    files_in: tuple[
+        Iterable[os.PathLike[str] | str] | os.PathLike[str] | str,
+        ...,
+    ],
+) -> Iterable[os.PathLike[str] | str]:
+    for item in files_in:
+        if isinstance(item, (str, os.PathLike)):
+            yield item
+            continue
+        if isinstance(item, Iterable):
+            for path_item in item:
+                if not isinstance(path_item, (str, os.PathLike)):
+                    raise TypeError(
+                        f"Unsupported file input type in iterable: {type(path_item)!r}"
+                    )
+                yield path_item
+            continue
+        raise TypeError(f"Unsupported file input type: {type(item)!r}")
+
+
 def _write_rows_to_parquet(
     rows: list[dict[str, Any]],
     dir_tmp: Path,
@@ -318,8 +337,7 @@ def _write_rows_to_parquet(
 
 
 def read_fasta(
-    files_in: Iterable[os.PathLike[str] | str] | os.PathLike[str] | str,
-    *,
+    *files_in: Iterable[os.PathLike[str] | str] | os.PathLike[str] | str,
     should_include_sequence: bool = False,
     should_deduplicate: bool = True,
     dir_tmp: Path | str | None = None,
@@ -364,13 +382,11 @@ def read_fasta(
 
     Examples:
         >>> df = read_fasta("proteins.fasta")
+        >>> df = read_fasta("a.faa", "b.faa", should_include_sequence=True)
         >>> df = read_fasta(["a.faa", "b.faa"], should_include_sequence=True)
     """
-    files_in = (
-        [Path(files_in)] if isinstance(files_in, (str, os.PathLike)) else files_in
-    )
-    files_in_norm = [Path(_p) for _p in files_in]
 
+    files_in_norm = [Path(_p) for _p in _iter_files_in(files_in)]
     rows_parsed: list[dict[str, Any]] = []
     cnt_sanitized_seqs = 0
     cnt_sanitized_characters = 0
@@ -392,58 +408,61 @@ def read_fasta(
             if not _file.is_file():
                 logger.warning(f"Skipping non-file: {_file}")
                 continue
+            with _file.open("rt", encoding="UTF-8") as handle:
+                records = SeqIO.parse(handle, "fasta")
+                for _record in records:
+                    _record = cast(SeqRecord, _record)
+                    seq_sanitized = str(_record.seq)
+                    spec_header_parsed = _parse_fasta_header(_record.description)
 
-            for _record in SeqIO.parse(_file, "fasta"):
-                _record = cast(SeqRecord, _record)
-                seq_sanitized = str(_record.seq)
-                spec_header_parsed = _parse_fasta_header(_record.description)
-
-                protein_id_parsed = (
-                    spec_header_parsed.id or spec_header_parsed.symbol or _record.id
-                )
-
-                try:
-                    spec_mw_result = calculate_mw_kda(seq_sanitized)
-                    if (
-                        spec_mw_result.cnt_sanitized_chars > 0
-                        or spec_mw_result.cnt_replaced_chars > 0
-                    ):
-                        cnt_sanitized_seqs += 1
-                        cnt_sanitized_characters += spec_mw_result.cnt_sanitized_chars
-                        cnt_replaced_characters += spec_mw_result.cnt_replaced_chars
-                    if spec_mw_result.is_empty_after_sanitize:
-                        cnt_empty_seqs_after_sanitize += 1
-                except Exception as e:
-                    logger.warning(
-                        "MW failed: file={}, term={}, err={}",
-                        _file.name,
-                        protein_id_parsed,
-                        e,
-                    )
-                    spec_mw_result = MwResult(
-                        mw_kda=None,
-                        cnt_sanitized_chars=0,
-                        cnt_replaced_chars=0,
-                        is_empty_after_sanitize=False,
+                    protein_id_parsed = (
+                        spec_header_parsed.id or spec_header_parsed.symbol or _record.id
                     )
 
-                row = {
-                    "File": str(_file),
-                    "ProteinId": protein_id_parsed,
-                    "ProteinSymbol": spec_header_parsed.symbol,
-                    "ProteinName": spec_header_parsed.name,
-                    "GeneSymbol": _extract_gene_symbol(_record.description),
-                    "MWKDa": spec_mw_result.mw_kda,
-                    "Length": len(seq_sanitized),
-                }
-                if should_include_sequence:
-                    row["Sequence"] = seq_sanitized
-                rows_parsed.append(row)
+                    try:
+                        spec_mw_result = calculate_mw_kda(seq_sanitized)
+                        if (
+                            spec_mw_result.cnt_sanitized_chars > 0
+                            or spec_mw_result.cnt_replaced_chars > 0
+                        ):
+                            cnt_sanitized_seqs += 1
+                            cnt_sanitized_characters += (
+                                spec_mw_result.cnt_sanitized_chars
+                            )
+                            cnt_replaced_characters += spec_mw_result.cnt_replaced_chars
+                        if spec_mw_result.is_empty_after_sanitize:
+                            cnt_empty_seqs_after_sanitize += 1
+                    except Exception as e:
+                        logger.warning(
+                            "MW failed: file={}, term={}, err={}",
+                            _file.name,
+                            protein_id_parsed,
+                            e,
+                        )
+                        spec_mw_result = MwResult(
+                            mw_kda=None,
+                            cnt_sanitized_chars=0,
+                            cnt_replaced_chars=0,
+                            is_empty_after_sanitize=False,
+                        )
 
-                if len(rows_parsed) >= NROWS_PER_PARQUET_CHUNK:
-                    cnt_chunks = _write_rows_to_parquet(
-                        rows_parsed, dir_tmp, chunk_index=cnt_chunks
-                    )
+                    row = {
+                        "File": str(_file),
+                        "ProteinId": protein_id_parsed,
+                        "ProteinSymbol": spec_header_parsed.symbol,
+                        "ProteinName": spec_header_parsed.name,
+                        "GeneSymbol": _extract_gene_symbol(_record.description),
+                        "MWKDa": spec_mw_result.mw_kda,
+                        "Length": len(seq_sanitized),
+                    }
+                    if should_include_sequence:
+                        row["Sequence"] = seq_sanitized
+                    rows_parsed.append(row)
+
+                    if len(rows_parsed) >= NROWS_PER_PARQUET_CHUNK:
+                        cnt_chunks = _write_rows_to_parquet(
+                            rows_parsed, dir_tmp, chunk_index=cnt_chunks
+                        )
 
         cnt_chunks = _write_rows_to_parquet(
             rows_parsed, dir_tmp, chunk_index=cnt_chunks
