@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import gc
+import warnings
 from pathlib import Path
 
-from axiomkit.runner.runner import derive_worker_distribution, run_cmd, run_jobs
+from axiomkit.runner.runner import derive_worker_distribution, run_cmd, run_jobs, run_pipe
 
 
 def test_derive_worker_distribution_prefers_larger_threads_per_worker() -> None:
@@ -27,6 +29,28 @@ def test_run_cmd_executes_and_returns_tail(tmp_path: Path) -> None:
     assert report.return_code == 0
     assert path_file_log.exists()
     assert "hello runner" in path_file_log.read_text(encoding="utf-8")
+
+
+def test_run_cmd_and_pipe_close_process_streams(tmp_path: Path) -> None:
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always", ResourceWarning)
+        run_cmd(
+            ["python3", "-c", "print('hello runner')"],
+            title="runner-close-smoke",
+            file_log=tmp_path / "cmd.log",
+        )
+        run_pipe(
+            ["python3", "-c", "print('hello pipe')"],
+            ["python3", "-c", "import sys; print(sys.stdin.read().upper())"],
+            title="pipe-close-smoke",
+            file_log=tmp_path / "pipe.log",
+        )
+        gc.collect()
+
+    resource_warnings = [
+        record for record in records if issubclass(record.category, ResourceWarning)
+    ]
+    assert resource_warnings == []
 
 
 def test_run_jobs_collects_failures_without_raising() -> None:

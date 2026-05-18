@@ -97,10 +97,29 @@ def _terminate_process(
             proc.kill()
 
 
-def _kill_process_if_running(proc: subprocess.Popen[Any]) -> None:
-    if proc.poll() is None:
+def _kill_process_if_running(proc: subprocess.Popen[Any] | None) -> None:
+    if proc and proc.poll() is None:
         with suppress(Exception):
             proc.kill()
+
+
+def _consume_stream(
+    stream: Any,
+    *,
+    prefix: str = "",
+    fh: Any = None,
+    tail: deque[str] | None = None,
+) -> None:
+    try:
+        for line in stream:
+            line_with_prefix = f"{prefix}{line}" if prefix else line
+            if fh:
+                fh.write(line_with_prefix)
+            if tail is not None:
+                tail.append(line_with_prefix)
+    finally:
+        with suppress(Exception):
+            stream.close()
 
 
 # #endregion
@@ -354,9 +373,7 @@ def execute_cmd(
             )
             assert p.stdout is not None
 
-            for line in p.stdout:
-                fh.write(line) if fh else None
-                q.append(line) if lines_tail > 0 and q else None
+            _consume_stream(p.stdout, fh=fh, tail=q)
 
             try:
                 return_code = p.wait(timeout=timeout)
@@ -390,8 +407,7 @@ def execute_cmd(
         )
 
     finally:
-        if p and p.poll() is None:
-            _kill_process_if_running(p)
+        _kill_process_if_running(p)
 
 
 # #endregion
@@ -483,23 +499,6 @@ def execute_pipe(
 
     file_ctx = open(file_log, "a", encoding="utf-8") if file_log else nullcontext()
 
-    def _consume_stream(
-        stream: Any,
-        *,
-        prefix: str = "",
-        fh: Any = None,
-    ) -> None:
-        try:
-            for line in stream:
-                line_with_prefix = f"{prefix}{line}" if prefix else line
-                if fh:
-                    fh.write(line_with_prefix)
-                if q is not None:
-                    q.append(line_with_prefix)
-        finally:
-            with suppress(Exception):
-                stream.close()
-
     try:
         with file_ctx as fh:
             if fh:
@@ -532,7 +531,7 @@ def execute_pipe(
                 th_err = Thread(
                     target=_consume_stream,
                     args=(p.stderr,),
-                    kwargs={"prefix": f"[stderr:{i + 1}] ", "fh": fh},
+                    kwargs={"prefix": f"[stderr:{i + 1}] ", "fh": fh, "tail": q},
                     daemon=True,
                 )
                 th_err.start()
@@ -541,7 +540,7 @@ def execute_pipe(
                 stream_prev_out = p.stdout
 
             assert stream_prev_out is not None
-            _consume_stream(stream_prev_out, fh=fh)
+            _consume_stream(stream_prev_out, fh=fh, tail=q)
 
             deadline = (time.monotonic() + timeout) if timeout is not None else None
             return_codes: list[int] = []
@@ -788,7 +787,9 @@ def run_jobs(
                 cnt_jobs_done += 1
                 jobs_done.append(JobDoneRecord(id=job_id, payload=result))
                 if cnt_jobs_done % 10 == 0 or cnt_jobs_done == cnt_jobs_total:
-                    logger.info(f"[{title}] Completed: {cnt_jobs_done}/{cnt_jobs_total}")
+                    logger.info(
+                        f"[{title}] Completed: {cnt_jobs_done}/{cnt_jobs_total}"
+                    )
             except Exception as e:
                 jobs_failed.append(JobFailedRecord(id=job_id, msg_error=str(e)))
                 logger.error(f"[{title}] Failed {job_id}: {e}")
