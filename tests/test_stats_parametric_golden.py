@@ -5,7 +5,7 @@ import math
 import polars as pl
 
 from axiomkit.stats import (
-    TTestContrast,
+    ParametricComparison,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
@@ -118,7 +118,11 @@ def test_parametric_stats_golden_paired() -> None:
         df_values,
         col_pair="PairId",
         col_feature="FeatureId",
-        contrasts=TTestContrast(group_test="B", group_ref="A"),
+        comparisons=ParametricComparison.ttest_paired(
+            comparison_id="B_vs_A",
+            group_test="B",
+            group_ref="A",
+        ),
         rule_p_adjust="bonferroni",
     )
 
@@ -127,7 +131,6 @@ def test_parametric_stats_golden_paired() -> None:
         [
             {
                 "FeatureId": "f1",
-                "ContrastId": ["B", "A"],
                 "GroupTest": "B",
                 "GroupRef": "A",
                 "NGroupTest": 3,
@@ -142,7 +145,6 @@ def test_parametric_stats_golden_paired() -> None:
             },
             {
                 "FeatureId": "f2",
-                "ContrastId": ["B", "A"],
                 "GroupTest": "B",
                 "GroupRef": "A",
                 "NGroupTest": 3,
@@ -214,9 +216,17 @@ def test_parametric_stats_golden_two_sample_comparison() -> None:
         col_feature="FeatureId",
         col_comparison="Comparison",
         col_is_valid="IsValid",
-        contrasts=[
-            TTestContrast(group_test="B", group_ref="A"),
-            TTestContrast(group_test="C", group_ref="A"),
+        comparisons=[
+            ParametricComparison.ttest_two_sample(
+                comparison_id="B_vs_A",
+                group_test="B",
+                group_ref="A",
+            ),
+            ParametricComparison.ttest_two_sample(
+                comparison_id="C_vs_A",
+                group_test="C",
+                group_ref="A",
+            ),
         ],
         rule_p_adjust="bonferroni",
     )
@@ -227,7 +237,6 @@ def test_parametric_stats_golden_two_sample_comparison() -> None:
             {
                 "Comparison": "B_vs_A",
                 "FeatureId": "T1",
-                "ContrastId": ["B", "A"],
                 "GroupTest": "B",
                 "GroupRef": "A",
                 "NGroupTest": 2,
@@ -238,12 +247,11 @@ def test_parametric_stats_golden_two_sample_comparison() -> None:
                 "TStatistic": 9.391485505499,
                 "DegreesFreedom": 1.470588235294,
                 "PValue": 0.027375128645,
-                "PAdjust": 0.054750257289,
+                "PAdjust": 0.027375128645,
             },
             {
                 "Comparison": "C_vs_A",
                 "FeatureId": "T2",
-                "ContrastId": ["C", "A"],
                 "GroupTest": "C",
                 "GroupRef": "A",
                 "NGroupTest": 2,
@@ -254,7 +262,7 @@ def test_parametric_stats_golden_two_sample_comparison() -> None:
                 "TStatistic": 3.1304951685,
                 "DegreesFreedom": 1.470588235294,
                 "PValue": 0.129047835548,
-                "PAdjust": 0.258095671097,
+                "PAdjust": 0.129047835548,
             },
         ],
     )

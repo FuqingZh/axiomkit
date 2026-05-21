@@ -20,6 +20,11 @@ def test_stats_exposes_public_ora_models() -> None:
     assert axiomkit.stats.OraOptions.__name__ == "OraOptions"
 
 
+def test_stats_exposes_public_parametric_models() -> None:
+    assert axiomkit.stats.ParametricComparison.__name__ == "ParametricComparison"
+    assert axiomkit.stats.AnovaComparison.__name__ == "AnovaComparison"
+
+
 def test_root_deprecated_module_aliases_still_work_with_warning() -> None:
     with pytest.warns(DeprecationWarning, match="axiomkit.io_fasta"):
         io_fasta = axiomkit.io_fasta

@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING, Any
 from axiomkit._optional_deps import import_optional_attr
 
 __all__ = [
-    "TTestContrast",
+    "AnovaComparison",
+    "ParametricComparison",
     "OraComparison",
     "OraOptions",
     "calculate_anova_one_way",
@@ -20,7 +21,8 @@ if TYPE_CHECKING:
     from .ora import OraComparison, OraOptions, calculate_ora
     from .p_value import calculate_adjusted_p_values
     from .parametric import (
-        TTestContrast,
+        AnovaComparison,
+        ParametricComparison,
         calculate_anova_one_way,
         calculate_anova_one_way_welch,
         calculate_anova_two_way,
@@ -31,6 +33,24 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
+    if name == "AnovaComparison":
+        return import_optional_attr(
+            module_name=".parametric",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars"),
+        )
+    if name == "ParametricComparison":
+        return import_optional_attr(
+            module_name=".parametric",
+            attr_name=name,
+            package=__name__,
+            feature="axiomkit.stats",
+            extras=("stats",),
+            required_modules=("numpy", "scipy", "polars"),
+        )
     if name == "calculate_anova_one_way":
         return import_optional_attr(
             module_name=".parametric",
@@ -84,15 +104,6 @@ def __getattr__(name: str) -> Any:
             feature="axiomkit.stats",
             extras=("stats",),
             required_modules=("numpy", "scipy", "polars", "pydantic"),
-        )
-    if name == "TTestContrast":
-        return import_optional_attr(
-            module_name=".parametric",
-            attr_name=name,
-            package=__name__,
-            feature="axiomkit.stats",
-            extras=("stats",),
-            required_modules=("numpy", "scipy", "polars"),
         )
     if name == "calculate_t_test_one_sample":
         return import_optional_attr(
