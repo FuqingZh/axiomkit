@@ -20,7 +20,6 @@ SCHEMA_T_TEST_STATS: SchemaDict = {
     "PAdjust": pl.Float64,
 }
 SCHEMA_T_TEST_TWO_SAMPLE_RESULT: SchemaDict = {
-    "ContrastId": pl.Array(pl.String, 2),
     "GroupTest": pl.String,
     "GroupRef": pl.String,
     "NGroupTest": pl.Int64,

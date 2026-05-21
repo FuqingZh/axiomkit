@@ -2,12 +2,14 @@ from collections.abc import Sequence
 
 import numpy as np
 import polars as pl
+from loguru import logger
 
 from ...p_value import (
     PValueAdjustmentType,
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
+from ..comparison import ParametricComparison, ParametricComparisonKind
 from ..constant import (
     COL_FEATURE_INTERNAL,
     COL_FEATURE_ORDER,
@@ -24,7 +26,6 @@ from .constant import (
 from .spec import (
     AlternativeHypothesisType,
     ContrastPlan,
-    TTestContrast,
     TStatisticsResult,
 )
 from .util import (
@@ -33,12 +34,16 @@ from .util import (
     normalize_alternative_hypothesis_mode,
 )
 
+COL_CONTRAST_COMPARISON_ID = "_ContrastComparisonId"
+COL_FEATURE_COMPARISON = "_FeatureComparison"
+
 
 def validate_column_layout_paired(
     col_value: str,
     col_group: str,
     col_pair: str,
     col_feature: str | None,
+    col_comparison: str | None = None,
 ) -> None:
     cols_used = [col_value, col_group, col_pair]
     if len(set(cols_used)) != len(cols_used):
@@ -48,6 +53,18 @@ def validate_column_layout_paired(
     if col_feature is not None and col_feature in {col_value, col_group, col_pair}:
         raise ValueError(
             "Arg `col_feature` must be different from `col_value`, `col_group`, and `col_pair`."
+        )
+    if col_comparison is None:
+        return
+
+    if col_feature is None:
+        raise ValueError(
+            "Arg `col_feature` is required when `col_comparison` is provided."
+        )
+    if col_comparison in {col_value, col_group, col_pair, col_feature}:
+        raise ValueError(
+            "Arg `col_comparison` must be different from `col_value`, "
+            "`col_group`, `col_pair`, and `col_feature`."
         )
 
 
@@ -96,9 +113,10 @@ def calculate_t_test_paired(
     col_value: str = "Value",
     col_group: str = "Group",
     *,
-    contrasts: TTestContrast | Sequence[TTestContrast],
     col_pair: str,
     col_feature: str | None = None,
+    col_comparison: str | None = None,
+    comparisons: ParametricComparison | Sequence[ParametricComparison],
     rule_alternative: AlternativeHypothesisType | str = "two-sided",
     rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
@@ -114,9 +132,22 @@ def calculate_t_test_paired(
         df: Input data in long format, with one row per paired observation.
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
-        contrasts: Specification of group contrasts to test, as a :class:`TTestContrast` or a sequence of :class:`TTestContrast` items.
         col_pair: Name of the column identifying matched pairs.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
+        col_comparison: Optional column that splits data into independent
+            analysis layers. Use this for batch-like variables such as
+            ``Batch`` when every batch should run the same paired contrast plan.
+            If the column already names concrete contrasts, such as proteomics
+            labels ``B_vs_A`` and ``C_vs_A``, bind each paired comparison with
+            the matching ``comparison_id`` to avoid cross-combining unrelated
+            contrasts.
+        comparisons: Comparison-plan API using
+            :class:`ParametricComparison.ttest_paired`. A comparison with
+            ``comparison_id=None`` is unscoped: if ``col_comparison`` is
+            provided, the paired contrast is evaluated independently inside
+            every comparison layer. A comparison with ``comparison_id="B_vs_A"``
+            is scoped and is evaluated only for rows whose ``col_comparison``
+            value is ``"B_vs_A"``.
         rule_alternative: Alternative hypothesis for the paired t-test. See :class:`AlternativeHypothesisType`.
             - "two-sided": (Default) Test if the mean difference is not equal to zero.
             - "less": Test if the mean difference is less than zero.
@@ -129,8 +160,9 @@ def calculate_t_test_paired(
 
     Returns:
         A Polars DataFrame containing paired t-test results for each specified contrast and feature.
+            - Column named as `col_comparison` (if specified): Comparison layer
+              for each row.
             - Column named as `col_feature` (if specified): Feature label for each row.
-            - `ContrastId`: Pair of [`group_test`, `group_ref`] for each contrast.
             - `GroupTest`: Name of the test group.
             - `GroupRef`: Name of the reference group.
             - `NGroupTest`: Sample size of the test group.
@@ -143,10 +175,47 @@ def calculate_t_test_paired(
             - `PValue`: Raw p-value for the contrast.
             - `PAdjust`: Adjusted p-value for the contrast (if `rule_p_adjust` is specified), otherwise same as `PValue`.
 
+    Examples:
+        ```python
+        import polars as pl
+        from axiomkit.stats import ParametricComparison, calculate_t_test_paired
+
+        df = pl.DataFrame({
+            "Batch": ["batch1", "batch1", "batch1", "batch1"],
+            "Feature": ["P1", "P1", "P1", "P1"],
+            "PairId": ["s1", "s1", "s2", "s2"],
+            "Group": ["A", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 5.0],
+        })
+
+        result = calculate_t_test_paired(
+            df,
+            col_pair="PairId",
+            col_feature="Feature",
+            col_comparison="Batch",
+            comparisons=ParametricComparison.ttest_paired(
+                group_test="B",
+                group_ref="A",
+            ),
+            rule_p_adjust="bh",
+        )
+
+        scoped = ParametricComparison.ttest_paired(
+            group_test="B",
+            group_ref="A",
+            comparison_id="B_vs_A",
+        )
+        ```
     """
     ############################################################
     # #region Validate input arguments
-    validate_column_layout_paired(col_value, col_group, col_pair, col_feature)
+    validate_column_layout_paired(
+        col_value,
+        col_group,
+        col_pair,
+        col_feature,
+        col_comparison=col_comparison,
+    )
     rule_alternative = normalize_alternative_hypothesis_mode(rule_alternative)
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
     # #endregion
@@ -155,39 +224,84 @@ def calculate_t_test_paired(
     pf_adapter = ParametricFrameAdapter(
         df,
         col_feature=col_feature,
+        col_comparison=col_comparison,
     ).select_required_cols(
         cols_required=create_required_columns(
-            col_value, col_group, col_pair, col_feature
+            col_value, col_group, col_pair, col_feature, col_comparison
         )
     )
     schema_result = pf_adapter.create_result_schema(SCHEMA_T_TEST_TWO_SAMPLE_RESULT)
-    contrast_plan = ContrastPlan.from_inputs(contrasts)
+    contrast_plan = ContrastPlan.from_inputs(
+        comparisons,
+        comparison_kind=ParametricComparisonKind.TTEST_PAIRED,
+    )
     if not contrast_plan.group_used:
         return pl.DataFrame(schema=schema_result)
     # #endregion
     ############################################################
     # #region Normalize pair data and validate complete pairs
-    pf_adapter.cast_cols(cols_float=col_value, cols_string=col_group).create_feature_key()
+    pf_adapter.cast_cols(
+        cols_float=col_value,
+        cols_string=[col_group, col_comparison] if col_comparison is not None else col_group,
+    ).create_feature_key()
     lf_values = pf_adapter.lf.filter(pl.col(col_group).is_in(contrast_plan.group_used))
     lf_features = pf_adapter.create_feature_frame()
     lf_contrasts = pl.LazyFrame(
         {
-            "ContrastId": list(contrast_plan.contrast_ids),
+            COL_CONTRAST_COMPARISON_ID: list(contrast_plan.comparison_id_values),
             "ContrastOrder": list(range(len(contrast_plan.group_test_values))),
             "GroupTest": list(contrast_plan.group_test_values),
             "GroupRef": list(contrast_plan.group_ref_values),
         }
     )
+    if col_comparison is None or not contrast_plan.has_comparison_id:
+        lf_contrast_features = lf_features.join(lf_contrasts, how="cross")
+    else:
+        lf_contrast_features_unscoped = lf_features.join(
+            lf_contrasts.filter(pl.col(COL_CONTRAST_COMPARISON_ID).is_null()),
+            how="cross",
+        )
+        lf_contrast_features_scoped = (
+            lf_features.with_columns(
+                pl.col(COL_FEATURE_INTERNAL)
+                .list.get(0)
+                .cast(pl.String)
+                .alias(COL_FEATURE_COMPARISON)
+            )
+            .join(
+                lf_contrasts.filter(pl.col(COL_CONTRAST_COMPARISON_ID).is_not_null()),
+                left_on=COL_FEATURE_COMPARISON,
+                right_on=COL_CONTRAST_COMPARISON_ID,
+                how="inner",
+            )
+            .drop(COL_FEATURE_COMPARISON)
+        )
+        lf_contrast_features = pl.concat(
+            [lf_contrast_features_unscoped, lf_contrast_features_scoped],
+            how="diagonal_relaxed",
+        )
 
     lf_pairs_test = (
         lf_values.join(
-            lf_contrasts.select("ContrastId", "ContrastOrder", "GroupTest"),
-            left_on=col_group,
-            right_on="GroupTest",
+            lf_contrast_features.select(
+                COL_FEATURE_INTERNAL,
+                "ContrastOrder",
+                "GroupTest",
+                "GroupRef",
+                pl.col("GroupTest").alias("_GroupJoin"),
+            ),
+            left_on=[COL_FEATURE_INTERNAL, col_group],
+            right_on=[COL_FEATURE_INTERNAL, "_GroupJoin"],
             how="inner",
         )
         .group_by(
-            [COL_FEATURE_INTERNAL, "ContrastId", "ContrastOrder", col_pair],
+            [
+                COL_FEATURE_INTERNAL,
+                "ContrastOrder",
+                "GroupTest",
+                "GroupRef",
+                col_pair,
+            ],
             maintain_order=True,
         )
         .agg(
@@ -198,13 +312,25 @@ def calculate_t_test_paired(
     )
     lf_pairs_ref = (
         lf_values.join(
-            lf_contrasts.select("ContrastId", "ContrastOrder", "GroupRef"),
-            left_on=col_group,
-            right_on="GroupRef",
+            lf_contrast_features.select(
+                COL_FEATURE_INTERNAL,
+                "ContrastOrder",
+                "GroupTest",
+                "GroupRef",
+                pl.col("GroupRef").alias("_GroupJoin"),
+            ),
+            left_on=[COL_FEATURE_INTERNAL, col_group],
+            right_on=[COL_FEATURE_INTERNAL, "_GroupJoin"],
             how="inner",
         )
         .group_by(
-            [COL_FEATURE_INTERNAL, "ContrastId", "ContrastOrder", col_pair],
+            [
+                COL_FEATURE_INTERNAL,
+                "ContrastOrder",
+                "GroupTest",
+                "GroupRef",
+                col_pair,
+            ],
             maintain_order=True,
         )
         .agg(
@@ -217,14 +343,15 @@ def calculate_t_test_paired(
     df_pairs = (
         lf_pairs_test.join(
             lf_pairs_ref,
-            on=[COL_FEATURE_INTERNAL, "ContrastId", "ContrastOrder", "PairId"],
+            on=[
+                COL_FEATURE_INTERNAL,
+                "ContrastOrder",
+                "GroupTest",
+                "GroupRef",
+                "PairId",
+            ],
             how="full",
             coalesce=True,
-        )
-        .join(
-            lf_contrasts,
-            on=["ContrastId", "ContrastOrder"],
-            how="left",
         )
         .collect()
     )
@@ -255,7 +382,6 @@ def calculate_t_test_paired(
         .group_by(
             [
                 COL_FEATURE_INTERNAL,
-                "ContrastId",
                 "ContrastOrder",
                 "GroupTest",
                 "GroupRef",
@@ -279,6 +405,15 @@ def calculate_t_test_paired(
     )
     if df_stats.height == 0:
         return pl.DataFrame(schema=schema_result)
+    logger.debug(
+        "Paired t-test prepared {n_rows} rows for p-value adjustment "
+        "(comparisons={n_comparisons}, scoped_comparisons={n_scoped}, "
+        "col_comparison={col_comparison}).",
+        n_rows=df_stats.height,
+        n_comparisons=len(contrast_plan.contrast_ids),
+        n_scoped=sum(_item is not None for _item in contrast_plan.comparison_id_values),
+        col_comparison=col_comparison,
+    )
     # #endregion
     ############################################################
     # #region Calculate t-test statistics, p-values, and p-value adjustments
@@ -293,7 +428,19 @@ def calculate_t_test_paired(
         degrees_of_freedom=t_test_result.degrees_freedom,
         rule_alternative=rule_alternative,
     )
-    p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    if col_comparison is None:
+        p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    else:
+        p_adjust = np.full_like(p_value, np.nan, dtype=np.float64)
+        arr_comparison = (
+            df_stats[COL_FEATURE_INTERNAL].list.get(0).cast(pl.String).to_numpy()
+        )
+        for comparison_id in dict.fromkeys(arr_comparison.tolist()):
+            mask = arr_comparison == comparison_id
+            p_adjust[mask] = calculate_p_adjustment_array(
+                p_value[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
     # #endregion
     ############################################################
     # #region Finalize result DataFrame

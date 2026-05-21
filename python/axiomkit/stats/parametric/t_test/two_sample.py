@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import polars as pl
+from loguru import logger
 
 from axiomkit.stats.parametric.spec import ParametricFrameAdapter
 
@@ -10,6 +11,7 @@ from ...p_value import (
     calculate_p_adjustment_array,
     normalize_p_value_adjustment_mode,
 )
+from ..comparison import ParametricComparison, ParametricComparisonKind
 from ..constant import (
     COL_FEATURE_INTERNAL,
     COL_FEATURE_ORDER,
@@ -27,7 +29,6 @@ from .constant import (
 from .spec import (
     AlternativeHypothesisType,
     ContrastPlan,
-    TTestContrast,
     TStatisticsResult,
 )
 from .util import (
@@ -35,6 +36,9 @@ from .util import (
     create_t_stat_columns,
     normalize_alternative_hypothesis_mode,
 )
+
+COL_CONTRAST_COMPARISON_ID = "_ContrastComparisonId"
+COL_FEATURE_COMPARISON = "_FeatureComparison"
 
 
 def validate_column_layout_two_sample(
@@ -149,9 +153,9 @@ def calculate_t_test_two_sample(
     col_value: str = "Value",
     col_group: str = "Group",
     *,
-    contrasts: TTestContrast | Sequence[TTestContrast],
-    col_comparison: str | None = None,
+    comparisons: ParametricComparison | Sequence[ParametricComparison],
     col_feature: str | None = None,
+    col_comparison: str | None = None,
     col_is_valid: str | None = None,
     rule_alternative: AlternativeHypothesisType | str = "two-sided",
     should_assume_equal_variance: bool = False,
@@ -168,8 +172,24 @@ def calculate_t_test_two_sample(
         df: Input data in long format, with one row per observation.
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
-        contrasts: Specification of group contrasts to test, as a :class:`TTestContrast` or a sequence of :class:`TTestContrast` items.
+        comparisons: Comparison-plan API using
+            :class:`ParametricComparison.ttest_two_sample`. A comparison with
+            ``comparison_id=None`` is unscoped: if ``col_comparison`` is
+            provided, the contrast is evaluated independently inside every
+            comparison layer. A comparison with ``comparison_id="B_vs_A"`` is
+            scoped and is evaluated only for rows whose ``col_comparison`` value
+            is ``"B_vs_A"``.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
+        col_comparison: Optional column that splits data into independent
+            analysis layers. Use this for batch-like variables such as
+            ``Batch`` when every batch should run the same contrast plan. If
+            the column already names concrete contrasts, such as proteomics
+            labels ``B_vs_A`` and ``C_vs_A``, bind each t-test comparison with
+            the matching ``comparison_id`` to avoid cross-combining unrelated
+            contrasts.
+        col_is_valid: Optional boolean column indicating whether a
+            comparison-feature unit should enter testing. Ignored unless
+            ``col_comparison`` is provided.
         rule_alternative: Alternative hypothesis for the t-test. See :class:`AlternativeHypothesisType`.
             - ``two-sided``: (Default) Test if means are different.
             - ``less``: Test if mean of group_test is less than mean of group_ref.
@@ -188,14 +208,15 @@ def calculate_t_test_two_sample(
             If any of the following conditions are met:
             - `col_value` and `col_group` are the same.
             - `col_feature` is the same as `col_value` or `col_group`.
-            - `contrasts` is not a `TTestContrast` or a sequence of `TTestContrast` items.
+            - `comparisons` is invalid.
             - Any specified contrast has identical `group_test` and `group_ref`.
             - `rule_alternative` is not one of "two-sided", "less", or "greater".
             - `rule_p_adjust` is not a valid p-value adjustment method.
     Returns:
         A Polars DataFrame containing the t-test results for each specified contrast and feature, with the following columns:
+            - Column named as `col_comparison` (if specified): Comparison layer
+              for each row.
             - Column named as `col_feature` (if specified): Feature label for each row.
-            - `ContrastId`: Pair of [`group_test`, `group_ref`] for each contrast.
             - `GroupTest`: Name of the test group.
             - `GroupRef`: Name of the reference group.
             - `NGroupTest`: Sample size of the test group.
@@ -211,28 +232,30 @@ def calculate_t_test_two_sample(
     Examples:
         ```python
         import polars as pl
-        from axiomkit.stats import TTestContrast, calculate_t_test_two_sample
-        # Example DataFrame
+        from axiomkit.stats import ParametricComparison, calculate_t_test_two_sample
         df = pl.DataFrame({
-            "Feature": ["A", "A", "A", "B", "B", "B"],
-            "Group": ["X", "X", "Y", "X", "Y", "Y"],
-            "Value": [1.2, 1.5, 1.3, 2.1, 2.4, 2.3]
+            "Batch": ["batch1", "batch1", "batch1", "batch1"],
+            "Feature": ["P1", "P1", "P1", "P1"],
+            "Group": ["A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 4.0, 5.0],
         })
-        # Define contrasts
-        contrast1 = TTestContrast(group_test="X", group_ref="Y")
-        contrast2 = TTestContrast(group_test="Y", group_ref="X")
-        # Calculate t-tests
+
         result = calculate_t_test_two_sample(
             df,
-            col_value="Value",
-            col_group="Group",
             col_feature="Feature",
-            contrasts=[contrast1, contrast2],
-            rule_alternative="two-sided",
-            should_assume_equal_variance=False,
-            rule_p_adjust="bonferroni"
+            col_comparison="Batch",
+            comparisons=ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+            ),
+            rule_p_adjust="bh",
         )
-        print(result)
+
+        scoped = ParametricComparison.ttest_two_sample(
+            group_test="B",
+            group_ref="A",
+            comparison_id="B_vs_A",
+        )
         ```
     """
     ############################################################
@@ -265,7 +288,10 @@ def calculate_t_test_two_sample(
         )
     )
     schema_result = pf_adapter.create_result_schema(SCHEMA_T_TEST_TWO_SAMPLE_RESULT)
-    contrast_plan = ContrastPlan.from_inputs(contrasts)
+    contrast_plan = ContrastPlan.from_inputs(
+        comparisons,
+        comparison_kind=ParametricComparisonKind.TTEST_TWO_SAMPLE,
+    )
     if not contrast_plan.group_used:
         return pl.DataFrame(schema=schema_result)
     # #endregion
@@ -273,7 +299,7 @@ def calculate_t_test_two_sample(
     # #region Calculate summary statistics for each group and prepare data for t-test calculations
     pf_adapter.cast_cols(
         cols_float=col_value,
-        cols_string=col_group,
+        cols_string=[col_group, col_comparison] if col_comparison is not None else col_group,
         cols_boolean=col_is_valid if col_comparison is not None else None,
     ).create_feature_key()
     lf_features = pf_adapter.create_feature_frame()
@@ -285,14 +311,40 @@ def calculate_t_test_two_sample(
     )
     lf_contrasts = pl.LazyFrame(
         {
-            "ContrastId": list(contrast_plan.contrast_ids),
+            COL_CONTRAST_COMPARISON_ID: list(contrast_plan.comparison_id_values),
             "ContrastOrder": list(range(len(contrast_plan.group_test_values))),
             "GroupTest": list(contrast_plan.group_test_values),
             "GroupRef": list(contrast_plan.group_ref_values),
         }
     )
+    if col_comparison is None or not contrast_plan.has_comparison_id:
+        lf_contrast_features = lf_features.join(lf_contrasts, how="cross")
+    else:
+        lf_contrast_features_unscoped = lf_features.join(
+            lf_contrasts.filter(pl.col(COL_CONTRAST_COMPARISON_ID).is_null()),
+            how="cross",
+        )
+        lf_contrast_features_scoped = (
+            lf_features.with_columns(
+                pl.col(COL_FEATURE_INTERNAL)
+                .list.get(0)
+                .cast(pl.String)
+                .alias(COL_FEATURE_COMPARISON)
+            )
+            .join(
+                lf_contrasts.filter(pl.col(COL_CONTRAST_COMPARISON_ID).is_not_null()),
+                left_on=COL_FEATURE_COMPARISON,
+                right_on=COL_CONTRAST_COMPARISON_ID,
+                how="inner",
+            )
+            .drop(COL_FEATURE_COMPARISON)
+        )
+        lf_contrast_features = pl.concat(
+            [lf_contrast_features_unscoped, lf_contrast_features_scoped],
+            how="diagonal_relaxed",
+        )
     lf_stats = (
-        lf_features.join(lf_contrasts, how="cross")
+        lf_contrast_features
         .join(
             lf_summary.rename(
                 {
@@ -325,6 +377,15 @@ def calculate_t_test_two_sample(
         )
 
     df_stats = lf_stats.collect()
+    logger.debug(
+        "Two-sample t-test prepared {n_rows} rows for p-value adjustment "
+        "(comparisons={n_comparisons}, scoped_comparisons={n_scoped}, "
+        "col_comparison={col_comparison}).",
+        n_rows=df_stats.height,
+        n_comparisons=len(contrast_plan.contrast_ids),
+        n_scoped=sum(_item is not None for _item in contrast_plan.comparison_id_values),
+        col_comparison=col_comparison,
+    )
     if df_stats.height == 0:
         return pl.DataFrame(schema=schema_result)
     # #endregion
@@ -352,7 +413,19 @@ def calculate_t_test_two_sample(
         degrees_of_freedom=t_test_result.degrees_freedom,
         rule_alternative=rule_alternative,
     )
-    p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    if col_comparison is None:
+        p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    else:
+        p_adjust = np.full_like(p_value, np.nan, dtype=np.float64)
+        arr_comparison = (
+            df_stats[COL_FEATURE_INTERNAL].list.get(0).cast(pl.String).to_numpy()
+        )
+        for comparison_id in dict.fromkeys(arr_comparison.tolist()):
+            mask = arr_comparison == comparison_id
+            p_adjust[mask] = calculate_p_adjustment_array(
+                p_value[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
     # #endregion
     ############################################################
     # #region Finalize result DataFrame

@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 from ...p_value import PValueAdjustmentMode
+from ..comparison import ParametricComparison, ParametricComparisonKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,95 +35,72 @@ class TStatisticsResult:
 
 
 @dataclass(frozen=True, slots=True)
-class TTestContrast:
-    """Specify the direction of a two-group t-test contrast.
-
-    A contrast compares the mean of ``group_test`` against the mean of
-    ``group_ref``. The reported mean difference and t statistic numerator use
-    the direction ``mean(group_test) - mean(group_ref)``.
-
-    ``group_ref`` is the reference or baseline group for the contrast. It is
-    not the denominator of the t statistic; the t statistic denominator is the
-    standard error of the mean difference.
-
-    Attributes:
-        group_test: Group label on the test side of the contrast. For a
-            one-sided ``greater`` alternative, this is the group whose mean is
-            tested as greater than ``group_ref``. For ``less``, it is tested as
-            less than ``group_ref``.
-        group_ref: Reference or baseline group label. The contrast direction is
-            defined relative to this group.
-
-    Raises:
-        ValueError: If ``group_test`` and ``group_ref`` refer to the same group.
-
-    Examples:
-        >>> TTestContrast(group_test="B", group_ref="A")
-        TTestContrast(group_test='B', group_ref='A')
-
-        This contrast represents ``mean(B) - mean(A)``. With a ``greater``
-        alternative, it tests whether ``mean(B) > mean(A)``.
-    """
-
-    group_test: str
-    group_ref: str
-
-    def __post_init__(self) -> None:
-        group_test = str(self.group_test)
-        group_ref = str(self.group_ref)
-        object.__setattr__(self, "group_test", group_test)
-        object.__setattr__(self, "group_ref", group_ref)
-
-        if self.group_test == self.group_ref:
-            raise ValueError(
-                "Arg `group_test` must be different from `group_ref`, yours: "
-                f"{self.group_test!r}."
-            )
-
-
-@dataclass(frozen=True, slots=True)
 class ContrastPlan:
+    comparison_id_values: tuple[str | None, ...]
     contrast_ids: tuple[tuple[str, str], ...]
     group_test_values: tuple[str, ...]
     group_ref_values: tuple[str, ...]
     group_used: tuple[str, ...]
 
+    @property
+    def has_comparison_id(self) -> bool:
+        return any(_item is not None for _item in self.comparison_id_values)
+
     @classmethod
     def from_inputs(
         cls,
-        contrasts: TTestContrast | Sequence[TTestContrast],
+        contrasts: ParametricComparison | Sequence[ParametricComparison],
+        *,
+        comparison_kind: ParametricComparisonKind,
     ) -> Self:
-        items_contrast: Sequence[TTestContrast]
-        if isinstance(contrasts, TTestContrast):
+        items_contrast: Sequence[ParametricComparison]
+        if isinstance(contrasts, ParametricComparison):
             items_contrast = [contrasts]
         elif isinstance(contrasts, Sequence) and not isinstance(contrasts, str):
             items_contrast = contrasts
         else:
             raise ValueError(
-                "Arg `contrasts` must be a TTestContrast or a sequence of TTestContrast items."
+                "Arg `comparisons` must be a ParametricComparison or a sequence of ParametricComparison items."
             )
 
-        if any(not isinstance(_item, TTestContrast) for _item in items_contrast):
+        if any(
+            not isinstance(_item, ParametricComparison)
+            for _item in items_contrast
+        ):
             raise ValueError(
-                "Arg `contrasts` must be a TTestContrast or a sequence of TTestContrast items."
+                "Arg `comparisons` must be a ParametricComparison or a sequence of ParametricComparison items."
             )
 
-        pairs_seen = set()
+        contrasts_seen = set()
+        comparison_id_values: list[str | None] = []
         contrast_ids: list[tuple[str, str]] = []
         group_test_values: list[str] = []
         group_ref_values: list[str] = []
         group_used: list[str] = []
         for item_contrast in items_contrast:
-            pair_key = (item_contrast.group_test, item_contrast.group_ref)
-            if pair_key in pairs_seen:
+            if item_contrast.kind != comparison_kind:
+                raise ValueError(
+                    f"Arg `comparisons` must contain `{comparison_kind.value}` items."
+                )
+            assert item_contrast.group_test is not None
+            assert item_contrast.group_ref is not None
+            comparison_id = item_contrast.comparison_id
+            group_test = item_contrast.group_test
+            group_ref = item_contrast.group_ref
+
+            pair_key = (group_test, group_ref)
+            contrast_key = (comparison_id, *pair_key)
+            if contrast_key in contrasts_seen:
                 raise ValueError("Duplicate contrast pairs are not allowed.")
-            pairs_seen.add(pair_key)
+            contrasts_seen.add(contrast_key)
+            comparison_id_values.append(comparison_id)
             contrast_ids.append(pair_key)
-            group_test_values.append(item_contrast.group_test)
-            group_ref_values.append(item_contrast.group_ref)
+            group_test_values.append(group_test)
+            group_ref_values.append(group_ref)
             group_used.extend(pair_key)
 
         return cls(
+            comparison_id_values=tuple(comparison_id_values),
             contrast_ids=tuple(contrast_ids),
             group_test_values=tuple(group_test_values),
             group_ref_values=tuple(group_ref_values),

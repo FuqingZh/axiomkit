@@ -7,7 +7,7 @@ import pytest
 from scipy import stats
 
 from axiomkit.stats import (
-    TTestContrast,
+    ParametricComparison,
     calculate_t_test_one_sample,
     calculate_t_test_paired,
     calculate_t_test_two_sample,
@@ -115,6 +115,138 @@ def test_calculate_t_test_one_sample_keeps_insufficient_rows_with_nan_stats() ->
     assert row_f2["DegreesFreedom"] == pytest.approx(1.0)
 
 
+def test_calculate_t_test_one_sample_supports_comparison_filter_and_p_adjust() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 6 + ["cmp2"] * 6 + ["cmp3"] * 6,
+            "FeatureId": ["f1", "f1", "f1", "f2", "f2", "f2"] * 3,
+            "Value": [
+                1.0,
+                2.0,
+                4.0,
+                8.0,
+                10.0,
+                12.0,
+                2.0,
+                3.0,
+                5.0,
+                9.0,
+                11.0,
+                13.0,
+                20.0,
+                21.0,
+                22.0,
+                30.0,
+                31.0,
+                32.0,
+            ],
+        }
+    )
+
+    df_result = calculate_t_test_one_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        popmean=2.0,
+        comparisons=[
+            ParametricComparison.ttest_one_sample("cmp1"),
+            ParametricComparison.ttest_one_sample("cmp2"),
+        ],
+        rule_p_adjust="bh",
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [
+        ("cmp1", "f1"),
+        ("cmp1", "f2"),
+        ("cmp2", "f1"),
+        ("cmp2", "f2"),
+    ]
+    cmp1 = df_result.filter(pl.col("Comparison") == "cmp1")
+    cmp2 = df_result.filter(pl.col("Comparison") == "cmp2")
+    assert cmp1["PAdjust"].to_list() == pytest.approx(
+        stats.false_discovery_control(cmp1["PValue"].to_list(), method="bh")
+    )
+    assert cmp2["PAdjust"].to_list() == pytest.approx(
+        stats.false_discovery_control(cmp2["PValue"].to_list(), method="bh")
+    )
+
+
+def test_calculate_t_test_one_sample_supports_validity_gate() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 6,
+            "FeatureId": ["f1", "f1", "f1", "f2", "f2", "f2"],
+            "Value": [1.0, 2.0, 4.0, 8.0, 10.0, 12.0],
+            "IsValid": [True, True, True, False, False, False],
+        }
+    )
+
+    df_result = calculate_t_test_one_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        col_is_valid="IsValid",
+        popmean=2.0,
+        comparisons=ParametricComparison.ttest_one_sample("cmp1"),
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [("cmp1", "f1")]
+
+
+def test_calculate_t_test_one_sample_rejects_invalid_comparison_inputs() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1"],
+            "FeatureId": ["f1", "f1"],
+            "Value": [1.0, 2.0],
+        }
+    )
+
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_t_test_one_sample(
+            pl.DataFrame({"Value": [1.0, 2.0]}),
+            popmean=2.0,
+            comparisons=ParametricComparison.ttest_one_sample("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="`col_feature` is required"):
+        calculate_t_test_one_sample(
+            pl.DataFrame({"Value": [1.0, 2.0]}),
+            popmean=2.0,
+            col_comparison="Comparison",
+        )
+
+    with pytest.raises(ValueError, match="ttest_one_sample"):
+        calculate_t_test_one_sample(
+            df_values,
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            popmean=2.0,
+            comparisons=ParametricComparison.anova_one_way("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="Duplicate comparison ids"):
+        calculate_t_test_one_sample(
+            df_values,
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            popmean=2.0,
+            comparisons=[
+                ParametricComparison.ttest_one_sample("cmp1"),
+                ParametricComparison.ttest_one_sample("cmp1"),
+            ],
+        )
+
+    with pytest.raises(ValueError, match="must be consistent within each"):
+        calculate_t_test_one_sample(
+            df_values.with_columns(pl.Series("IsValid", [True, False])),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            col_is_valid="IsValid",
+            popmean=2.0,
+        )
+
+
 def test_calculate_t_test_paired_matches_scipy_for_single_contrast() -> None:
     df_values = pl.DataFrame(
         {
@@ -127,11 +259,10 @@ def test_calculate_t_test_paired_matches_scipy_for_single_contrast() -> None:
     df_result = calculate_t_test_paired(
         df_values,
         col_pair="PairId",
-        contrasts=TTestContrast(group_test="B", group_ref="A"),
+        comparisons=ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
     )
 
     assert df_result.columns == [
-        "ContrastId",
         "GroupTest",
         "GroupRef",
         "NGroupTest",
@@ -147,7 +278,6 @@ def test_calculate_t_test_paired_matches_scipy_for_single_contrast() -> None:
     row = df_result.row(0, named=True)
     expected = stats.ttest_rel([2.0, 5.0, 6.0], [1.0, 3.0, 4.0])
 
-    assert row["ContrastId"] == ["B", "A"]
     assert row["GroupTest"] == "B"
     assert row["GroupRef"] == "A"
     assert row["NGroupTest"] == 3
@@ -187,16 +317,15 @@ def test_calculate_t_test_paired_supports_feature_and_multiple_contrasts() -> No
         df_values.lazy(),
         col_pair="PairId",
         col_feature="FeatureId",
-        contrasts=[
-            TTestContrast(group_test="B", group_ref="A"),
-            TTestContrast(group_test="C", group_ref="A"),
+        comparisons=[
+            ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
+            ParametricComparison.ttest_paired(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
 
     assert df_result.columns == [
         "FeatureId",
-        "ContrastId",
         "GroupTest",
         "GroupRef",
         "NGroupTest",
@@ -209,11 +338,129 @@ def test_calculate_t_test_paired_supports_feature_and_multiple_contrasts() -> No
         "PValue",
         "PAdjust",
     ]
-    assert df_result.select("FeatureId", "ContrastId").rows() == [
-        ("f1", ["B", "A"]),
-        ("f1", ["C", "A"]),
-        ("f2", ["B", "A"]),
-        ("f2", ["C", "A"]),
+    assert df_result.select("FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("f1", "B", "A"),
+        ("f1", "C", "A"),
+        ("f2", "B", "A"),
+        ("f2", "C", "A"),
+    ]
+
+
+def test_calculate_t_test_paired_scopes_contrasts_by_comparison_before_p_adjust() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 9 + ["cmp2"] * 9,
+            "FeatureId": ["f1"] * 18,
+            "PairId": ["p1", "p1", "p1", "p2", "p2", "p2", "p3", "p3", "p3"] * 2,
+            "Group": ["A", "B", "C", "A", "B", "C", "A", "B", "C"] * 2,
+            "Value": [
+                1.0,
+                2.0,
+                3.0,
+                2.0,
+                4.0,
+                4.0,
+                4.0,
+                7.0,
+                9.0,
+                2.0,
+                8.0,
+                8.0,
+                4.0,
+                12.0,
+                13.0,
+                6.0,
+                16.0,
+                18.0,
+            ],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.ttest_paired(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp1",
+            ),
+            ParametricComparison.ttest_paired(
+                group_test="C",
+                group_ref="A",
+                comparison_id="cmp2",
+            ),
+        ],
+        rule_p_adjust="bh",
+    )
+
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "f1", "B", "A"),
+        ("cmp2", "f1", "C", "A"),
+    ]
+    expected_p_values = [
+        stats.ttest_rel([2.0, 4.0, 7.0], [1.0, 2.0, 4.0]).pvalue,
+        stats.ttest_rel([8.0, 13.0, 18.0], [2.0, 4.0, 6.0]).pvalue,
+    ]
+    assert df_result["PValue"].to_list() == pytest.approx(expected_p_values)
+    assert df_result["PAdjust"].to_list() == pytest.approx(expected_p_values)
+
+
+def test_calculate_t_test_paired_unscoped_contrast_runs_in_each_comparison() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["batch1"] * 4 + ["batch2"] * 4,
+            "FeatureId": ["f1"] * 8,
+            "PairId": ["p1", "p1", "p2", "p2"] * 2,
+            "Group": ["A", "B", "A", "B"] * 2,
+            "Value": [1.0, 2.0, 3.0, 5.0, 2.0, 4.0, 4.0, 7.0],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_paired(
+            group_test="B",
+            group_ref="A",
+        ),
+    )
+
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("batch1", "f1", "B", "A"),
+        ("batch2", "f1", "B", "A"),
+    ]
+
+
+def test_calculate_t_test_paired_accepts_parametric_comparisons() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 6,
+            "FeatureId": ["f1"] * 6,
+            "PairId": ["p1", "p1", "p2", "p2", "p3", "p3"],
+            "Group": ["A", "B", "A", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 5.0, 4.0, 6.0],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_paired(
+            comparison_id="cmp1",
+            group_test="B",
+            group_ref="A",
+        ),
+    )
+
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "f1", "B", "A"),
     ]
 
 
@@ -229,7 +476,7 @@ def test_calculate_t_test_paired_supports_rule_alternative() -> None:
     df_result = calculate_t_test_paired(
         df_values,
         col_pair="PairId",
-        contrasts=TTestContrast(group_test="B", group_ref="A"),
+        comparisons=ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
         rule_alternative="less",
     )
 
@@ -251,7 +498,7 @@ def test_calculate_t_test_paired_rejects_missing_pairs() -> None:
         calculate_t_test_paired(
             df_values,
             col_pair="PairId",
-            contrasts=TTestContrast(group_test="B", group_ref="A"),
+            comparisons=ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
         )
 
 
@@ -268,8 +515,30 @@ def test_calculate_t_test_paired_rejects_duplicate_pairs() -> None:
         calculate_t_test_paired(
             df_values,
             col_pair="PairId",
-            contrasts=TTestContrast(group_test="B", group_ref="A"),
+            comparisons=ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
         )
+
+
+def test_calculate_t_test_paired_allows_comparison_id_without_comparison_column() -> None:
+    df_values = pl.DataFrame(
+        {
+            "PairId": ["p1", "p1", "p2", "p2"],
+            "Group": ["A", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    df_result = calculate_t_test_paired(
+        df_values,
+        col_pair="PairId",
+        comparisons=ParametricComparison.ttest_paired(
+            comparison_id="cmp1",
+            group_test="B",
+            group_ref="A",
+        ),
+    )
+
+    assert df_result.select("GroupTest", "GroupRef").rows() == [("B", "A")]
 
 
 def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None:
@@ -282,11 +551,10 @@ def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=TTestContrast(group_test="A", group_ref="B"),
+        comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
     )
 
     assert df_result.columns == [
-        "ContrastId",
         "GroupTest",
         "GroupRef",
         "NGroupTest",
@@ -304,7 +572,6 @@ def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None
     row = df_result.row(0, named=True)
     expected = stats.ttest_ind([1.0, 2.0], [4.0, 5.0, 6.0, 7.0], equal_var=False)
 
-    assert row["ContrastId"] == ["A", "B"]
     assert row["GroupTest"] == "A"
     assert row["GroupRef"] == "B"
     assert row["NGroupTest"] == 2
@@ -356,16 +623,15 @@ def test_calculate_t_test_two_sample_supports_feature_and_multiple_contrasts() -
     df_result = calculate_t_test_two_sample(
         df_values,
         col_feature="FeatureId",
-        contrasts=[
-            TTestContrast(group_test="B", group_ref="A"),
-            TTestContrast(group_test="C", group_ref="A"),
+        comparisons=[
+            ParametricComparison.ttest_two_sample(group_test="B", group_ref="A"),
+            ParametricComparison.ttest_two_sample(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
 
     assert df_result.columns == [
         "FeatureId",
-        "ContrastId",
         "GroupTest",
         "GroupRef",
         "NGroupTest",
@@ -378,11 +644,11 @@ def test_calculate_t_test_two_sample_supports_feature_and_multiple_contrasts() -
         "PValue",
         "PAdjust",
     ]
-    assert df_result.select("FeatureId", "ContrastId").rows() == [
-        ("f1", ["B", "A"]),
-        ("f1", ["C", "A"]),
-        ("f2", ["B", "A"]),
-        ("f2", ["C", "A"]),
+    assert df_result.select("FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("f1", "B", "A"),
+        ("f1", "C", "A"),
+        ("f2", "B", "A"),
+        ("f2", "C", "A"),
     ]
 
     row_f1 = df_result.row(0, named=True)
@@ -464,9 +730,9 @@ def test_calculate_t_test_two_sample_supports_comparison_and_validity_gate() -> 
         col_feature="FeatureId",
         col_comparison="Comparison",
         col_is_valid="IsValid",
-        contrasts=[
-            TTestContrast(group_test="B", group_ref="A"),
-            TTestContrast(group_test="C", group_ref="A"),
+        comparisons=[
+            ParametricComparison.ttest_two_sample(group_test="B", group_ref="A"),
+            ParametricComparison.ttest_two_sample(group_test="C", group_ref="A"),
         ],
         rule_p_adjust="bonferroni",
     )
@@ -474,7 +740,6 @@ def test_calculate_t_test_two_sample_supports_comparison_and_validity_gate() -> 
     assert df_result.columns == [
         "Comparison",
         "FeatureId",
-        "ContrastId",
         "GroupTest",
         "GroupRef",
         "NGroupTest",
@@ -488,12 +753,12 @@ def test_calculate_t_test_two_sample_supports_comparison_and_validity_gate() -> 
         "PAdjust",
     ]
     assert (
-        df_result.select("Comparison", "FeatureId", "ContrastId")
+        df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef")
         .sort(["Comparison", "FeatureId"])
         .rows()
     ) == [
-        ("B_vs_A", "T1", ["B", "A"]),
-        ("C_vs_A", "T2", ["C", "A"]),
+        ("B_vs_A", "T1", "B", "A"),
+        ("C_vs_A", "T2", "C", "A"),
     ]
 
     row_b = (
@@ -523,29 +788,192 @@ def test_calculate_t_test_two_sample_supports_comparison_without_validity_gate()
         df_values,
         col_feature="FeatureId",
         col_comparison="Comparison",
-        contrasts=TTestContrast(group_test="B", group_ref="A"),
+        comparisons=ParametricComparison.ttest_two_sample(
+            group_test="B",
+            group_ref="A",
+        ),
     )
 
-    assert df_result.select("Comparison", "FeatureId", "ContrastId").rows() == [
-        ("cmp1", "f1", ["B", "A"]),
-        ("cmp2", "f1", ["B", "A"]),
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "f1", "B", "A"),
+        ("cmp2", "f1", "B", "A"),
     ]
 
 
-def test_calculate_t_test_two_sample_builds_contrast_id_as_pair() -> None:
+def test_calculate_t_test_two_sample_scopes_contrasts_by_comparison_before_p_adjust() -> None:
     df_values = pl.DataFrame(
         {
-            "Group": ["case", "case", "ctrl", "ctrl"],
+            "Comparison": ["cmp1"] * 6 + ["cmp2"] * 6,
+            "FeatureId": ["f1"] * 12,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 2,
+            "Value": [
+                1.0,
+                2.0,
+                4.0,
+                5.0,
+                7.0,
+                8.0,
+                10.0,
+                11.0,
+                13.0,
+                14.0,
+                22.0,
+                24.0,
+            ],
+        }
+    )
+
+    df_result = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp1",
+            ),
+            ParametricComparison.ttest_two_sample(
+                group_test="C",
+                group_ref="A",
+                comparison_id="cmp2",
+            ),
+        ],
+        rule_p_adjust="bh",
+    )
+
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "f1", "B", "A"),
+        ("cmp2", "f1", "C", "A"),
+    ]
+    expected_p_values = [
+        stats.ttest_ind([4.0, 5.0], [1.0, 2.0], equal_var=False).pvalue,
+        stats.ttest_ind([22.0, 24.0], [10.0, 11.0], equal_var=False).pvalue,
+    ]
+    assert df_result["PValue"].to_list() == pytest.approx(expected_p_values)
+    assert df_result["PAdjust"].to_list() == pytest.approx(expected_p_values)
+
+
+def test_calculate_t_test_two_sample_accepts_parametric_comparisons() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 4,
+            "FeatureId": ["f1"] * 4,
+            "Group": ["A", "A", "B", "B"],
             "Value": [1.0, 2.0, 4.0, 5.0],
         }
     )
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=TTestContrast(group_test="case", group_ref="ctrl"),
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_two_sample(
+            comparison_id="cmp1",
+            group_test="B",
+            group_ref="A",
+        ),
     )
 
-    assert df_result["ContrastId"].to_list() == [["case", "ctrl"]]
+    assert df_result.select("Comparison", "FeatureId", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "f1", "B", "A"),
+    ]
+
+
+def test_calculate_t_test_two_sample_allows_same_pair_for_different_comparisons() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1", "cmp2", "cmp2", "cmp2", "cmp2"],
+            "FeatureId": ["f1"] * 8,
+            "Group": ["A", "A", "B", "B", "A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 4.0, 5.0, 10.0, 11.0, 20.0, 22.0],
+        }
+    )
+
+    df_result = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp1",
+            ),
+            ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp2",
+            ),
+        ],
+    )
+
+    assert df_result.select("Comparison", "GroupTest", "GroupRef").rows() == [
+        ("cmp1", "B", "A"),
+        ("cmp2", "B", "A"),
+    ]
+
+
+def test_calculate_t_test_two_sample_comparison_scope_controls_p_adjust_inputs() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 4 + ["cmp2"] * 4,
+            "FeatureId": ["f1"] * 8,
+            "Group": ["A", "A", "B", "B"] * 2,
+            "Value": [1.0, 2.0, 4.0, 5.0, 10.0, 11.0, 20.0, 22.0],
+        }
+    )
+
+    df_all = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp1",
+            ),
+            ParametricComparison.ttest_two_sample(
+                group_test="A",
+                group_ref="B",
+                comparison_id="cmp1",
+            ),
+            ParametricComparison.ttest_two_sample(
+                group_test="B",
+                group_ref="A",
+                comparison_id="cmp2",
+            ),
+            ParametricComparison.ttest_two_sample(
+                group_test="A",
+                group_ref="B",
+                comparison_id="cmp2",
+            ),
+        ],
+        rule_p_adjust="bh",
+    )
+    df_one = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_two_sample(
+            group_test="B",
+            group_ref="A",
+            comparison_id="cmp2",
+        ),
+        rule_p_adjust="bh",
+    )
+
+    row_all_filtered = df_all.filter(
+        (pl.col("Comparison") == "cmp2") & (pl.col("GroupTest") == "B")
+    ).row(0, named=True)
+    row_one = df_one.row(0, named=True)
+
+    assert df_all.height == 4
+    assert df_one.height == 1
+    assert row_one["PValue"] == pytest.approx(row_all_filtered["PValue"])
+    assert row_one["PAdjust"] == pytest.approx(row_one["PValue"])
+    assert row_all_filtered["PAdjust"] >= row_one["PAdjust"]
 
 
 def test_calculate_t_test_two_sample_normalizes_group_values_to_strings() -> None:
@@ -558,11 +986,14 @@ def test_calculate_t_test_two_sample_normalizes_group_values_to_strings() -> Non
 
     df_result = calculate_t_test_two_sample(
         df_values,
-        contrasts=TTestContrast(group_test=0, group_ref=1),
+        comparisons=ParametricComparison.ttest_two_sample(
+            comparison_id="cmp",
+            group_test="0",
+            group_ref="1",
+        ),
     )
 
     row = df_result.row(0, named=True)
-    assert row["ContrastId"] == ["0", "1"]
     assert row["GroupTest"] == "0"
     assert row["GroupRef"] == "1"
 
@@ -577,7 +1008,7 @@ def test_calculate_t_test_two_sample_supports_rule_alternative_and_equal_varianc
 
     df_result = calculate_t_test_two_sample(
         df_values.lazy(),
-        contrasts=TTestContrast(group_test="A", group_ref="B"),
+        comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
         rule_alternative="less",
         should_assume_equal_variance=True,
     )
@@ -600,7 +1031,11 @@ def test_calculate_t_test_two_sample_keeps_insufficient_rows_with_nan_stats() ->
     df_result = calculate_t_test_two_sample(
         df_values,
         col_feature="FeatureId",
-        contrasts=[TTestContrast(group_test="A", group_ref="B")],
+        comparisons=ParametricComparison.ttest_two_sample(
+            comparison_id="cmp",
+            group_test="A",
+            group_ref="B",
+        ),
         rule_p_adjust="bh",
     )
 
@@ -616,54 +1051,77 @@ def test_calculate_t_test_two_sample_keeps_insufficient_rows_with_nan_stats() ->
     assert math.isnan(row_f2["PAdjust"])
 
 
-def test_calculate_t_test_two_sample_rejects_invalid_contrast_inputs() -> None:
+def test_calculate_t_test_two_sample_rejects_invalid_comparison_inputs() -> None:
     df_values = pl.DataFrame({"Group": ["A", "B"], "Value": [1.0, 2.0]})
 
-    with pytest.raises(ValueError, match="TTestContrast or a sequence"):
+    with pytest.raises(ValueError, match="ParametricComparison"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts="A_vs_B",
+            comparisons="A_vs_B",  # type: ignore[arg-type]
         )
 
-    with pytest.raises(ValueError, match="TTestContrast or a sequence"):
+    with pytest.raises(ValueError, match="ParametricComparison"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=[TTestContrast(group_test="A", group_ref="B"), "bad"],
+            comparisons=[
+                ParametricComparison.ttest_two_sample(
+                    comparison_id="cmp",
+                    group_test="A",
+                    group_ref="B",
+                ),
+                "bad",
+            ],  # type: ignore[list-item]
+        )
+
+    with pytest.raises(ValueError, match="ttest_two_sample"):
+        calculate_t_test_two_sample(
+            df_values,
+            comparisons=ParametricComparison.ttest_paired(
+                comparison_id="cmp1",
+                group_test="A",
+                group_ref="B",
+            ),
         )
 
     with pytest.raises(ValueError, match="Duplicate contrast pairs"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=[
-                TTestContrast(group_test="A", group_ref="B"),
-                TTestContrast(group_test="A", group_ref="B"),
+            comparisons=[
+                ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
+                ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
+            ],
+        )
+
+    with pytest.raises(ValueError, match="Duplicate contrast pairs"):
+        calculate_t_test_two_sample(
+            df_values,
+            comparisons=[
+                ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
+                ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
             ],
         )
 
     with pytest.raises(ValueError, match="must be different from `group_ref`"):
-        calculate_t_test_two_sample(
-            df_values,
-            contrasts=[TTestContrast(group_test="A", group_ref="A")],
-        )
+        ParametricComparison.ttest_two_sample(group_test="A", group_ref="A")
 
     with pytest.raises(ValueError, match="Invalid p-value adjustment mode"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=TTestContrast(group_test="A", group_ref="B"),
+            comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
             rule_p_adjust="bad",
         )
 
     with pytest.raises(ValueError, match="`col_feature` is required"):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=TTestContrast(group_test="A", group_ref="B"),
+            comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
             col_comparison="Comparison",
         )
 
     with pytest.raises(ValueError, match="`col_comparison` must be different"):
         calculate_t_test_two_sample(
             df_values.rename({"Group": "Comparison"}),
-            contrasts=TTestContrast(group_test="A", group_ref="B"),
+            comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
             col_group="Comparison",
             col_comparison="Comparison",
             col_feature="FeatureId",
@@ -681,7 +1139,7 @@ def test_calculate_t_test_two_sample_rejects_invalid_contrast_inputs() -> None:
     with pytest.raises(ValueError, match="must be consistent within each"):
         calculate_t_test_two_sample(
             df_validity,
-            contrasts=TTestContrast(group_test="B", group_ref="A"),
+            comparisons=ParametricComparison.ttest_two_sample(group_test="B", group_ref="A"),
             col_feature="FeatureId",
             col_comparison="Comparison",
             col_is_valid="IsValid",
@@ -702,5 +1160,5 @@ def test_calculate_t_test_two_sample_rejects_non_numeric_value_column() -> None:
     ):
         calculate_t_test_two_sample(
             df_values,
-            contrasts=TTestContrast(group_test="A", group_ref="B"),
+            comparisons=ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
         )
