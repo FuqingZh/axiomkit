@@ -1,5 +1,8 @@
+from collections.abc import Sequence
+
 import numpy as np
 import polars as pl
+from loguru import logger
 from polars._typing import SchemaDict
 
 from ...p_value import (
@@ -13,8 +16,12 @@ from ..util import (
     create_required_columns,
     create_summary_stat_columns,
 )
-from .spec import OneWayStatisticalResult
+from ..comparison import ParametricComparison
+from .spec import AnovaComparisonPlan, OneWayStatisticalResult
 from .util import calculate_f_test_p_values, create_one_way_stats_columns
+
+COL_ANOVA_COMPARISON_ID = "_AnovaComparisonId"
+COL_ANOVA_GROUP = "_AnovaGroup"
 
 SCHEMA_ANOVA_ONE_WAY_RESULT: SchemaDict = {
     "NumGroups": pl.Int64,
@@ -132,6 +139,7 @@ def calculate_anova_one_way(
     col_feature: str | None = None,
     col_comparison: str | None = None,
     col_is_valid: str | None = None,
+    comparisons: ParametricComparison | Sequence[ParametricComparison] | None = None,
     rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
@@ -148,6 +156,9 @@ def calculate_anova_one_way(
         col_is_valid: Optional boolean column indicating whether a
             ``col_comparison x col_feature`` unit should enter testing. Ignored
             unless ``col_comparison`` is provided.
+        comparisons: Optional declared comparison plan. When provided, only
+            requested ``comparison_id`` values are tested. Each comparison may
+            optionally restrict the included groups.
         rule_p_adjust: Method for adjusting p-values for multiple testing.
             - ``None``: (Default) No adjustment; return raw p-values.
             - "bonferroni": Bonferroni correction.
@@ -156,6 +167,40 @@ def calculate_anova_one_way(
 
     Returns:
         A Polars DataFrame containing one-way ANOVA results for each feature.
+            - Column named as `col_comparison` (if specified): Comparison layer
+              for each row.
+            - Column named as `col_feature` (if specified): Feature label for
+              each row.
+            - `NumGroups`: Number of observed groups used in the ANOVA.
+            - `NTotal`: Total number of observations.
+            - `DegreesFreedomBetween`: Between-group degrees of freedom.
+            - `DegreesFreedomWithin`: Within-group degrees of freedom.
+            - `FStatistic`: F statistic.
+            - `PValue`: Raw p-value.
+            - `PAdjust`: Adjusted p-value, calculated within each
+              `col_comparison` layer when `col_comparison` is provided.
+
+    Examples:
+        ```python
+        import polars as pl
+        from axiomkit.stats import ParametricComparison, calculate_anova_one_way
+
+        df = pl.DataFrame({
+            "Comparison": ["cmp1"] * 6 + ["cmp2"] * 6,
+            "Feature": ["P1"] * 12,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 2,
+            "Value": [1.0, 2.0, 5.0, 6.0, 3.0, 4.0,
+                      2.0, 3.0, 8.0, 9.0, 5.0, 6.0],
+        })
+
+        result = calculate_anova_one_way(
+            df,
+            col_feature="Feature",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.anova_one_way("cmp1"),
+            rule_p_adjust="bh",
+        )
+        ```
     """
     validate_column_layout_anova_one_way(
         col_value,
@@ -165,6 +210,11 @@ def calculate_anova_one_way(
         col_is_valid=col_is_valid,
     )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
+    comparison_plan = AnovaComparisonPlan.from_inputs(comparisons)
+    if comparison_plan is not None and col_comparison is None:
+        raise ValueError(
+            "Arg `col_comparison` is required when `comparisons` is provided."
+        )
 
     pf_adapter = (
         ParametricFrameAdapter(
@@ -184,7 +234,9 @@ def calculate_anova_one_way(
         )
         .cast_cols(
             cols_float=col_value,
-            cols_string=col_group,
+            cols_string=[col_group, col_comparison]
+            if col_comparison is not None
+            else col_group,
             cols_boolean=col_is_valid if col_comparison is not None else None,
         )
         .create_feature_key()
@@ -193,6 +245,43 @@ def calculate_anova_one_way(
 
     lf_values = pf_adapter.lf
     lf_features = pf_adapter.create_feature_frame()
+    if comparison_plan is not None:
+        assert col_comparison is not None
+        col_comparison_plan = col_comparison
+        lf_features = lf_features.filter(
+            pl.col(COL_FEATURE_INTERNAL)
+            .list.get(0)
+            .cast(pl.String)
+            .is_in(comparison_plan.comparison_ids)
+        )
+        if comparison_plan.has_group_filter:
+            lf_group_filter = pl.LazyFrame(
+                {
+                    COL_ANOVA_COMPARISON_ID: list(
+                        comparison_plan.group_comparison_ids
+                    ),
+                    COL_ANOVA_GROUP: list(comparison_plan.group_values),
+                }
+            )
+            lf_values_with_all_groups = lf_values.filter(
+                pl.col(col_comparison_plan).is_in(
+                    comparison_plan.comparison_ids_all_groups
+                )
+            )
+            lf_values_with_group_filter = lf_values.join(
+                lf_group_filter,
+                left_on=[col_comparison_plan, col_group],
+                right_on=[COL_ANOVA_COMPARISON_ID, COL_ANOVA_GROUP],
+                how="inner",
+            )
+            lf_values = pl.concat(
+                [lf_values_with_all_groups, lf_values_with_group_filter],
+                how="vertical",
+            )
+        else:
+            lf_values = lf_values.filter(
+                pl.col(col_comparison_plan).is_in(comparison_plan.comparison_ids)
+            )
     lf_group_stats = (
         lf_values.group_by([COL_FEATURE_INTERNAL, col_group], maintain_order=True)
         .agg(*create_summary_stat_columns(col_value))
@@ -251,7 +340,31 @@ def calculate_anova_one_way(
         degrees_freedom_effect=anova_result.degrees_freedom_between,
         degrees_freedom_within=anova_result.degrees_freedom_within,
     )
-    p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    if col_comparison is None:
+        p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    else:
+        p_adjust = np.full_like(p_value, np.nan, dtype=np.float64)
+        arr_comparison = (
+            df_stats[COL_FEATURE_INTERNAL]
+            .list.get(0)
+            .cast(pl.String)
+            .to_numpy()
+        )
+        for comparison_id in dict.fromkeys(arr_comparison.tolist()):
+            mask = arr_comparison == comparison_id
+            p_adjust[mask] = calculate_p_adjustment_array(
+                p_value[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
+    logger.debug(
+        "One-way ANOVA prepared {n_rows} rows for p-value adjustment "
+        "(comparisons={n_comparisons}, has_comparison_filter={has_comparison_filter}, "
+        "col_comparison={col_comparison}).",
+        n_rows=df_stats.height,
+        n_comparisons=0 if comparison_plan is None else len(comparison_plan.comparison_ids),
+        has_comparison_filter=comparison_plan is not None,
+        col_comparison=col_comparison,
+    )
 
     df_result = df_stats.with_columns(
         *create_one_way_stats_columns(

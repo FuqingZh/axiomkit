@@ -1,7 +1,10 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Self
 
 import numpy as np
 import polars as pl
+from loguru import logger
 from polars._typing import SchemaDict
 
 from ...p_value import (
@@ -10,6 +13,7 @@ from ...p_value import (
     normalize_p_value_adjustment_mode,
 )
 from ..constant import COL_FEATURE_INTERNAL, COL_FEATURE_ORDER
+from ..comparison import ParametricComparison, ParametricComparisonKind
 from ..spec import ParametricFrameAdapter
 from ..util import (
     create_required_columns,
@@ -42,6 +46,7 @@ def validate_column_layout_anova_two_way(
     col_group_a: str,
     col_group_b: str,
     col_feature: str | None,
+    col_comparison: str | None = None,
 ) -> None:
     cols_required = [col_value, col_group_a, col_group_b]
     if len(set(cols_required)) != len(cols_required):
@@ -55,6 +60,65 @@ def validate_column_layout_anova_two_way(
     }:
         raise ValueError(
             "Arg `col_feature` must be different from `col_value`, `col_group_a`, and `col_group_b`."
+        )
+    if col_comparison is None:
+        return
+
+    if col_feature is None:
+        raise ValueError(
+            "Arg `col_feature` is required when `col_comparison` is provided."
+        )
+    if col_comparison in {col_value, col_group_a, col_group_b, col_feature}:
+        raise ValueError(
+            "Arg `col_comparison` must be different from `col_value`, "
+            "`col_group_a`, `col_group_b`, and `col_feature`."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AnovaTwoWayComparisonPlan:
+    comparisons: tuple[ParametricComparison, ...]
+    comparison_ids: tuple[str, ...]
+
+    @classmethod
+    def from_inputs(
+        cls,
+        comparisons: ParametricComparison | Sequence[ParametricComparison] | None,
+    ) -> Self | None:
+        if comparisons is None:
+            return None
+        if isinstance(comparisons, ParametricComparison):
+            items_comparison = (comparisons,)
+        elif isinstance(comparisons, Sequence) and not isinstance(comparisons, str):
+            items_comparison = tuple(comparisons)
+        else:
+            raise ValueError(
+                "Arg `comparisons` must be a ParametricComparison or a sequence of ParametricComparison items."
+            )
+        if not items_comparison:
+            raise ValueError("Arg `comparisons` must not be empty.")
+        if any(
+            not isinstance(_item, ParametricComparison)
+            or _item.kind != ParametricComparisonKind.ANOVA_TWO_WAY
+            for _item in items_comparison
+        ):
+            raise ValueError(
+                "Arg `comparisons` must contain `anova_two_way` ParametricComparison items."
+            )
+
+        comparison_ids_seen: set[str] = set()
+        comparison_ids: list[str] = []
+        for item_comparison in items_comparison:
+            comparison_id = item_comparison.comparison_id
+            assert comparison_id is not None
+            if comparison_id in comparison_ids_seen:
+                raise ValueError("Duplicate comparison ids are not allowed.")
+            comparison_ids_seen.add(comparison_id)
+            comparison_ids.append(comparison_id)
+
+        return cls(
+            comparisons=items_comparison,
+            comparison_ids=tuple(comparison_ids),
         )
 
 
@@ -193,6 +257,8 @@ def calculate_anova_two_way(
     col_group_b: str = "GroupB",
     *,
     col_feature: str | None = None,
+    col_comparison: str | None = None,
+    comparisons: ParametricComparison | Sequence[ParametricComparison] | None = None,
     rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
@@ -209,6 +275,10 @@ def calculate_anova_two_way(
         col_group_a: Name of the first factor column.
         col_group_b: Name of the second factor column.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
+        col_comparison: Optional name of the column defining comparison-specific
+            statistical units.
+        comparisons: Optional declared comparison plan using
+            :class:`ParametricComparison.anova_two_way`.
         rule_p_adjust: Method for adjusting p-values for multiple testing.
             - ``None``: (Default) No adjustment; return raw p-values.
             - "bonferroni": Bonferroni correction.
@@ -217,31 +287,100 @@ def calculate_anova_two_way(
 
     Returns:
         A Polars DataFrame containing two-way ANOVA results for each feature.
+            - Column named as `col_comparison` (if specified): Comparison layer
+              for each row.
+            - Column named as `col_feature` (if specified): Feature label for
+              each row.
+            - `NumGroupsA` and `NumGroupsB`: Number of observed factor levels.
+            - `NTotal`: Total number of observations.
+            - `DegreesFreedomA`, `DegreesFreedomB`,
+              `DegreesFreedomInteraction`, and `DegreesFreedomWithin`:
+              Degrees of freedom for each effect.
+            - `FStatisticA`, `FStatisticB`, and `FStatisticInteraction`: F
+              statistics for each effect.
+            - `PValueA`, `PValueB`, and `PValueInteraction`: Raw p-values.
+            - `PAdjustA`, `PAdjustB`, and `PAdjustInteraction`: Adjusted
+              p-values, calculated within each `col_comparison` layer when
+              `col_comparison` is provided.
+
+    Examples:
+        ```python
+        import polars as pl
+        from axiomkit.stats import ParametricComparison, calculate_anova_two_way
+
+        df = pl.DataFrame({
+            "Comparison": ["cmp1"] * 8,
+            "Feature": ["P1"] * 8,
+            "GroupA": ["A1", "A1", "A1", "A1", "A2", "A2", "A2", "A2"],
+            "GroupB": ["B1", "B1", "B2", "B2", "B1", "B1", "B2", "B2"],
+            "Value": [8.0, 10.0, 6.0, 8.0, 4.0, 5.0, 3.0, 6.0],
+        })
+
+        result = calculate_anova_two_way(
+            df,
+            col_group_a="GroupA",
+            col_group_b="GroupB",
+            col_feature="Feature",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.anova_two_way("cmp1"),
+            rule_p_adjust="bh",
+        )
+        ```
     """
     validate_column_layout_anova_two_way(
         col_value=col_value,
         col_group_a=col_group_a,
         col_group_b=col_group_b,
         col_feature=col_feature,
+        col_comparison=col_comparison,
     )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
+    comparison_plan = AnovaTwoWayComparisonPlan.from_inputs(comparisons)
+    if comparison_plan is not None and col_comparison is None:
+        raise ValueError(
+            "Arg `col_comparison` is required when `comparisons` is provided."
+        )
 
     pf_adapter = ParametricFrameAdapter(
         df,
         col_feature=col_feature,
+        col_comparison=col_comparison,
     ).select_required_cols(
         cols_required=create_required_columns(
-            col_value, col_group_a, col_group_b, col_feature
+            col_value, col_group_a, col_group_b, col_feature, col_comparison
         )
     )
     schema_result = pf_adapter.create_result_schema(SCHEMA_ANOVA_TWO_WAY_RESULT)
 
     pf_adapter.cast_cols(
         cols_float=col_value,
-        cols_string=[col_group_a, col_group_b],
+        cols_string=[col_group_a, col_group_b, col_comparison]
+        if col_comparison is not None
+        else [col_group_a, col_group_b],
     ).create_feature_key()
     lf_values = pf_adapter.lf
     lf_features = pf_adapter.create_feature_frame()
+    if comparison_plan is not None:
+        assert col_comparison is not None
+        lf_features = lf_features.filter(
+            pl.col(COL_FEATURE_INTERNAL)
+            .list.get(0)
+            .cast(pl.String)
+            .is_in(comparison_plan.comparison_ids)
+        )
+        expr_filter = pl.lit(False)
+        for comparison in comparison_plan.comparisons:
+            expr_comparison = pl.col(col_comparison) == comparison.comparison_id
+            if comparison.groups_a is not None:
+                expr_comparison = expr_comparison & pl.col(col_group_a).is_in(
+                    comparison.groups_a
+                )
+            if comparison.groups_b is not None:
+                expr_comparison = expr_comparison & pl.col(col_group_b).is_in(
+                    comparison.groups_b
+                )
+            expr_filter = expr_filter | expr_comparison
+        lf_values = lf_values.filter(expr_filter)
 
     lf_cell_stats = (
         lf_values.group_by(
@@ -370,10 +509,48 @@ def calculate_anova_two_way(
         degrees_freedom_effect=anova_result.degrees_freedom_interaction,
         degrees_freedom_within=anova_result.degrees_freedom_within,
     )
-    p_adjust_a = calculate_p_adjustment_array(p_value_a, rule_p_adjust=rule_p_adjust)
-    p_adjust_b = calculate_p_adjustment_array(p_value_b, rule_p_adjust=rule_p_adjust)
-    p_adjust_interaction = calculate_p_adjustment_array(
-        p_value_interaction, rule_p_adjust=rule_p_adjust
+    if col_comparison is None:
+        p_adjust_a = calculate_p_adjustment_array(p_value_a, rule_p_adjust=rule_p_adjust)
+        p_adjust_b = calculate_p_adjustment_array(p_value_b, rule_p_adjust=rule_p_adjust)
+        p_adjust_interaction = calculate_p_adjustment_array(
+            p_value_interaction, rule_p_adjust=rule_p_adjust
+        )
+    else:
+        arr_comparison = (
+            df_stats[COL_FEATURE_INTERNAL]
+            .list.get(0)
+            .cast(pl.String)
+            .to_numpy()
+        )
+        p_adjust_a = np.full_like(p_value_a, np.nan, dtype=np.float64)
+        p_adjust_b = np.full_like(p_value_b, np.nan, dtype=np.float64)
+        p_adjust_interaction = np.full_like(
+            p_value_interaction,
+            np.nan,
+            dtype=np.float64,
+        )
+        for comparison_id in dict.fromkeys(arr_comparison.tolist()):
+            mask = arr_comparison == comparison_id
+            p_adjust_a[mask] = calculate_p_adjustment_array(
+                p_value_a[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
+            p_adjust_b[mask] = calculate_p_adjustment_array(
+                p_value_b[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
+            p_adjust_interaction[mask] = calculate_p_adjustment_array(
+                p_value_interaction[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
+    logger.debug(
+        "Two-way ANOVA prepared {n_rows} rows for p-value adjustment "
+        "(comparisons={n_comparisons}, has_comparison_filter={has_comparison_filter}, "
+        "col_comparison={col_comparison}).",
+        n_rows=df_stats.height,
+        n_comparisons=0 if comparison_plan is None else len(comparison_plan.comparison_ids),
+        has_comparison_filter=comparison_plan is not None,
+        col_comparison=col_comparison,
     )
 
     df_result = df_stats.with_columns(

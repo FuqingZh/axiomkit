@@ -1,5 +1,8 @@
+from collections.abc import Sequence
+
 import numpy as np
 import polars as pl
+from loguru import logger
 
 from ...p_value import (
     PValueAdjustmentType,
@@ -11,14 +14,18 @@ from ..constant import (
     COL_FEATURE_ORDER,
     COLS_SUMMARY_STATS,
 )
+from ..comparison import ParametricComparison, ParametricComparisonKind
 from ..spec import ParametricFrameAdapter
 from ..util import (
     create_required_columns,
     create_summary_stat_columns,
 )
 from .one_way import SCHEMA_ANOVA_ONE_WAY_RESULT, validate_column_layout_anova_one_way
-from .spec import OneWayStatisticalResult
+from .spec import AnovaComparisonPlan, OneWayStatisticalResult
 from .util import calculate_f_test_p_values, create_one_way_stats_columns
+
+COL_ANOVA_COMPARISON_ID = "_AnovaComparisonId"
+COL_ANOVA_GROUP = "_AnovaGroup"
 
 
 def calculate_one_way_welch_statistics(
@@ -125,6 +132,9 @@ def calculate_anova_one_way_welch(
     col_group: str = "Group",
     *,
     col_feature: str | None = None,
+    col_comparison: str | None = None,
+    col_is_valid: str | None = None,
+    comparisons: ParametricComparison | Sequence[ParametricComparison] | None = None,
     rule_p_adjust: PValueAdjustmentType | str | None = None,
 ) -> pl.DataFrame:
     """
@@ -135,6 +145,12 @@ def calculate_anova_one_way_welch(
         col_value: Name of the column containing numeric values to compare.
         col_group: Name of the column containing group labels for comparison.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
+        col_comparison: Optional name of the column defining comparison-specific
+            statistical units.
+        col_is_valid: Optional boolean column indicating whether a
+            comparison-feature unit should enter testing.
+        comparisons: Optional declared comparison plan using
+            :class:`ParametricComparison.anova_one_way_welch`.
         rule_p_adjust: Method for adjusting p-values for multiple testing.
             - ``None``: (Default) No adjustment; return raw p-values.
             - "bonferroni": Bonferroni correction.
@@ -143,21 +159,121 @@ def calculate_anova_one_way_welch(
 
     Returns:
         A Polars DataFrame containing Welch one-way ANOVA results for each feature.
+            - Column named as `col_comparison` (if specified): Comparison layer
+              for each row.
+            - Column named as `col_feature` (if specified): Feature label for
+              each row.
+            - `NumGroups`: Number of observed groups used in the ANOVA.
+            - `NTotal`: Total number of observations.
+            - `DegreesFreedomBetween`: Between-group degrees of freedom.
+            - `DegreesFreedomWithin`: Welch denominator degrees of freedom.
+            - `FStatistic`: Welch F statistic.
+            - `PValue`: Raw p-value.
+            - `PAdjust`: Adjusted p-value, calculated within each
+              `col_comparison` layer when `col_comparison` is provided.
+
+    Examples:
+        ```python
+        import polars as pl
+        from axiomkit.stats import (
+            ParametricComparison,
+            calculate_anova_one_way_welch,
+        )
+
+        df = pl.DataFrame({
+            "Comparison": ["cmp1"] * 9 + ["cmp2"] * 9,
+            "Feature": ["P1"] * 18,
+            "Group": ["A", "A", "A", "B", "B", "B", "C", "C", "C"] * 2,
+            "Value": [1.0, 2.0, 1.5, 5.0, 7.0, 8.0, 3.0, 4.0, 3.5,
+                      2.0, 3.0, 2.5, 8.0, 10.0, 11.0, 5.0, 6.0, 5.5],
+        })
+
+        result = calculate_anova_one_way_welch(
+            df,
+            col_feature="Feature",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.anova_one_way_welch("cmp1"),
+            rule_p_adjust="bh",
+        )
+        ```
     """
-    validate_column_layout_anova_one_way(col_value, col_group, col_feature)
+    validate_column_layout_anova_one_way(
+        col_value,
+        col_group,
+        col_feature,
+        col_comparison=col_comparison,
+        col_is_valid=col_is_valid,
+    )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
+    comparison_plan = AnovaComparisonPlan.from_inputs(
+        comparisons,
+        comparison_kind=ParametricComparisonKind.ANOVA_ONE_WAY_WELCH,
+    )
+    if comparison_plan is not None and col_comparison is None:
+        raise ValueError(
+            "Arg `col_comparison` is required when `comparisons` is provided."
+        )
 
     pf_adapter = ParametricFrameAdapter(
         df,
         col_feature=col_feature,
+        col_comparison=col_comparison,
+        col_is_valid=col_is_valid,
     ).select_required_cols(
-        cols_required=create_required_columns(col_value, col_group, col_feature)
+        cols_required=create_required_columns(
+            col_value,
+            col_group,
+            col_feature,
+            col_comparison,
+            col_is_valid if col_comparison is not None else None,
+        )
     )
     schema_result = pf_adapter.create_result_schema(SCHEMA_ANOVA_ONE_WAY_RESULT)
 
-    pf_adapter.cast_cols(cols_float=col_value, cols_string=col_group).create_feature_key()
+    pf_adapter.cast_cols(
+        cols_float=col_value,
+        cols_string=[col_group, col_comparison] if col_comparison is not None else col_group,
+        cols_boolean=col_is_valid if col_comparison is not None else None,
+    ).create_feature_key()
     lf_values = pf_adapter.lf
     lf_features = pf_adapter.create_feature_frame()
+    if comparison_plan is not None:
+        assert col_comparison is not None
+        col_comparison_plan = col_comparison
+        lf_features = lf_features.filter(
+            pl.col(COL_FEATURE_INTERNAL)
+            .list.get(0)
+            .cast(pl.String)
+            .is_in(comparison_plan.comparison_ids)
+        )
+        if comparison_plan.has_group_filter:
+            lf_group_filter = pl.LazyFrame(
+                {
+                    COL_ANOVA_COMPARISON_ID: list(
+                        comparison_plan.group_comparison_ids
+                    ),
+                    COL_ANOVA_GROUP: list(comparison_plan.group_values),
+                }
+            )
+            lf_values_with_all_groups = lf_values.filter(
+                pl.col(col_comparison_plan).is_in(
+                    comparison_plan.comparison_ids_all_groups
+                )
+            )
+            lf_values_with_group_filter = lf_values.join(
+                lf_group_filter,
+                left_on=[col_comparison_plan, col_group],
+                right_on=[COL_ANOVA_COMPARISON_ID, COL_ANOVA_GROUP],
+                how="inner",
+            )
+            lf_values = pl.concat(
+                [lf_values_with_all_groups, lf_values_with_group_filter],
+                how="vertical",
+            )
+        else:
+            lf_values = lf_values.filter(
+                pl.col(col_comparison_plan).is_in(comparison_plan.comparison_ids)
+            )
     lf_group_stats = (
         lf_values.group_by([COL_FEATURE_INTERNAL, col_group], maintain_order=True)
         .agg(*create_summary_stat_columns(col_value))
@@ -208,7 +324,31 @@ def calculate_anova_one_way_welch(
         degrees_freedom_effect=one_way_result.degrees_freedom_between,
         degrees_freedom_within=one_way_result.degrees_freedom_within,
     )
-    p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    if col_comparison is None:
+        p_adjust = calculate_p_adjustment_array(p_value, rule_p_adjust=rule_p_adjust)
+    else:
+        p_adjust = np.full_like(p_value, np.nan, dtype=np.float64)
+        arr_comparison = (
+            df_stats[COL_FEATURE_INTERNAL]
+            .list.get(0)
+            .cast(pl.String)
+            .to_numpy()
+        )
+        for comparison_id in dict.fromkeys(arr_comparison.tolist()):
+            mask = arr_comparison == comparison_id
+            p_adjust[mask] = calculate_p_adjustment_array(
+                p_value[mask],
+                rule_p_adjust=rule_p_adjust,
+            )
+    logger.debug(
+        "Welch one-way ANOVA prepared {n_rows} rows for p-value adjustment "
+        "(comparisons={n_comparisons}, has_comparison_filter={has_comparison_filter}, "
+        "col_comparison={col_comparison}).",
+        n_rows=df_stats.height,
+        n_comparisons=0 if comparison_plan is None else len(comparison_plan.comparison_ids),
+        has_comparison_filter=comparison_plan is not None,
+        col_comparison=col_comparison,
+    )
 
     df_result = df_stats.with_columns(
         *create_one_way_stats_columns(

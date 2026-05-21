@@ -6,6 +6,8 @@ import numpy as np
 import polars as pl
 import pytest
 from axiomkit.stats import (
+    AnovaComparison,
+    ParametricComparison,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
@@ -106,6 +108,65 @@ def calculate_expected_one_way_welch(
             )
         ),
     }
+
+
+def test_anova_comparison_normalizes_inputs() -> None:
+    comparison = AnovaComparison(" cmp1 ", groups=["A", "B", "A", "1"])
+
+    assert comparison.comparison_id == "cmp1"
+    assert comparison.groups == ("A", "B", "1")
+
+
+def test_anova_comparison_rejects_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="comparison_id"):
+        AnovaComparison(" ")
+
+    with pytest.raises(ValueError, match="at least two"):
+        AnovaComparison("cmp1", groups=["A", "A"])
+
+
+def test_parametric_comparison_factories_validate_inputs() -> None:
+    one_sample = ParametricComparison.ttest_one_sample(" cmp1 ")
+    one_way = ParametricComparison.anova_one_way("cmp2", groups=["A", "B", "A"])
+    one_way_welch = ParametricComparison.anova_one_way_welch(
+        "cmp3",
+        groups=["A", "B"],
+    )
+    two_way = ParametricComparison.anova_two_way(
+        "cmp4",
+        groups_a=["A1", "A2", "A1"],
+        groups_b=["B1", "B2"],
+    )
+    unscoped_ttest = ParametricComparison.ttest_two_sample(
+        group_test="B",
+        group_ref="A",
+    )
+    scoped_ttest = ParametricComparison.ttest_paired(
+        group_test="B",
+        group_ref="A",
+        comparison_id="cmp5",
+    )
+
+    assert one_sample.comparison_id == "cmp1"
+    assert one_sample.kind == "ttest_one_sample"
+    assert unscoped_ttest.comparison_id is None
+    assert scoped_ttest.comparison_id == "cmp5"
+    assert one_way.comparison_id == "cmp2"
+    assert one_way.groups == ("A", "B")
+    assert one_way_welch.kind == "anova_one_way_welch"
+    assert one_way_welch.groups == ("A", "B")
+    assert two_way.kind == "anova_two_way"
+    assert two_way.groups_a == ("A1", "A2")
+    assert two_way.groups_b == ("B1", "B2")
+
+    with pytest.raises(ValueError, match="group_test"):
+        ParametricComparison.ttest_two_sample(
+            group_test="A",
+            group_ref="A",
+        )
+
+    with pytest.raises(ValueError, match="comparison_id"):
+        ParametricComparison.anova_one_way(None)  # type: ignore[arg-type]
 
 
 def test_calculate_anova_one_way_matches_scipy() -> None:
@@ -356,6 +417,204 @@ def test_calculate_anova_one_way_supports_comparison_without_validity_gate() -> 
     ]
 
 
+def test_calculate_anova_one_way_filters_declared_comparisons_and_groups() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 9 + ["cmp2"] * 6,
+            "FeatureId": ["f1"] * 15,
+            "Group": ["A", "A", "A", "B", "B", "B", "C", "C", "C"] + ["A", "A", "B", "B", "C", "C"],
+            "Value": [
+                1.0,
+                2.0,
+                3.0,
+                6.0,
+                7.0,
+                8.0,
+                20.0,
+                21.0,
+                22.0,
+                10.0,
+                11.0,
+                14.0,
+                15.0,
+                30.0,
+                31.0,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_one_way(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=AnovaComparison("cmp1", groups=["A", "B"]),
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [("cmp1", "f1")]
+    row = df_result.row(0, named=True)
+    expected = stats.f_oneway([1.0, 2.0, 3.0], [6.0, 7.0, 8.0])
+
+    assert row["NumGroups"] == 2
+    assert row["NTotal"] == 6
+    assert row["FStatistic"] == pytest.approx(expected.statistic)
+    assert row["PValue"] == pytest.approx(expected.pvalue)
+
+
+def test_calculate_anova_one_way_accepts_parametric_comparison() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 6 + ["cmp2"] * 6,
+            "FeatureId": ["f1"] * 12,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 2,
+            "Value": [1.0, 2.0, 5.0, 6.0, 3.0, 4.0, 10.0, 11.0, 20.0, 21.0, 30.0, 31.0],
+        }
+    )
+
+    df_result = calculate_anova_one_way(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.anova_one_way(
+            "cmp2",
+            groups=["A", "B", "C"],
+        ),
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [("cmp2", "f1")]
+
+
+def test_calculate_anova_one_way_keeps_missing_requested_group_as_nan() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1"],
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "Group": ["A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 4.0, 5.0],
+        }
+    )
+
+    df_result = calculate_anova_one_way(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=AnovaComparison("cmp1", groups=["A", "C"]),
+        rule_p_adjust="bh",
+    )
+
+    row = df_result.row(0, named=True)
+    assert row["Comparison"] == "cmp1"
+    assert row["FeatureId"] == "f1"
+    assert row["NumGroups"] == 1
+    assert row["NTotal"] == 2
+    assert math.isnan(row["FStatistic"])
+    assert math.isnan(row["PValue"])
+    assert math.isnan(row["PAdjust"])
+
+
+def test_calculate_anova_one_way_adjusts_p_values_within_each_comparison() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 12 + ["cmp2"] * 12,
+            "FeatureId": ["f1"] * 6 + ["f2"] * 6 + ["f1"] * 6 + ["f2"] * 6,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 4,
+            "Value": [
+                1.0,
+                2.0,
+                5.0,
+                6.0,
+                3.0,
+                4.0,
+                1.0,
+                2.0,
+                2.0,
+                3.0,
+                3.0,
+                4.0,
+                10.0,
+                11.0,
+                20.0,
+                21.0,
+                30.0,
+                31.0,
+                10.0,
+                11.0,
+                12.0,
+                13.0,
+                14.0,
+                15.0,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_one_way(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        rule_p_adjust="bh",
+    )
+
+    for comparison_id in ["cmp1", "cmp2"]:
+        df_comparison = df_result.filter(pl.col("Comparison") == comparison_id)
+        expected = stats.false_discovery_control(
+            df_comparison["PValue"].to_numpy(),
+            method="bh",
+        )
+        assert df_comparison["PAdjust"].to_list() == pytest.approx(expected)
+
+    expected_global = stats.false_discovery_control(
+        df_result["PValue"].to_numpy(),
+        method="bh",
+    )
+    assert df_result["PAdjust"].to_list() != pytest.approx(expected_global)
+
+
+def test_calculate_anova_one_way_excludes_invalid_units_from_p_adjust() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 12 + ["cmp2"] * 6,
+            "FeatureId": ["f1"] * 6 + ["f2"] * 6 + ["f1"] * 6,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 3,
+            "Value": [
+                1.0,
+                2.0,
+                5.0,
+                6.0,
+                3.0,
+                4.0,
+                100.0,
+                101.0,
+                110.0,
+                111.0,
+                120.0,
+                121.0,
+                10.0,
+                11.0,
+                20.0,
+                21.0,
+                30.0,
+                31.0,
+            ],
+            "IsValid": [True] * 6 + [False] * 6 + [True] * 6,
+        }
+    )
+
+    df_result = calculate_anova_one_way(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        col_is_valid="IsValid",
+        rule_p_adjust="bonferroni",
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [
+        ("cmp1", "f1"),
+        ("cmp2", "f1"),
+    ]
+    assert df_result["PAdjust"].to_list() == pytest.approx(
+        df_result["PValue"].to_list()
+    )
+
+
 def test_calculate_anova_one_way_keeps_feature_with_too_few_groups_as_nan() -> None:
     df_values = pl.DataFrame(
         {
@@ -584,6 +843,219 @@ def test_calculate_anova_one_way_welch_keeps_invalid_feature_as_nan() -> None:
     assert not math.isnan(row_f2["FStatistic"])
 
 
+def test_calculate_anova_one_way_welch_supports_comparisons_and_group_filter() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 6 + ["cmp2"] * 6,
+            "FeatureId": ["f1"] * 12,
+            "Group": ["A", "A", "B", "B", "C", "C"] * 2,
+            "Value": [
+                1.0,
+                2.0,
+                5.0,
+                6.0,
+                20.0,
+                22.0,
+                3.0,
+                4.0,
+                8.0,
+                9.0,
+                30.0,
+                32.0,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_one_way_welch(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.anova_one_way_welch(
+            "cmp1",
+            groups=["A", "B"],
+        ),
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [("cmp1", "f1")]
+    row = df_result.row(0, named=True)
+    assert row["NumGroups"] == 2
+    assert row["NTotal"] == 4
+    assert not math.isnan(row["FStatistic"])
+
+
+def test_calculate_anova_one_way_welch_missing_requested_group_stays_nan() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1"],
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "Group": ["A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 5.0, 6.0],
+        }
+    )
+
+    df_result = calculate_anova_one_way_welch(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.anova_one_way_welch(
+            "cmp1",
+            groups=["A", "C"],
+        ),
+    )
+
+    row = df_result.row(0, named=True)
+    assert row["NumGroups"] == 1
+    assert math.isnan(row["FStatistic"])
+    assert math.isnan(row["PAdjust"])
+
+
+def test_calculate_anova_one_way_welch_adjusts_p_values_within_comparison() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 9 + ["cmp2"] * 9,
+            "FeatureId": ["f1"] * 18,
+            "Group": ["A", "A", "A", "B", "B", "B", "C", "C", "C"] * 2,
+            "Value": [
+                1.0,
+                2.0,
+                1.5,
+                5.0,
+                7.0,
+                8.0,
+                3.0,
+                4.0,
+                3.5,
+                2.0,
+                3.0,
+                2.5,
+                8.0,
+                10.0,
+                11.0,
+                5.0,
+                6.0,
+                5.5,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_one_way_welch(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.anova_one_way_welch("cmp1"),
+            ParametricComparison.anova_one_way_welch("cmp2"),
+        ],
+        rule_p_adjust="bh",
+    )
+
+    assert df_result["Comparison"].to_list() == ["cmp1", "cmp2"]
+    assert df_result["PAdjust"].to_list() == pytest.approx(
+        df_result["PValue"].to_list()
+    )
+
+
+def test_calculate_anova_one_way_welch_p_adjust_differs_from_global_scope() -> None:
+    rows: list[tuple[str, str, str, float]] = []
+    values_by_unit = {
+        ("cmp1", "f1"): {
+            "A": [1.0, 2.0, 1.5],
+            "B": [5.0, 7.0, 8.0],
+            "C": [3.0, 4.0, 3.5],
+        },
+        ("cmp1", "f2"): {
+            "A": [1.0, 2.0, 1.5],
+            "B": [2.0, 3.0, 2.5],
+            "C": [3.0, 4.0, 3.5],
+        },
+        ("cmp2", "f1"): {
+            "A": [2.0, 3.0, 2.5],
+            "B": [8.0, 10.0, 11.0],
+            "C": [5.0, 6.0, 5.5],
+        },
+        ("cmp2", "f2"): {
+            "A": [10.0, 11.0, 10.5],
+            "B": [12.0, 13.0, 12.5],
+            "C": [14.0, 15.0, 14.5],
+        },
+    }
+    for (comparison_id, feature_id), values_by_group in values_by_unit.items():
+        for group, values in values_by_group.items():
+            rows.extend((comparison_id, feature_id, group, value) for value in values)
+
+    df_result = calculate_anova_one_way_welch(
+        pl.DataFrame(
+            rows,
+            schema=["Comparison", "FeatureId", "Group", "Value"],
+            orient="row",
+        ),
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        rule_p_adjust="bh",
+    )
+
+    for comparison_id in ["cmp1", "cmp2"]:
+        df_comparison = df_result.filter(pl.col("Comparison") == comparison_id)
+        expected = stats.false_discovery_control(
+            df_comparison["PValue"].to_numpy(),
+            method="bh",
+        )
+        assert df_comparison["PAdjust"].to_list() == pytest.approx(expected)
+
+    expected_global = stats.false_discovery_control(
+        df_result["PValue"].to_numpy(),
+        method="bh",
+    )
+    assert df_result["PAdjust"].to_list() != pytest.approx(expected_global)
+
+
+def test_calculate_anova_one_way_welch_excludes_invalid_units_from_p_adjust() -> None:
+    rows: list[tuple[str, str, str, float, bool]] = []
+    values_by_unit = {
+        ("cmp1", "f1", True): {
+            "A": [1.0, 2.0, 1.5],
+            "B": [5.0, 7.0, 8.0],
+            "C": [3.0, 4.0, 3.5],
+        },
+        ("cmp1", "f2", False): {
+            "A": [100.0, 101.0, 100.5],
+            "B": [110.0, 111.0, 110.5],
+            "C": [120.0, 121.0, 120.5],
+        },
+        ("cmp2", "f1", True): {
+            "A": [2.0, 3.0, 2.5],
+            "B": [8.0, 10.0, 11.0],
+            "C": [5.0, 6.0, 5.5],
+        },
+    }
+    for (comparison_id, feature_id, is_valid), values_by_group in values_by_unit.items():
+        for group, values in values_by_group.items():
+            rows.extend(
+                (comparison_id, feature_id, group, value, is_valid)
+                for value in values
+            )
+
+    df_result = calculate_anova_one_way_welch(
+        pl.DataFrame(
+            rows,
+            schema=["Comparison", "FeatureId", "Group", "Value", "IsValid"],
+            orient="row",
+        ),
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        col_is_valid="IsValid",
+        rule_p_adjust="bonferroni",
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [
+        ("cmp1", "f1"),
+        ("cmp2", "f1"),
+    ]
+    assert df_result["PAdjust"].to_list() == pytest.approx(
+        df_result["PValue"].to_list()
+    )
+
+
 def test_calculate_anova_one_way_welch_rejects_invalid_inputs() -> None:
     df_values = pl.DataFrame({"Group": ["A", "B"], "Value": [1.0, 2.0]})
 
@@ -605,6 +1077,59 @@ def test_calculate_anova_one_way_welch_rejects_invalid_inputs() -> None:
                     "Value": ["low", "high", "higher", "highest"],
                 }
             )
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_anova_one_way_welch(
+            df_values,
+            comparisons=ParametricComparison.anova_one_way_welch("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="Duplicate comparison ids"):
+        calculate_anova_one_way_welch(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "Group": ["A", "B"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=[
+                ParametricComparison.anova_one_way_welch("cmp1"),
+                ParametricComparison.anova_one_way_welch("cmp1"),
+            ],
+        )
+
+    with pytest.raises(ValueError, match="anova_one_way_welch"):
+        calculate_anova_one_way_welch(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "Group": ["A", "B"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.anova_one_way("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="`col_feature` is required"):
+        calculate_anova_one_way_welch(
+            df_values,
+            col_comparison="Comparison",
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` must be different"):
+        calculate_anova_one_way_welch(
+            df_values.rename({"Group": "Comparison"}),
+            col_group="Comparison",
+            col_feature="FeatureId",
+            col_comparison="Comparison",
         )
 
 
@@ -629,6 +1154,45 @@ def test_calculate_anova_one_way_rejects_invalid_column_layout() -> None:
         calculate_anova_one_way(
             df_values,
             col_comparison="Comparison",
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_anova_one_way(
+            df_values,
+            comparisons=AnovaComparison("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="Duplicate comparison ids"):
+        calculate_anova_one_way(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "Group": ["A", "B"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=[
+                AnovaComparison("cmp1"),
+                AnovaComparison("cmp1"),
+            ],
+        )
+
+    with pytest.raises(ValueError, match="anova_one_way"):
+        calculate_anova_one_way(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "Group": ["A", "B"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.ttest_one_sample("cmp1"),
         )
 
     with pytest.raises(ValueError, match="`col_comparison` must be different"):
@@ -915,6 +1479,184 @@ def test_calculate_anova_two_way_keeps_unbalanced_feature_as_nan() -> None:
     assert row_f2["NumGroupsB"] == 2
 
 
+def test_calculate_anova_two_way_supports_comparisons_and_group_filters() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 12 + ["cmp2"] * 12,
+            "FeatureId": ["f1"] * 24,
+            "GroupA": (["A1"] * 4 + ["A2"] * 4 + ["A3"] * 4) * 2,
+            "GroupB": (["B1", "B1", "B2", "B2"] * 3) * 2,
+            "Value": [
+                8.0,
+                10.0,
+                6.0,
+                8.0,
+                4.0,
+                5.0,
+                3.0,
+                6.0,
+                30.0,
+                31.0,
+                32.0,
+                33.0,
+                9.0,
+                11.0,
+                7.0,
+                9.0,
+                5.0,
+                6.0,
+                4.0,
+                7.0,
+                40.0,
+                41.0,
+                42.0,
+                43.0,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_two_way(
+        df_values,
+        col_group_a="GroupA",
+        col_group_b="GroupB",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.anova_two_way(
+            "cmp1",
+            groups_a=["A1", "A2"],
+            groups_b=["B1", "B2"],
+        ),
+    )
+
+    assert df_result.select("Comparison", "FeatureId").rows() == [("cmp1", "f1")]
+    row = df_result.row(0, named=True)
+    assert row["NumGroupsA"] == 2
+    assert row["NumGroupsB"] == 2
+    assert row["NTotal"] == 8
+    assert not math.isnan(row["FStatisticA"])
+
+
+def test_calculate_anova_two_way_adjusts_p_values_within_comparison() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1"] * 8 + ["cmp2"] * 8,
+            "FeatureId": ["f1"] * 16,
+            "GroupA": ["A1", "A1", "A1", "A1", "A2", "A2", "A2", "A2"] * 2,
+            "GroupB": ["B1", "B1", "B2", "B2", "B1", "B1", "B2", "B2"] * 2,
+            "Value": [
+                8.0,
+                10.0,
+                6.0,
+                8.0,
+                4.0,
+                5.0,
+                3.0,
+                6.0,
+                9.0,
+                11.0,
+                7.0,
+                9.0,
+                5.0,
+                6.0,
+                4.0,
+                7.0,
+            ],
+        }
+    )
+
+    df_result = calculate_anova_two_way(
+        df_values,
+        col_group_a="GroupA",
+        col_group_b="GroupB",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=[
+            ParametricComparison.anova_two_way("cmp1"),
+            ParametricComparison.anova_two_way("cmp2"),
+        ],
+        rule_p_adjust="bh",
+    )
+
+    assert df_result["Comparison"].to_list() == ["cmp1", "cmp2"]
+    assert df_result["PAdjustA"].to_list() == pytest.approx(
+        df_result["PValueA"].to_list()
+    )
+    assert df_result["PAdjustB"].to_list() == pytest.approx(
+        df_result["PValueB"].to_list()
+    )
+    assert df_result["PAdjustInteraction"].to_list() == pytest.approx(
+        df_result["PValueInteraction"].to_list()
+    )
+
+
+def test_calculate_anova_two_way_p_adjust_differs_from_global_scope() -> None:
+    rows: list[tuple[str, str, str, str, float]] = []
+    cells_by_unit = {
+        ("cmp1", "f1"): {
+            ("A1", "B1"): [8.0, 10.0],
+            ("A1", "B2"): [6.0, 8.0],
+            ("A2", "B1"): [4.0, 5.0],
+            ("A2", "B2"): [3.0, 6.0],
+        },
+        ("cmp1", "f2"): {
+            ("A1", "B1"): [10.0, 11.0],
+            ("A1", "B2"): [9.0, 10.0],
+            ("A2", "B1"): [8.0, 9.0],
+            ("A2", "B2"): [7.0, 8.0],
+        },
+        ("cmp2", "f1"): {
+            ("A1", "B1"): [20.0, 22.0],
+            ("A1", "B2"): [17.0, 19.0],
+            ("A2", "B1"): [10.0, 12.0],
+            ("A2", "B2"): [8.0, 11.0],
+        },
+        ("cmp2", "f2"): {
+            ("A1", "B1"): [11.0, 12.0],
+            ("A1", "B2"): [8.0, 9.0],
+            ("A2", "B1"): [10.0, 11.0],
+            ("A2", "B2"): [7.0, 8.0],
+        },
+    }
+    for (comparison_id, feature_id), cells in cells_by_unit.items():
+        for (group_a, group_b), values in cells.items():
+            rows.extend(
+                (comparison_id, feature_id, group_a, group_b, value)
+                for value in values
+            )
+
+    df_result = calculate_anova_two_way(
+        pl.DataFrame(
+            rows,
+            schema=["Comparison", "FeatureId", "GroupA", "GroupB", "Value"],
+            orient="row",
+        ),
+        col_group_a="GroupA",
+        col_group_b="GroupB",
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        rule_p_adjust="bh",
+    )
+
+    for comparison_id in ["cmp1", "cmp2"]:
+        df_comparison = df_result.filter(pl.col("Comparison") == comparison_id)
+        for p_value_col, p_adjust_col in [
+            ("PValueA", "PAdjustA"),
+            ("PValueB", "PAdjustB"),
+            ("PValueInteraction", "PAdjustInteraction"),
+        ]:
+            expected = stats.false_discovery_control(
+                df_comparison[p_value_col].to_numpy(),
+                method="bh",
+            )
+            assert df_comparison[p_adjust_col].to_list() == pytest.approx(expected)
+
+    expected_global_a = stats.false_discovery_control(
+        df_result["PValueA"].to_numpy(),
+        method="bh",
+    )
+    assert df_result["PAdjustA"].to_list() != pytest.approx(expected_global_a)
+
+
 def test_calculate_anova_two_way_rejects_invalid_inputs() -> None:
     df_values = pl.DataFrame(
         {
@@ -946,4 +1688,59 @@ def test_calculate_anova_two_way_rejects_invalid_inputs() -> None:
             ),
             col_group_a="GroupA",
             col_group_b="GroupB",
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_anova_two_way(
+            df_values,
+            col_group_a="GroupA",
+            col_group_b="GroupB",
+            comparisons=ParametricComparison.anova_two_way("cmp1"),
+        )
+
+    with pytest.raises(ValueError, match="`col_feature` is required"):
+        calculate_anova_two_way(
+            df_values,
+            col_group_a="GroupA",
+            col_group_b="GroupB",
+            col_comparison="Comparison",
+        )
+
+    with pytest.raises(ValueError, match="Duplicate comparison ids"):
+        calculate_anova_two_way(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "GroupA": ["A1", "A2"],
+                    "GroupB": ["B1", "B2"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_group_a="GroupA",
+            col_group_b="GroupB",
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=[
+                ParametricComparison.anova_two_way("cmp1"),
+                ParametricComparison.anova_two_way("cmp1"),
+            ],
+        )
+
+    with pytest.raises(ValueError, match="anova_two_way"):
+        calculate_anova_two_way(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "GroupA": ["A1", "A2"],
+                    "GroupB": ["B1", "B2"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_group_a="GroupA",
+            col_group_b="GroupB",
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=ParametricComparison.anova_one_way("cmp1"),
         )
