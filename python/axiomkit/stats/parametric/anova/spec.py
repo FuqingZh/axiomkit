@@ -14,29 +14,8 @@ class OneWayStatisticalResult:
     f_statistic: np.ndarray
 
 
-class AnovaComparison(ParametricComparison):
-    """Declare one comparison unit for one-way ANOVA.
-
-    Attributes:
-        comparison_id: Identifier matching the ``col_comparison`` value.
-        groups: Optional group subset to include for this comparison. If
-            omitted, all observed groups in the comparison are used.
-    """
-
-    def __init__(
-        self,
-        comparison_id: str,
-        groups: Sequence[str] | None = None,
-    ) -> None:
-        super().__init__(
-            comparison_id,
-            ParametricComparisonKind.ANOVA_ONE_WAY,
-            groups=groups,
-        )
-
-
 @dataclass(frozen=True, slots=True)
-class AnovaComparisonPlan:
+class AnovaPlan:
     comparison_ids: tuple[str, ...]
     comparison_ids_all_groups: tuple[str, ...]
     group_comparison_ids: tuple[str, ...]

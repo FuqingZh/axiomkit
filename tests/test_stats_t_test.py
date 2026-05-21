@@ -519,7 +519,7 @@ def test_calculate_t_test_paired_rejects_duplicate_pairs() -> None:
         )
 
 
-def test_calculate_t_test_paired_allows_comparison_id_without_comparison_column() -> None:
+def test_calculate_t_test_paired_rejects_comparison_id_without_comparison_column() -> None:
     df_values = pl.DataFrame(
         {
             "PairId": ["p1", "p1", "p2", "p2"],
@@ -528,17 +528,44 @@ def test_calculate_t_test_paired_allows_comparison_id_without_comparison_column(
         }
     )
 
-    df_result = calculate_t_test_paired(
-        df_values,
-        col_pair="PairId",
-        comparisons=ParametricComparison.ttest_paired(
-            comparison_id="cmp1",
-            group_test="B",
-            group_ref="A",
-        ),
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_t_test_paired(
+            df_values,
+            col_pair="PairId",
+            comparisons=ParametricComparison.ttest_paired(
+                comparison_id="cmp1",
+                group_test="B",
+                group_ref="A",
+            ),
+        )
+
+
+def test_calculate_t_test_paired_rejects_mixed_scoped_and_unscoped_pair() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": ["cmp1", "cmp1", "cmp1", "cmp1"],
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "PairId": ["p1", "p1", "p2", "p2"],
+            "Group": ["A", "B", "A", "B"],
+            "Value": [1.0, 2.0, 3.0, 4.0],
+        }
     )
 
-    assert df_result.select("GroupTest", "GroupRef").rows() == [("B", "A")]
+    with pytest.raises(ValueError, match="mix scoped and unscoped"):
+        calculate_t_test_paired(
+            df_values,
+            col_pair="PairId",
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=[
+                ParametricComparison.ttest_paired(group_test="B", group_ref="A"),
+                ParametricComparison.ttest_paired(
+                    comparison_id="cmp1",
+                    group_test="B",
+                    group_ref="A",
+                ),
+            ],
+        )
 
 
 def test_calculate_t_test_two_sample_matches_scipy_for_single_contrast() -> None:
@@ -800,6 +827,42 @@ def test_calculate_t_test_two_sample_supports_comparison_without_validity_gate()
     ]
 
 
+def test_calculate_t_test_two_sample_normalizes_comparison_output_to_string() -> None:
+    df_values = pl.DataFrame(
+        {
+            "Comparison": [1, 1, 1, 1],
+            "FeatureId": ["f1", "f1", "f1", "f1"],
+            "Group": ["A", "A", "B", "B"],
+            "Value": [1.0, 2.0, 4.0, 5.0],
+        }
+    )
+
+    df_result = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_two_sample(
+            comparison_id="1",
+            group_test="B",
+            group_ref="A",
+        ),
+    )
+    df_empty = calculate_t_test_two_sample(
+        df_values,
+        col_feature="FeatureId",
+        col_comparison="Comparison",
+        comparisons=ParametricComparison.ttest_two_sample(
+            comparison_id="missing",
+            group_test="B",
+            group_ref="A",
+        ),
+    )
+
+    assert df_result.schema["Comparison"] == pl.String
+    assert df_result["Comparison"].to_list() == ["1"]
+    assert df_empty.schema["Comparison"] == pl.String
+
+
 def test_calculate_t_test_two_sample_scopes_contrasts_by_comparison_before_p_adjust() -> None:
     df_values = pl.DataFrame(
         {
@@ -987,7 +1050,6 @@ def test_calculate_t_test_two_sample_normalizes_group_values_to_strings() -> Non
     df_result = calculate_t_test_two_sample(
         df_values,
         comparisons=ParametricComparison.ttest_two_sample(
-            comparison_id="cmp",
             group_test="0",
             group_ref="1",
         ),
@@ -1032,7 +1094,6 @@ def test_calculate_t_test_two_sample_keeps_insufficient_rows_with_nan_stats() ->
         df_values,
         col_feature="FeatureId",
         comparisons=ParametricComparison.ttest_two_sample(
-            comparison_id="cmp",
             group_test="A",
             group_ref="B",
         ),
@@ -1081,6 +1142,38 @@ def test_calculate_t_test_two_sample_rejects_invalid_comparison_inputs() -> None
                 group_test="A",
                 group_ref="B",
             ),
+        )
+
+    with pytest.raises(ValueError, match="`col_comparison` is required"):
+        calculate_t_test_two_sample(
+            df_values,
+            comparisons=ParametricComparison.ttest_two_sample(
+                comparison_id="cmp1",
+                group_test="A",
+                group_ref="B",
+            ),
+        )
+
+    with pytest.raises(ValueError, match="mix scoped and unscoped"):
+        calculate_t_test_two_sample(
+            pl.DataFrame(
+                {
+                    "Comparison": ["cmp1", "cmp1"],
+                    "FeatureId": ["f1", "f1"],
+                    "Group": ["A", "B"],
+                    "Value": [1.0, 2.0],
+                }
+            ),
+            col_feature="FeatureId",
+            col_comparison="Comparison",
+            comparisons=[
+                ParametricComparison.ttest_two_sample(group_test="A", group_ref="B"),
+                ParametricComparison.ttest_two_sample(
+                    comparison_id="cmp1",
+                    group_test="A",
+                    group_ref="B",
+                ),
+            ],
         )
 
     with pytest.raises(ValueError, match="Duplicate contrast pairs"):

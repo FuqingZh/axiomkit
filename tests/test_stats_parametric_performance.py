@@ -95,12 +95,10 @@ def test_calculate_t_test_two_sample_performance_regression(
         col_feature="FeatureId",
         comparisons=[
             ParametricComparison.ttest_two_sample(
-                comparison_id="B_vs_A",
                 group_test="B",
                 group_ref="A",
             ),
             ParametricComparison.ttest_two_sample(
-                comparison_id="C_vs_A",
                 group_test="C",
                 group_ref="A",
             ),

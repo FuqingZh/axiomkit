@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Any
 from axiomkit._optional_deps import import_optional_attr
 
 __all__ = [
-    "AnovaComparison",
     "ParametricComparison",
     "OraComparison",
     "OraOptions",
@@ -21,7 +20,6 @@ if TYPE_CHECKING:
     from .ora import OraComparison, OraOptions, calculate_ora
     from .p_value import calculate_adjusted_p_values
     from .parametric import (
-        AnovaComparison,
         ParametricComparison,
         calculate_anova_one_way,
         calculate_anova_one_way_welch,
@@ -33,15 +31,6 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> Any:
-    if name == "AnovaComparison":
-        return import_optional_attr(
-            module_name=".parametric",
-            attr_name=name,
-            package=__name__,
-            feature="axiomkit.stats",
-            extras=("stats",),
-            required_modules=("numpy", "scipy", "polars"),
-        )
     if name == "ParametricComparison":
         return import_optional_attr(
             module_name=".parametric",

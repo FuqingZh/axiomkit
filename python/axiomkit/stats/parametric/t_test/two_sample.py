@@ -186,7 +186,8 @@ def calculate_t_test_two_sample(
             the column already names concrete contrasts, such as proteomics
             labels ``B_vs_A`` and ``C_vs_A``, bind each t-test comparison with
             the matching ``comparison_id`` to avoid cross-combining unrelated
-            contrasts.
+            contrasts. Values are compared and returned after string
+            normalization.
         col_is_valid: Optional boolean column indicating whether a
             comparison-feature unit should enter testing. Ignored unless
             ``col_comparison`` is provided.
@@ -292,6 +293,7 @@ def calculate_t_test_two_sample(
         comparisons,
         comparison_kind=ParametricComparisonKind.TTEST_TWO_SAMPLE,
     )
+    contrast_plan.validate_for_comparison_column(col_comparison)
     if not contrast_plan.group_used:
         return pl.DataFrame(schema=schema_result)
     # #endregion

@@ -1,5 +1,4 @@
 from .anova import (
-    AnovaComparison,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
     calculate_anova_two_way,
@@ -12,7 +11,6 @@ from .t_test import (
 )
 
 __all__ = [
-    "AnovaComparison",
     "ParametricComparison",
     "calculate_anova_one_way",
     "calculate_anova_one_way_welch",

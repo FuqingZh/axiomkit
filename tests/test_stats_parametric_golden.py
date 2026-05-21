@@ -119,7 +119,6 @@ def test_parametric_stats_golden_paired() -> None:
         col_pair="PairId",
         col_feature="FeatureId",
         comparisons=ParametricComparison.ttest_paired(
-            comparison_id="B_vs_A",
             group_test="B",
             group_ref="A",
         ),

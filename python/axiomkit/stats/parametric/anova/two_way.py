@@ -276,7 +276,8 @@ def calculate_anova_two_way(
         col_group_b: Name of the second factor column.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         col_comparison: Optional name of the column defining comparison-specific
-            statistical units.
+            statistical units. Values are compared and returned after string
+            normalization.
         comparisons: Optional declared comparison plan using
             :class:`ParametricComparison.anova_two_way`.
         rule_p_adjust: Method for adjusting p-values for multiple testing.

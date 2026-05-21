@@ -46,18 +46,50 @@ class ContrastPlan:
     def has_comparison_id(self) -> bool:
         return any(_item is not None for _item in self.comparison_id_values)
 
+    def validate_for_comparison_column(self, col_comparison: str | None) -> None:
+        if col_comparison is None and self.has_comparison_id:
+            raise ValueError(
+                "Arg `col_comparison` is required when t-test comparisons use "
+                "`comparison_id`."
+            )
+
+        unscoped_pairs = {
+            pair
+            for comparison_id, pair in zip(
+                self.comparison_id_values,
+                self.contrast_ids,
+                strict=True,
+            )
+            if comparison_id is None
+        }
+        scoped_pairs = {
+            pair
+            for comparison_id, pair in zip(
+                self.comparison_id_values,
+                self.contrast_ids,
+                strict=True,
+            )
+            if comparison_id is not None
+        }
+        ambiguous_pairs = sorted(unscoped_pairs & scoped_pairs)
+        if ambiguous_pairs:
+            raise ValueError(
+                "T-test comparisons cannot mix scoped and unscoped declarations "
+                f"for the same group pair: {ambiguous_pairs!r}."
+            )
+
     @classmethod
     def from_inputs(
         cls,
-        contrasts: ParametricComparison | Sequence[ParametricComparison],
+        comparisons: ParametricComparison | Sequence[ParametricComparison],
         *,
         comparison_kind: ParametricComparisonKind,
     ) -> Self:
         items_contrast: Sequence[ParametricComparison]
-        if isinstance(contrasts, ParametricComparison):
-            items_contrast = [contrasts]
-        elif isinstance(contrasts, Sequence) and not isinstance(contrasts, str):
-            items_contrast = contrasts
+        if isinstance(comparisons, ParametricComparison):
+            items_contrast = [comparisons]
+        elif isinstance(comparisons, Sequence) and not isinstance(comparisons, str):
+            items_contrast = comparisons
         else:
             raise ValueError(
                 "Arg `comparisons` must be a ParametricComparison or a sequence of ParametricComparison items."

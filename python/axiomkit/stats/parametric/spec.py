@@ -101,7 +101,7 @@ class ParametricFrameAdapter:
     def create_result_schema(self, schema_base: SchemaDict) -> SchemaDict:
         schema_result: SchemaDict = {}
         if self.col_comparison is not None:
-            schema_result[self.col_comparison] = self.schema_in[self.col_comparison]
+            schema_result[self.col_comparison] = pl.String
         if self.col_feature is not None:
             schema_result[self.col_feature] = self.schema_in[self.col_feature]
         schema_result.update(schema_base)
@@ -119,7 +119,10 @@ class ParametricFrameAdapter:
         if self.col_comparison is not None:
             cols_output.append(self.col_comparison)
             exprs_output.append(
-                pl.col(COL_FEATURE_INTERNAL).list.get(0).alias(self.col_comparison)
+                pl.col(COL_FEATURE_INTERNAL)
+                .list.get(0)
+                .cast(pl.String)
+                .alias(self.col_comparison)
             )
         if self.col_feature is not None:
             cols_output.append(self.col_feature)

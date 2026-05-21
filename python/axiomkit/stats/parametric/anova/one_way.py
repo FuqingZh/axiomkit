@@ -17,10 +17,10 @@ from ..util import (
     create_summary_stat_columns,
 )
 from ..comparison import ParametricComparison
-from .spec import AnovaComparisonPlan, OneWayStatisticalResult
+from .spec import AnovaPlan, OneWayStatisticalResult
 from .util import calculate_f_test_p_values, create_one_way_stats_columns
 
-COL_ANOVA_COMPARISON_ID = "_AnovaComparisonId"
+COL_ANOVA_COMPARISON_ID = "_AnovaPlanComparisonId"
 COL_ANOVA_GROUP = "_AnovaGroup"
 
 SCHEMA_ANOVA_ONE_WAY_RESULT: SchemaDict = {
@@ -152,7 +152,8 @@ def calculate_anova_one_way(
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         col_comparison: Optional name of the column defining comparison-specific
             statistical units. When provided, the effective feature key becomes
-            ``col_comparison x col_feature``.
+            ``col_comparison x col_feature``. Values are compared and returned
+            after string normalization.
         col_is_valid: Optional boolean column indicating whether a
             ``col_comparison x col_feature`` unit should enter testing. Ignored
             unless ``col_comparison`` is provided.
@@ -210,7 +211,7 @@ def calculate_anova_one_way(
         col_is_valid=col_is_valid,
     )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
-    comparison_plan = AnovaComparisonPlan.from_inputs(comparisons)
+    comparison_plan = AnovaPlan.from_inputs(comparisons)
     if comparison_plan is not None and col_comparison is None:
         raise ValueError(
             "Arg `col_comparison` is required when `comparisons` is provided."

@@ -140,7 +140,8 @@ def calculate_t_test_paired(
             If the column already names concrete contrasts, such as proteomics
             labels ``B_vs_A`` and ``C_vs_A``, bind each paired comparison with
             the matching ``comparison_id`` to avoid cross-combining unrelated
-            contrasts.
+            contrasts. Values are compared and returned after string
+            normalization.
         comparisons: Comparison-plan API using
             :class:`ParametricComparison.ttest_paired`. A comparison with
             ``comparison_id=None`` is unscoped: if ``col_comparison`` is
@@ -235,6 +236,7 @@ def calculate_t_test_paired(
         comparisons,
         comparison_kind=ParametricComparisonKind.TTEST_PAIRED,
     )
+    contrast_plan.validate_for_comparison_column(col_comparison)
     if not contrast_plan.group_used:
         return pl.DataFrame(schema=schema_result)
     # #endregion

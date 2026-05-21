@@ -178,7 +178,8 @@ def calculate_t_test_one_sample(
         popmean: Reference population mean used by the one-sample t-test.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         col_comparison: Optional name of the column defining comparison-specific
-            statistical units.
+            statistical units. Values are compared and returned after string
+            normalization.
         col_is_valid: Optional boolean column indicating whether a
             comparison-feature unit should enter testing.
         comparisons: Optional declared comparison plan using

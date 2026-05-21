@@ -21,10 +21,10 @@ from ..util import (
     create_summary_stat_columns,
 )
 from .one_way import SCHEMA_ANOVA_ONE_WAY_RESULT, validate_column_layout_anova_one_way
-from .spec import AnovaComparisonPlan, OneWayStatisticalResult
+from .spec import AnovaPlan, OneWayStatisticalResult
 from .util import calculate_f_test_p_values, create_one_way_stats_columns
 
-COL_ANOVA_COMPARISON_ID = "_AnovaComparisonId"
+COL_ANOVA_COMPARISON_ID = "_AnovaPlanComparisonId"
 COL_ANOVA_GROUP = "_AnovaGroup"
 
 
@@ -146,7 +146,8 @@ def calculate_anova_one_way_welch(
         col_group: Name of the column containing group labels for comparison.
         col_feature: Optional name of the column containing feature labels. If None, all rows are treated as a single feature.
         col_comparison: Optional name of the column defining comparison-specific
-            statistical units.
+            statistical units. Values are compared and returned after string
+            normalization.
         col_is_valid: Optional boolean column indicating whether a
             comparison-feature unit should enter testing.
         comparisons: Optional declared comparison plan using
@@ -205,7 +206,7 @@ def calculate_anova_one_way_welch(
         col_is_valid=col_is_valid,
     )
     rule_p_adjust = normalize_p_value_adjustment_mode(rule_p_adjust)
-    comparison_plan = AnovaComparisonPlan.from_inputs(
+    comparison_plan = AnovaPlan.from_inputs(
         comparisons,
         comparison_kind=ParametricComparisonKind.ANOVA_ONE_WAY_WELCH,
     )

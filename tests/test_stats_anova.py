@@ -6,7 +6,6 @@ import numpy as np
 import polars as pl
 import pytest
 from axiomkit.stats import (
-    AnovaComparison,
     ParametricComparison,
     calculate_anova_one_way,
     calculate_anova_one_way_welch,
@@ -111,7 +110,10 @@ def calculate_expected_one_way_welch(
 
 
 def test_anova_comparison_normalizes_inputs() -> None:
-    comparison = AnovaComparison(" cmp1 ", groups=["A", "B", "A", "1"])
+    comparison = ParametricComparison.anova_one_way(
+        " cmp1 ",
+        groups=["A", "B", "A", "1"],
+    )
 
     assert comparison.comparison_id == "cmp1"
     assert comparison.groups == ("A", "B", "1")
@@ -119,10 +121,10 @@ def test_anova_comparison_normalizes_inputs() -> None:
 
 def test_anova_comparison_rejects_invalid_inputs() -> None:
     with pytest.raises(ValueError, match="comparison_id"):
-        AnovaComparison(" ")
+        ParametricComparison.anova_one_way(" ")
 
     with pytest.raises(ValueError, match="at least two"):
-        AnovaComparison("cmp1", groups=["A", "A"])
+        ParametricComparison.anova_one_way("cmp1", groups=["A", "A"])
 
 
 def test_parametric_comparison_factories_validate_inputs() -> None:
@@ -447,7 +449,7 @@ def test_calculate_anova_one_way_filters_declared_comparisons_and_groups() -> No
         df_values,
         col_feature="FeatureId",
         col_comparison="Comparison",
-        comparisons=AnovaComparison("cmp1", groups=["A", "B"]),
+        comparisons=ParametricComparison.anova_one_way("cmp1", groups=["A", "B"]),
     )
 
     assert df_result.select("Comparison", "FeatureId").rows() == [("cmp1", "f1")]
@@ -497,7 +499,7 @@ def test_calculate_anova_one_way_keeps_missing_requested_group_as_nan() -> None:
         df_values,
         col_feature="FeatureId",
         col_comparison="Comparison",
-        comparisons=AnovaComparison("cmp1", groups=["A", "C"]),
+        comparisons=ParametricComparison.anova_one_way("cmp1", groups=["A", "C"]),
         rule_p_adjust="bh",
     )
 
@@ -1159,7 +1161,7 @@ def test_calculate_anova_one_way_rejects_invalid_column_layout() -> None:
     with pytest.raises(ValueError, match="`col_comparison` is required"):
         calculate_anova_one_way(
             df_values,
-            comparisons=AnovaComparison("cmp1"),
+            comparisons=ParametricComparison.anova_one_way("cmp1"),
         )
 
     with pytest.raises(ValueError, match="Duplicate comparison ids"):
@@ -1175,8 +1177,8 @@ def test_calculate_anova_one_way_rejects_invalid_column_layout() -> None:
             col_feature="FeatureId",
             col_comparison="Comparison",
             comparisons=[
-                AnovaComparison("cmp1"),
-                AnovaComparison("cmp1"),
+                ParametricComparison.anova_one_way("cmp1"),
+                ParametricComparison.anova_one_way("cmp1"),
             ],
         )
 

@@ -20,7 +20,7 @@ class ParametricComparison:
     unscoped contrast. If ``col_comparison`` is provided to the calculation
     function, an unscoped contrast is evaluated independently inside every
     comparison layer. A non-null ``comparison_id`` scopes that contrast to the
-    matching ``col_comparison`` value.
+    matching ``col_comparison`` value after string normalization.
     """
 
     comparison_id: str | None
