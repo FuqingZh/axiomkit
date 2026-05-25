@@ -51,6 +51,34 @@ def test_positive_rejects_zero() -> None:
         parser.parse_args(["--lr", "0"])
 
 
+def test_non_positive_accepts_zero_and_rejects_positive() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--offset",
+        action=ActionNumericRange.non_positive(value_kind="float"),
+    )
+
+    ns = parser.parse_args(["--offset", "0"])
+    assert ns.offset == 0.0
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--offset", "0.1"])
+
+
+def test_negative_rejects_zero() -> None:
+    parser = _build_parser()
+    parser.add_argument(
+        "--delta",
+        action=ActionNumericRange.negative(value_kind="float"),
+    )
+
+    ns = parser.parse_args(["--delta", "-0.01"])
+    assert ns.delta == -0.01
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--delta", "0"])
+
+
 def test_unit_interval_defaults_to_closed_interval() -> None:
     parser = _build_parser()
     parser.add_argument(

@@ -916,6 +916,8 @@ class ActionNumericRange(_LazyDefaultAction):
 
         >>> parser.add_argument("--epochs", action=ActionNumericRange.non_negative(value_kind="int"))
         >>> parser.add_argument("--lr", action=ActionNumericRange.positive(value_kind="float"))
+        >>> parser.add_argument("--debt", action=ActionNumericRange.non_positive(value_kind="float"))
+        >>> parser.add_argument("--delta", action=ActionNumericRange.negative(value_kind="float"))
         >>> parser.add_argument("--p", action=ActionNumericRange.unit_interval())
 
     Notes:
@@ -1080,6 +1082,58 @@ class ActionNumericRange(_LazyDefaultAction):
             value_kind=value_kind,
             value_min=0,
             should_include_min=False,
+            is_finite=is_finite,
+        )
+
+    @classmethod
+    def non_positive(
+        cls,
+        value_kind: Literal["int", "float"] = "float",
+        *,
+        is_finite: bool = True,
+    ) -> type[argparse.Action]:
+        """Factory for non-positive values ``(-inf, 0]``.
+
+        Args:
+            value_kind: Numeric kind to parse.
+            is_finite: Whether floats must be finite.
+
+        Returns:
+            A callable suitable for argparse ``action``.
+
+        Examples:
+            >>> parser.add_argument("--offset", action=ActionNumericRange.non_positive())
+        """
+        return cls.make(
+            value_kind=value_kind,
+            value_max=0,
+            should_include_max=True,
+            is_finite=is_finite,
+        )
+
+    @classmethod
+    def negative(
+        cls,
+        value_kind: Literal["int", "float"] = "float",
+        *,
+        is_finite: bool = True,
+    ) -> type[argparse.Action]:
+        """Factory for negative values ``(-inf, 0)``.
+
+        Args:
+            value_kind: Numeric kind to parse.
+            is_finite: Whether floats must be finite.
+
+        Returns:
+            A callable suitable for argparse ``action``.
+
+        Examples:
+            >>> parser.add_argument("--delta", action=ActionNumericRange.negative())
+        """
+        return cls.make(
+            value_kind=value_kind,
+            value_max=0,
+            should_include_max=False,
             is_finite=is_finite,
         )
 
