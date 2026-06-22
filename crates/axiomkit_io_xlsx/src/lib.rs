@@ -22,4 +22,4 @@ pub use util::{
     derive_contiguous_ranges, plan_horizontal_merges, plan_sheet_slices,
     plan_vertical_visual_merge_borders, sanitize_sheet_name,
 };
-pub use writer::{XlsxSheetWriteOptions, XlsxWriter};
+pub use writer::{XlsxRecordBatch, XlsxRecordBatchResult, XlsxSheetWriteOptions, XlsxWriter};

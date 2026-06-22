@@ -87,6 +87,9 @@ def read_cell(path_xlsx: Path, cell_ref: str) -> tuple[str | None, str, str]:
     c_raw = node_value.text if node_value is not None and node_value.text is not None else ""
     if c_type == "s":
         return c_type, l_shared_strings[int(c_raw)], c_fmt
+    if c_type == "inlineStr":
+        nodes_text = node_cell.findall(".//m:is/m:t", NS_MAIN)
+        return "s", "".join((node.text or "") for node in nodes_text), c_fmt
     return c_type, c_raw, c_fmt
 
 

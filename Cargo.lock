@@ -167,6 +167,7 @@ name = "axiomkit_io_xlsx"
 version = "0.1.0"
 dependencies = [
  "polars",
+ "polars-arrow",
  "rust_xlsxwriter",
 ]
 
@@ -574,6 +575,12 @@ name = "fast-float2"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8eb564c5c7423d25c886fb561d1e4ee69f72354d16918afa32c08811f6b6a55"
+
+[[package]]
+name = "fastrand"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "filetime"
@@ -2320,6 +2327,7 @@ version = "0.90.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2be778223b36bb449b2ef2df4856ced2d311680818a7310db5c5dc370170f935"
 dependencies = [
+ "tempfile",
  "zip",
 ]
 
@@ -2719,6 +2727,19 @@ name = "target-lexicon"
 version = "0.12.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+
+[[package]]
+name = "tempfile"
+version = "3.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
+dependencies = [
+ "fastrand",
+ "getrandom 0.3.4",
+ "once_cell",
+ "rustix",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "thiserror"

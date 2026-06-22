@@ -13,19 +13,27 @@ from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 NS_MAIN = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
-def _read_shared_strings(path_xlsx: Path) -> list[str]:
+def _read_workbook_strings(path_xlsx: Path) -> list[str]:
     with zipfile.ZipFile(path_xlsx) as zf:
+        values: list[str] = []
         try:
             value_xml = zf.read("xl/sharedStrings.xml")
         except KeyError:
-            return []
+            pass
+        else:
+            root = ET.fromstring(value_xml)
+            for node_si in root.findall(".//m:si", NS_MAIN):
+                nodes_text = node_si.findall(".//m:t", NS_MAIN)
+                values.append("".join((node.text or "") for node in nodes_text))
 
-    root = ET.fromstring(value_xml)
-    values: list[str] = []
-    for node_si in root.findall(".//m:si", NS_MAIN):
-        nodes_text = node_si.findall(".//m:t", NS_MAIN)
-        values.append("".join((node.text or "") for node in nodes_text))
-    return values
+        for name in zf.namelist():
+            if not name.startswith("xl/worksheets/sheet") or not name.endswith(".xml"):
+                continue
+            root_sheet = ET.fromstring(zf.read(name))
+            for node_cell in root_sheet.findall(".//m:c[@t='inlineStr']", NS_MAIN):
+                nodes_text = node_cell.findall(".//m:is/m:t", NS_MAIN)
+                values.append("".join((node.text or "") for node in nodes_text))
+        return values
 
 
 def test_write_sheet_smoke_creates_xlsx_and_records_report(tmp_path: Path) -> None:
@@ -65,8 +73,8 @@ def test_write_sheet_smoke_multiline_header_has_unquoted_strings(tmp_path: Path)
     with XlsxWriter(out_file) as xf:
         xf.write_sheet(df, "Sheet1", header=header)
 
-    shared_strings = _read_shared_strings(out_file)
-    assert "蛋白 ID" in shared_strings
-    assert "Protein ID" in shared_strings
-    assert '"蛋白 ID"' not in shared_strings
-    assert '"Protein ID"' not in shared_strings
+    workbook_strings = _read_workbook_strings(out_file)
+    assert "蛋白 ID" in workbook_strings
+    assert "Protein ID" in workbook_strings
+    assert '"蛋白 ID"' not in workbook_strings
+    assert '"Protein ID"' not in workbook_strings

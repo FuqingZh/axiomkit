@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arrow = { package = "polars-arrow", version = "0.51.0", default-features = false }
 polars = { version = "0.51.0", default-features = false, features = ["ipc"] }
-rust_xlsxwriter = "0.90.2"
+rust_xlsxwriter = { version = "0.90.2", features = ["constant_memory"] }

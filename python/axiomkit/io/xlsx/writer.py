@@ -42,6 +42,39 @@ class ProtocolXlsxWriterBackend(Protocol):
         policy_scientific: ScientificPolicy | None = None,
     ) -> Any: ...
 
+    def write_sheet_batches(
+        self,
+        batches_scan: Any,
+        batches_write: Any,
+        sheet_name: str,
+        *,
+        header: Any | None = None,
+        cols_integer: Sequence[ColumnIdentifier] | None = None,
+        cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
+        num_frozen_cols: int = 0,
+        num_frozen_rows: int | None = None,
+        should_merge_header: bool = False,
+        should_keep_missing_values: bool | None = None,
+        policy_autofit: AutofitPolicy | None = None,
+        policy_scientific: ScientificPolicy | None = None,
+    ) -> Any: ...
+
+    def write_sheet_batches_single_pass(
+        self,
+        batches_write: Any,
+        sheet_name: str,
+        *,
+        header: Any | None = None,
+        cols_integer: Sequence[ColumnIdentifier] | None = None,
+        cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
+        num_frozen_cols: int = 0,
+        num_frozen_rows: int | None = None,
+        should_merge_header: bool = False,
+        should_keep_missing_values: bool | None = None,
+        policy_autofit: AutofitPolicy | None = None,
+        policy_scientific: ScientificPolicy | None = None,
+    ) -> Any: ...
+
 
 class XlsxWriter:
     """Rust-backed XLSX writer.
@@ -75,6 +108,9 @@ class XlsxWriter:
             )
 
         self.file_out = Path(file_out)
+        self._options_write = (
+            options_write if options_write is not None else DEFAULT_XLSX_WRITE_OPTIONS
+        )
         self._writer: ProtocolXlsxWriterBackend = cast(
             ProtocolXlsxWriterBackend,
             create_xlsx_writer_via_rs(
@@ -84,7 +120,7 @@ class XlsxWriter:
                 fmt_decimal=fmt_decimal,
                 fmt_scientific=fmt_scientific,
                 fmt_header=fmt_header,
-                options_write=options_write,
+                options_write=self._options_write,
             ),
         )
 
@@ -195,20 +231,106 @@ class XlsxWriter:
         _warn_numeric_string_column_selectors(cols_integer, arg_name="cols_integer")
         _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
 
-        self._writer.write_sheet(
-            body=body,
-            sheet_name=sheet_name,
-            header=header,
-            cols_integer=cols_integer,
-            cols_decimal=cols_decimal,
-            num_frozen_cols=num_frozen_cols,
-            num_frozen_rows=num_frozen_rows,
-            should_merge_header=should_merge_header,
-            should_keep_missing_values=should_keep_missing_values,
-            policy_autofit=policy_autofit,
-            policy_scientific=policy_scientific,
-        )
+        if _has_collect_batches(body):
+            chunk_size = _derive_collect_batches_chunk_size(
+                body, options_write=self._options_write
+            )
+            if _can_write_lazy_single_pass(policy_autofit):
+                self._writer.write_sheet_batches_single_pass(
+                    batches_write=_collect_batches(body, chunk_size=chunk_size),
+                    sheet_name=sheet_name,
+                    header=header,
+                    cols_integer=cols_integer,
+                    cols_decimal=cols_decimal,
+                    num_frozen_cols=num_frozen_cols,
+                    num_frozen_rows=num_frozen_rows,
+                    should_merge_header=should_merge_header,
+                    should_keep_missing_values=should_keep_missing_values,
+                    policy_autofit=policy_autofit,
+                    policy_scientific=policy_scientific,
+                )
+            else:
+                self._writer.write_sheet_batches(
+                    batches_scan=_collect_batches(body, chunk_size=chunk_size),
+                    batches_write=_collect_batches(body, chunk_size=chunk_size),
+                    sheet_name=sheet_name,
+                    header=header,
+                    cols_integer=cols_integer,
+                    cols_decimal=cols_decimal,
+                    num_frozen_cols=num_frozen_cols,
+                    num_frozen_rows=num_frozen_rows,
+                    should_merge_header=should_merge_header,
+                    should_keep_missing_values=should_keep_missing_values,
+                    policy_autofit=policy_autofit,
+                    policy_scientific=policy_scientific,
+                )
+        else:
+            self._writer.write_sheet(
+                body=body,
+                sheet_name=sheet_name,
+                header=header,
+                cols_integer=cols_integer,
+                cols_decimal=cols_decimal,
+                num_frozen_cols=num_frozen_cols,
+                num_frozen_rows=num_frozen_rows,
+                should_merge_header=should_merge_header,
+                should_keep_missing_values=should_keep_missing_values,
+                policy_autofit=policy_autofit,
+                policy_scientific=policy_scientific,
+            )
         return self
+
+
+def _has_collect_batches(value: Any) -> bool:
+    return callable(getattr(value, "collect_batches", None))
+
+
+def _can_write_lazy_single_pass(policy_autofit: AutofitPolicy | None) -> bool:
+    if policy_autofit is None:
+        return True
+    return policy_autofit.mode in {"header", "none"}
+
+
+def _collect_batches(value: Any, *, chunk_size: int) -> Any:
+    try:
+        return value.collect_batches(chunk_size=chunk_size)
+    except TypeError:
+        return value.collect_batches()
+
+
+def _derive_collect_batches_chunk_size(
+    value: Any, *, options_write: XlsxWriteOptions
+) -> int:
+    width = _derive_lazy_width(value)
+    policy = options_write.row_chunk_policy
+
+    if policy.fixed_size is not None:
+        chunk_size = policy.fixed_size
+    elif width >= policy.width_large:
+        chunk_size = policy.size_large
+    elif width >= policy.width_medium:
+        chunk_size = policy.size_medium
+    else:
+        chunk_size = policy.size_default
+
+    if chunk_size < 1:
+        raise ValueError("row_chunk_policy resolved to 0 rows; expected >= 1.")
+    return chunk_size
+
+
+def _derive_lazy_width(value: Any) -> int:
+    collect_schema = getattr(value, "collect_schema", None)
+    if callable(collect_schema):
+        return len(cast(Any, collect_schema()))
+
+    schema = getattr(value, "schema", None)
+    if schema is not None:
+        try:
+            return len(cast(Any, schema))
+        except TypeError:
+            return 0
+
+    return 0
 
 
 def _warn_numeric_string_column_selectors(

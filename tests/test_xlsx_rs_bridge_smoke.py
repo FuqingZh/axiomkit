@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
 from axiomkit.io.xlsx import _axiomkit_io_xlsx_rs  # noqa: E402
+from axiomkit.io.xlsx import AutofitPolicy, XlsxWriter
 from axiomkit.io.xlsx._rs_bridge import (  # noqa: E402
     EXPECTED_BRIDGE_ABI,
     EXPECTED_BRIDGE_CONTRACT,
@@ -14,13 +16,32 @@ from axiomkit.io.xlsx._rs_bridge import (  # noqa: E402
 )
 
 
+def _create_rs_writer(file_out: Path) -> Any:
+    writer = create_xlsx_writer_via_rs(str(file_out))
+    assert writer is not None
+    return writer
+
+
+class LazyFrameCollectProxy:
+    def __init__(self, lf: pl.LazyFrame) -> None:
+        self._lf = lf
+        self.calls_collect_batches = 0
+
+    def collect_schema(self) -> Any:
+        return self._lf.collect_schema()
+
+    def collect_batches(self, **kwargs: Any) -> Any:
+        self.calls_collect_batches += 1
+        return self._lf.collect_batches(**kwargs)
+
+
 def test_xlsx_rs_bridge_smoke(tmp_path: Path) -> None:
     if not is_rs_backend_available():
         pytest.skip("Rust xlsx backend is unavailable")
 
     path_file_out = tmp_path / "smoke_rs.xlsx"
 
-    with create_xlsx_writer_via_rs(str(path_file_out)) as inst_xlsx_writer:
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
         inst_xlsx_writer.write_sheet(
             pl.DataFrame({"a": [1, 2], "b": ["x", "y"]}),
             "Sheet1",
@@ -32,6 +53,106 @@ def test_xlsx_rs_bridge_smoke(tmp_path: Path) -> None:
     assert len(reports) == 1
     assert len(reports[0].sheets) == 1
     assert reports[0].warnings == []
+
+
+def test_xlsx_rs_bridge_write_sheet_batches_accepts_arrow_stream_source(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "lazy_batches_stream.xlsx"
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet_batches(
+            lf.collect_batches(chunk_size=2),
+            lf.collect_batches(chunk_size=2),
+            "Sheet1",
+        )
+        reports = inst_xlsx_writer.report()
+
+    assert path_file_out.exists()
+    assert path_file_out.stat().st_size > 0
+    assert len(reports) == 1
+    assert len(reports[0].sheets) == 1
+
+
+def test_xlsx_rs_bridge_profile_arrow_drain_counts_direct_stream() -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    profile = _axiomkit_io_xlsx_rs._profile_arrow_drain(
+        lf.collect_batches(chunk_size=2)
+    )
+
+    assert profile.batches == 2
+    assert profile.rows == 3
+    assert profile.cols == 2
+    assert profile.cells == 6
+
+
+def test_xlsx_writer_lazyframe_header_autofit_uses_single_pass(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "lazy_single_pass.xlsx"
+    body = LazyFrameCollectProxy(pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]}))
+
+    with XlsxWriter(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet(body, "Sheet1")
+
+    assert path_file_out.exists()
+    assert body.calls_collect_batches == 1
+
+
+def test_xlsx_writer_lazyframe_body_autofit_keeps_two_pass(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "lazy_two_pass.xlsx"
+    body = LazyFrameCollectProxy(pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]}))
+
+    with XlsxWriter(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet(
+            body,
+            "Sheet1",
+            policy_autofit=AutofitPolicy(mode="body"),
+        )
+
+    assert path_file_out.exists()
+    assert body.calls_collect_batches == 2
+
+
+def test_xlsx_rs_bridge_write_sheet_batches_keeps_iterable_fallback(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    class BatchIterable:
+        def __init__(self, batches: list[pl.DataFrame]) -> None:
+            self._batches = batches
+
+        def __iter__(self):  # type: ignore[no-untyped-def]
+            return iter(self._batches)
+
+    path_file_out = tmp_path / "lazy_batches_iterable_fallback.xlsx"
+    batches = [pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})]
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet_batches(
+            BatchIterable(batches),
+            BatchIterable(batches),
+            "Sheet1",
+        )
+        reports = inst_xlsx_writer.report()
+
+    assert path_file_out.exists()
+    assert path_file_out.stat().st_size > 0
+    assert len(reports) == 1
+    assert len(reports[0].sheets) == 1
 
 
 def test_xlsx_rs_bridge_contract_constants_match() -> None:
