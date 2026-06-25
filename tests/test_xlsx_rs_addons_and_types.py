@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -36,8 +37,9 @@ def test_xlsx_rs_writer_no_longer_accepts_addons(tmp_path: Path) -> None:
         pytest.skip("Rust xlsx backend is unavailable")
 
     with XlsxWriter(tmp_path / "no_addons.xlsx") as inst_xlsx_writer:
+        writer_dynamic: Any = inst_xlsx_writer
         with pytest.raises(TypeError):
-            inst_xlsx_writer.write_sheet(  # type: ignore[call-arg]
+            writer_dynamic.write_sheet(
                 pl.DataFrame({"a": [1]}),
                 "S",
                 addons=(),
@@ -81,6 +83,43 @@ def test_xlsx_rs_writer_accepts_num_frozen_keywords(tmp_path: Path) -> None:
     assert path_file_out.exists()
 
 
+def test_xlsx_writer_rejects_non_polars_body(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    with XlsxWriter(tmp_path / "bad_body.xlsx") as inst_xlsx_writer:
+        with pytest.raises(
+            TypeError, match="body must be a polars DataFrame or LazyFrame"
+        ):
+            inst_xlsx_writer.write_sheet({"a": [1]}, "S")  # type: ignore[arg-type]
+
+
+def test_xlsx_writer_rejects_non_dataframe_header(tmp_path: Path) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    body = pl.DataFrame({"a": [1]})
+    with XlsxWriter(tmp_path / "bad_header_mapping.xlsx") as inst_xlsx_writer:
+        with pytest.raises(
+            TypeError, match="header must be a polars DataFrame or None"
+        ):
+            inst_xlsx_writer.write_sheet(
+                body,
+                "S",
+                header={"a": ["meta"]},  # type: ignore[arg-type]
+            )
+
+    with XlsxWriter(tmp_path / "bad_header_sequence.xlsx") as inst_xlsx_writer:
+        with pytest.raises(
+            TypeError, match="header must be a polars DataFrame or None"
+        ):
+            inst_xlsx_writer.write_sheet(
+                body,
+                "S",
+                header=[["meta"]],  # type: ignore[arg-type]
+            )
+
+
 def test_xlsx_write_options_accepts_should_prefixed_flags() -> None:
     cfg_write_options = XlsxWriteOptions(
         should_keep_missing_values=True,
@@ -110,5 +149,8 @@ def test_xlsx_writer_rejects_legacy_write_options_keyword(tmp_path: Path) -> Non
     if not is_rs_backend_available():
         pytest.skip("Rust xlsx backend is unavailable")
 
+    writer_cls_dynamic: Any = XlsxWriter
     with pytest.raises(TypeError):
-        XlsxWriter(tmp_path / "legacy_write_options.xlsx", write_options=XlsxWriteOptions())  # type: ignore[call-arg]
+        writer_cls_dynamic(
+            tmp_path / "legacy_write_options.xlsx", write_options=XlsxWriteOptions()
+        )

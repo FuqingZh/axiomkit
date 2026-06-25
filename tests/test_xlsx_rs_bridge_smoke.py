@@ -7,7 +7,7 @@ import polars as pl
 import pytest
 
 from axiomkit.io.xlsx import _axiomkit_io_xlsx_rs  # noqa: E402
-from axiomkit.io.xlsx import AutofitPolicy, XlsxWriter
+from axiomkit.io.xlsx import XlsxWriter
 from axiomkit.io.xlsx._rs_bridge import (  # noqa: E402
     EXPECTED_BRIDGE_ABI,
     EXPECTED_BRIDGE_CONTRACT,
@@ -20,19 +20,6 @@ def _create_rs_writer(file_out: Path) -> Any:
     writer = create_xlsx_writer_via_rs(str(file_out))
     assert writer is not None
     return writer
-
-
-class LazyFrameCollectProxy:
-    def __init__(self, lf: pl.LazyFrame) -> None:
-        self._lf = lf
-        self.calls_collect_batches = 0
-
-    def collect_schema(self) -> Any:
-        return self._lf.collect_schema()
-
-    def collect_batches(self, **kwargs: Any) -> Any:
-        self.calls_collect_batches += 1
-        return self._lf.collect_batches(**kwargs)
 
 
 def test_xlsx_rs_bridge_smoke(tmp_path: Path) -> None:
@@ -93,36 +80,17 @@ def test_xlsx_rs_bridge_profile_arrow_drain_counts_direct_stream() -> None:
     assert profile.cells == 6
 
 
-def test_xlsx_writer_lazyframe_header_autofit_uses_single_pass(tmp_path: Path) -> None:
+def test_xlsx_writer_accepts_lazyframe_input(tmp_path: Path) -> None:
     if not is_rs_backend_available():
         pytest.skip("Rust xlsx backend is unavailable")
 
-    path_file_out = tmp_path / "lazy_single_pass.xlsx"
-    body = LazyFrameCollectProxy(pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]}))
+    path_file_out = tmp_path / "lazy_input.xlsx"
+    body = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
 
     with XlsxWriter(path_file_out) as inst_xlsx_writer:
         inst_xlsx_writer.write_sheet(body, "Sheet1")
 
     assert path_file_out.exists()
-    assert body.calls_collect_batches == 1
-
-
-def test_xlsx_writer_lazyframe_body_autofit_keeps_two_pass(tmp_path: Path) -> None:
-    if not is_rs_backend_available():
-        pytest.skip("Rust xlsx backend is unavailable")
-
-    path_file_out = tmp_path / "lazy_two_pass.xlsx"
-    body = LazyFrameCollectProxy(pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]}))
-
-    with XlsxWriter(path_file_out) as inst_xlsx_writer:
-        inst_xlsx_writer.write_sheet(
-            body,
-            "Sheet1",
-            policy_autofit=AutofitPolicy(mode="body"),
-        )
-
-    assert path_file_out.exists()
-    assert body.calls_collect_batches == 2
 
 
 def test_xlsx_rs_bridge_write_sheet_batches_keeps_iterable_fallback(

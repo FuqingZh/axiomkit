@@ -5,6 +5,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, ClassVar, Literal, Protocol, Self, cast
 
+import polars as pl
+
 from ._rs_bridge import create_xlsx_writer_via_rs, is_rs_backend_available
 from .constant import (
     DEFAULT_XLSX_FORMATS,
@@ -87,9 +89,7 @@ class XlsxWriter:
     DEFAULT_XLSX_FORMATS: ClassVar[Mapping[LIT_FMT_KEYS, CellFormatPatch]] = (
         DEFAULT_XLSX_FORMATS
     )
-    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[XlsxWriteOptions] = (
-        DEFAULT_XLSX_WRITE_OPTIONS
-    )
+    DEFAULT_XLSX_WRITE_OPTIONS: ClassVar[XlsxWriteOptions] = DEFAULT_XLSX_WRITE_OPTIONS
 
     def __init__(
         self,
@@ -140,10 +140,10 @@ class XlsxWriter:
 
     def write_sheet(
         self,
-        body: Any,
+        body: pl.DataFrame | pl.LazyFrame,
         sheet_name: str,
         *,
-        header: Any | None = None,
+        header: pl.DataFrame | None = None,
         cols_integer: Sequence[ColumnIdentifier] | None = None,
         cols_decimal: Sequence[ColumnIdentifier] | None | Literal[False] = None,
         num_frozen_cols: int = 0,
@@ -156,12 +156,14 @@ class XlsxWriter:
         """Write one worksheet to the workbook.
 
         Args:
-            body: Tabular data to write. The object must be convertible to a Polars
-                DataFrame by the Rust bridge.
+            body: Polars DataFrame or LazyFrame to write. DataFrame inputs are
+                converted to LazyFrame internally and use the same streaming
+                writer path as LazyFrame inputs.
             sheet_name: Requested worksheet name before Excel sanitization and
                 uniqueness adjustments.
-            header: Optional custom header grid. When provided, it must have the
-                same width as ``body`` and at least one row.
+            header: Optional custom header grid as a Polars DataFrame. When
+                provided, it must have the same width as ``body`` and at least
+                one row.
             cols_integer:
                 Optional column identifiers that should use integer formatting and
                 integer conversion rules. Use ``str`` for literal column names and
@@ -230,45 +232,32 @@ class XlsxWriter:
         """
         _warn_numeric_string_column_selectors(cols_integer, arg_name="cols_integer")
         _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
+        body_lazy = _normalize_body(body)
+        header_normalized = _normalize_header(header)
 
-        if _has_collect_batches(body):
-            chunk_size = _derive_collect_batches_chunk_size(
-                body, options_write=self._options_write
-            )
-            if _can_write_lazy_single_pass(policy_autofit):
-                self._writer.write_sheet_batches_single_pass(
-                    batches_write=_collect_batches(body, chunk_size=chunk_size),
-                    sheet_name=sheet_name,
-                    header=header,
-                    cols_integer=cols_integer,
-                    cols_decimal=cols_decimal,
-                    num_frozen_cols=num_frozen_cols,
-                    num_frozen_rows=num_frozen_rows,
-                    should_merge_header=should_merge_header,
-                    should_keep_missing_values=should_keep_missing_values,
-                    policy_autofit=policy_autofit,
-                    policy_scientific=policy_scientific,
-                )
-            else:
-                self._writer.write_sheet_batches(
-                    batches_scan=_collect_batches(body, chunk_size=chunk_size),
-                    batches_write=_collect_batches(body, chunk_size=chunk_size),
-                    sheet_name=sheet_name,
-                    header=header,
-                    cols_integer=cols_integer,
-                    cols_decimal=cols_decimal,
-                    num_frozen_cols=num_frozen_cols,
-                    num_frozen_rows=num_frozen_rows,
-                    should_merge_header=should_merge_header,
-                    should_keep_missing_values=should_keep_missing_values,
-                    policy_autofit=policy_autofit,
-                    policy_scientific=policy_scientific,
-                )
-        else:
-            self._writer.write_sheet(
-                body=body,
+        chunk_size = _derive_collect_batches_chunk_size(
+            body_lazy, options_write=self._options_write
+        )
+        if _can_write_lazy_single_pass(policy_autofit):
+            self._writer.write_sheet_batches_single_pass(
+                batches_write=_collect_batches(body_lazy, chunk_size=chunk_size),
                 sheet_name=sheet_name,
-                header=header,
+                header=header_normalized,
+                cols_integer=cols_integer,
+                cols_decimal=cols_decimal,
+                num_frozen_cols=num_frozen_cols,
+                num_frozen_rows=num_frozen_rows,
+                should_merge_header=should_merge_header,
+                should_keep_missing_values=should_keep_missing_values,
+                policy_autofit=policy_autofit,
+                policy_scientific=policy_scientific,
+            )
+        else:
+            self._writer.write_sheet_batches(
+                batches_scan=_collect_batches(body_lazy, chunk_size=chunk_size),
+                batches_write=_collect_batches(body_lazy, chunk_size=chunk_size),
+                sheet_name=sheet_name,
+                header=header_normalized,
                 cols_integer=cols_integer,
                 cols_decimal=cols_decimal,
                 num_frozen_cols=num_frozen_cols,
@@ -281,8 +270,18 @@ class XlsxWriter:
         return self
 
 
-def _has_collect_batches(value: Any) -> bool:
-    return callable(getattr(value, "collect_batches", None))
+def _normalize_body(value: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
+    if isinstance(value, pl.LazyFrame):
+        return value
+    if isinstance(value, pl.DataFrame):
+        return value.lazy()
+    raise TypeError("body must be a polars DataFrame or LazyFrame.")
+
+
+def _normalize_header(value: pl.DataFrame | None) -> pl.DataFrame | None:
+    if value is None or isinstance(value, pl.DataFrame):
+        return value
+    raise TypeError("header must be a polars DataFrame or None.")
 
 
 def _can_write_lazy_single_pass(policy_autofit: AutofitPolicy | None) -> bool:
