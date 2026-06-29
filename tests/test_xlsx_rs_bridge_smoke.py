@@ -65,6 +65,97 @@ def test_xlsx_rs_bridge_write_sheet_batches_accepts_arrow_stream_source(
     assert len(reports[0].sheets) == 1
 
 
+def test_xlsx_rs_bridge_write_sheet_batches_accepts_empty_stream_with_schema_body(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "empty_batches_stream.xlsx"
+    schema_body = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Utf8})
+    lf = schema_body.lazy()
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet_batches(
+            lf.collect_batches(chunk_size=2),
+            lf.collect_batches(chunk_size=2),
+            "Sheet1",
+            schema_body=schema_body,
+        )
+        reports = inst_xlsx_writer.report()
+
+    assert path_file_out.exists()
+    assert len(reports) == 1
+    assert len(reports[0].sheets) == 1
+    assert reports[0].sheets[0].row_end_exclusive == 0
+    assert reports[0].sheets[0].col_end_exclusive == 2
+
+
+def test_xlsx_rs_bridge_single_pass_accepts_empty_stream_with_schema_body(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "empty_single_pass_stream.xlsx"
+    schema_body = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Utf8})
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        inst_xlsx_writer.write_sheet_batches_single_pass(
+            schema_body.lazy().collect_batches(chunk_size=2),
+            "Sheet1",
+            schema_body=schema_body,
+        )
+        reports = inst_xlsx_writer.report()
+
+    assert path_file_out.exists()
+    assert len(reports) == 1
+    assert len(reports[0].sheets) == 1
+    assert reports[0].sheets[0].row_end_exclusive == 0
+    assert reports[0].sheets[0].col_end_exclusive == 2
+
+
+def test_xlsx_rs_bridge_empty_batch_stream_without_schema_body_still_errors(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "empty_batches_no_schema.xlsx"
+    lf = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Utf8}).lazy()
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        with pytest.raises(
+            ValueError,
+            match="Cannot write sheet from an empty batch stream with unknown schema",
+        ):
+            inst_xlsx_writer.write_sheet_batches(
+                lf.collect_batches(chunk_size=2),
+                lf.collect_batches(chunk_size=2),
+                "Sheet1",
+            )
+
+
+def test_xlsx_rs_bridge_empty_single_pass_stream_without_schema_body_still_errors(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_out = tmp_path / "empty_single_pass_no_schema.xlsx"
+    lf = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Utf8}).lazy()
+
+    with _create_rs_writer(path_file_out) as inst_xlsx_writer:
+        with pytest.raises(
+            ValueError,
+            match="Cannot write sheet from an empty batch stream with unknown schema",
+        ):
+            inst_xlsx_writer.write_sheet_batches_single_pass(
+                lf.collect_batches(chunk_size=2),
+                "Sheet1",
+            )
+
+
 def test_xlsx_rs_bridge_profile_arrow_drain_counts_direct_stream() -> None:
     if not is_rs_backend_available():
         pytest.skip("Rust xlsx backend is unavailable")

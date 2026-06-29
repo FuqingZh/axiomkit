@@ -59,6 +59,7 @@ class ProtocolXlsxWriterBackend(Protocol):
         should_keep_missing_values: bool | None = None,
         policy_autofit: AutofitPolicy | None = None,
         policy_scientific: ScientificPolicy | None = None,
+        schema_body: Any | None = None,
     ) -> Any: ...
 
     def write_sheet_batches_single_pass(
@@ -75,6 +76,7 @@ class ProtocolXlsxWriterBackend(Protocol):
         should_keep_missing_values: bool | None = None,
         policy_autofit: AutofitPolicy | None = None,
         policy_scientific: ScientificPolicy | None = None,
+        schema_body: Any | None = None,
     ) -> Any: ...
 
 
@@ -234,6 +236,7 @@ class XlsxWriter:
         _warn_numeric_string_column_selectors(cols_decimal, arg_name="cols_decimal")
         body_lazy = _normalize_body(body)
         header_normalized = _normalize_header(header)
+        schema_body = _derive_schema_body(body_lazy)
 
         chunk_size = _derive_collect_batches_chunk_size(
             body_lazy, options_write=self._options_write
@@ -251,6 +254,7 @@ class XlsxWriter:
                 should_keep_missing_values=should_keep_missing_values,
                 policy_autofit=policy_autofit,
                 policy_scientific=policy_scientific,
+                schema_body=schema_body,
             )
         else:
             self._writer.write_sheet_batches(
@@ -266,6 +270,7 @@ class XlsxWriter:
                 should_keep_missing_values=should_keep_missing_values,
                 policy_autofit=policy_autofit,
                 policy_scientific=policy_scientific,
+                schema_body=schema_body,
             )
         return self
 
@@ -282,6 +287,10 @@ def _normalize_header(value: pl.DataFrame | None) -> pl.DataFrame | None:
     if value is None or isinstance(value, pl.DataFrame):
         return value
     raise TypeError("header must be a polars DataFrame or None.")
+
+
+def _derive_schema_body(value: pl.LazyFrame) -> pl.DataFrame:
+    return pl.DataFrame(schema=value.collect_schema())
 
 
 def _can_write_lazy_single_pass(policy_autofit: AutofitPolicy | None) -> bool:

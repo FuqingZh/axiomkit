@@ -243,7 +243,8 @@ impl PyXlsxWriter {
         should_merge_header = false,
         should_keep_missing_values = None,
         policy_autofit = None,
-        policy_scientific = None
+        policy_scientific = None,
+        schema_body = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn write_sheet_batches<'py>(
@@ -261,6 +262,7 @@ impl PyXlsxWriter {
         should_keep_missing_values: Option<bool>,
         policy_autofit: Option<&Bound<'py, PyAny>>,
         policy_scientific: Option<&Bound<'py, PyAny>>,
+        schema_body: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         let cfg_sheet_write_options = XlsxSheetWriteOptions {
             cols_integer: parse_column_refs(cols_integer)?,
@@ -279,7 +281,10 @@ impl PyXlsxWriter {
         let plan = slf
             .inner
             .plan_sheet_from_record_batch_results(
-                PyRecordBatchIter::from_arrow_stream_or_iterable(batches_scan)?,
+                PyRecordBatchIter::from_arrow_stream_or_iterable_with_schema(
+                    batches_scan,
+                    schema_body,
+                )?,
                 sheet_name,
                 header_grid,
                 &cfg_sheet_write_options,
@@ -288,7 +293,10 @@ impl PyXlsxWriter {
         slf.inner
             .write_sheet_from_record_batch_results(
                 plan,
-                PyRecordBatchIter::from_arrow_stream_or_iterable(batches_write)?,
+                PyRecordBatchIter::from_arrow_stream_or_iterable_with_schema(
+                    batches_write,
+                    schema_body,
+                )?,
                 &cfg_sheet_write_options,
             )
             .map_err(PyValueError::new_err)?;
@@ -307,7 +315,8 @@ impl PyXlsxWriter {
         should_merge_header = false,
         should_keep_missing_values = None,
         policy_autofit = None,
-        policy_scientific = None
+        policy_scientific = None,
+        schema_body = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn write_sheet_batches_single_pass<'py>(
@@ -324,6 +333,7 @@ impl PyXlsxWriter {
         should_keep_missing_values: Option<bool>,
         policy_autofit: Option<&Bound<'py, PyAny>>,
         policy_scientific: Option<&Bound<'py, PyAny>>,
+        schema_body: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<PyRefMut<'py, Self>> {
         let cfg_sheet_write_options = XlsxSheetWriteOptions {
             cols_integer: parse_column_refs(cols_integer)?,
@@ -341,7 +351,10 @@ impl PyXlsxWriter {
         let header_grid = derive_optional_header_grid(py, header)?;
         slf.inner
             .write_sheet_from_record_batch_results_single_pass(
-                PyRecordBatchIter::from_arrow_stream_or_iterable(batches_write)?,
+                PyRecordBatchIter::from_arrow_stream_or_iterable_with_schema(
+                    batches_write,
+                    schema_body,
+                )?,
                 sheet_name,
                 header_grid,
                 &cfg_sheet_write_options,
@@ -371,6 +384,9 @@ struct PyRecordBatchIter<'py> {
     iter: Option<Bound<'py, PyIterator>>,
     single: Option<Bound<'py, PyAny>>,
     stream_current: Option<PyArrowCStreamBatchIter<'py>>,
+    schema_fallback: Option<Bound<'py, PyAny>>,
+    has_yielded_batch: bool,
+    has_used_schema_fallback: bool,
     is_done: bool,
 }
 
@@ -381,6 +397,9 @@ impl<'py> PyRecordBatchIter<'py> {
             iter: None,
             single: Some(df.clone()),
             stream_current: None,
+            schema_fallback: None,
+            has_yielded_batch: false,
+            has_used_schema_fallback: false,
             is_done: false,
         }
     }
@@ -391,11 +410,21 @@ impl<'py> PyRecordBatchIter<'py> {
             iter: Some(obj.try_iter()?),
             single: None,
             stream_current: None,
+            schema_fallback: None,
+            has_yielded_batch: false,
+            has_used_schema_fallback: false,
             is_done: false,
         })
     }
 
     fn from_arrow_stream_or_iterable(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+        Self::from_arrow_stream_or_iterable_with_schema(obj, None)
+    }
+
+    fn from_arrow_stream_or_iterable_with_schema(
+        obj: &Bound<'py, PyAny>,
+        schema_fallback: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Self> {
         if obj.hasattr("__arrow_c_stream__")? {
             return Ok(Self {
                 py: obj.py(),
@@ -404,11 +433,16 @@ impl<'py> PyRecordBatchIter<'py> {
                 stream_current: Some(create_arrow_c_stream_batch_iter_from_arrow_stream_source(
                     obj,
                 )?),
+                schema_fallback: schema_fallback.cloned(),
+                has_yielded_batch: false,
+                has_used_schema_fallback: false,
                 is_done: false,
             });
         }
 
-        Self::from_iterable(obj)
+        let mut iter = Self::from_iterable(obj)?;
+        iter.schema_fallback = schema_fallback.cloned();
+        Ok(iter)
     }
 }
 
@@ -419,7 +453,10 @@ impl Iterator for PyRecordBatchIter<'_> {
         loop {
             if let Some(stream_current) = self.stream_current.as_mut() {
                 match stream_current.next_batch() {
-                    Some(Ok(batch)) => return Some(Ok(batch)),
+                    Some(Ok(batch)) => {
+                        self.has_yielded_batch = true;
+                        return Some(Ok(batch));
+                    }
                     Some(Err(err)) => return Some(Err(err.to_string())),
                     None => {
                         self.stream_current = None;
@@ -437,9 +474,27 @@ impl Iterator for PyRecordBatchIter<'_> {
                     Some(Ok(item)) => item,
                     Some(Err(err)) => return Some(Err(err.to_string())),
                     None => {
-                        self.is_done = true;
-                        return None;
+                        if !self.has_yielded_batch && !self.has_used_schema_fallback {
+                            if let Some(schema_fallback) = self.schema_fallback.take() {
+                                self.has_used_schema_fallback = true;
+                                schema_fallback
+                            } else {
+                                self.is_done = true;
+                                return None;
+                            }
+                        } else {
+                            self.is_done = true;
+                            return None;
+                        }
                     }
+                }
+            } else if !self.has_yielded_batch && !self.has_used_schema_fallback {
+                if let Some(schema_fallback) = self.schema_fallback.take() {
+                    self.has_used_schema_fallback = true;
+                    schema_fallback
+                } else {
+                    self.is_done = true;
+                    return None;
                 }
             } else {
                 self.is_done = true;

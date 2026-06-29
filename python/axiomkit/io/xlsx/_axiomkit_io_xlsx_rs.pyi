@@ -68,6 +68,7 @@ class XlsxWriter:
         should_keep_missing_values: bool | None = ...,
         policy_autofit: AutofitPolicy | None = ...,
         policy_scientific: ScientificPolicy | None = ...,
+        schema_body: Any | None = ...,
     ) -> XlsxWriter: ...
     def write_sheet_batches_single_pass(
         self,
@@ -83,6 +84,7 @@ class XlsxWriter:
         should_keep_missing_values: bool | None = ...,
         policy_autofit: AutofitPolicy | None = ...,
         policy_scientific: ScientificPolicy | None = ...,
+        schema_body: Any | None = ...,
     ) -> XlsxWriter: ...
 
 def _profile_arrow_drain(source: Any) -> XlsxArrowDrainProfile: ...
