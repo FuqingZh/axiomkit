@@ -47,13 +47,13 @@ jobs:
             .cargo-ci/x86_64
             target/cibuildwheel-x86_64
           key: >-
-            cargo-cibuildwheel-${{ runner.os }}-x86_64-stable-${{
+            cargo-cibuildwheel-${{ runner.os }}-x86_64-rust-1.96.1-${{
             hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
 
       - name: Build manylinux_2_28 wheel artifact
         env:
           CIBW_ARCHS_LINUX: x86_64
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: cp313-manylinux_*
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:x86_64
           CIBW_ENVIRONMENT_LINUX: >-

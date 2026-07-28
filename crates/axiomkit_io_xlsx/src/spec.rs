@@ -339,6 +339,8 @@ impl Default for AutofitPolicy {
 pub struct XlsxWriteOptions {
     /// Value conversion policy.
     pub value_policy: XlsxValuePolicy,
+    /// Use ZIP64 extensions for the XLSX container.
+    pub should_use_zip64: bool,
     /// Keep missing/NaN/Inf as text instead of blank.
     pub should_keep_missing_values: bool,
     /// Infer numeric columns from dtypes.
@@ -355,6 +357,7 @@ impl Default for XlsxWriteOptions {
     fn default() -> Self {
         Self {
             value_policy: XlsxValuePolicy::default(),
+            should_use_zip64: true,
             should_keep_missing_values: false,
             should_infer_numeric_cols: true,
             should_infer_integer_cols: true,
@@ -368,6 +371,16 @@ impl Default for XlsxWriteOptions {
                 ..Default::default()
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::XlsxWriteOptions;
+
+    #[test]
+    fn xlsx_write_options_enable_zip64_by_default() {
+        assert!(XlsxWriteOptions::default().should_use_zip64);
     }
 }
 

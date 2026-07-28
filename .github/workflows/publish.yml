@@ -45,7 +45,7 @@ jobs:
             .cargo-ci/x86_64
             target/cibuildwheel-x86_64
           key: >-
-            cargo-cibuildwheel-${{ runner.os }}-x86_64-stable-${{
+            cargo-cibuildwheel-${{ runner.os }}-x86_64-rust-1.96.1-${{
             hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
 
       - name: Sync package version from release tag
@@ -55,7 +55,7 @@ jobs:
       - name: Build wheel
         env:
           CIBW_ARCHS_LINUX: x86_64
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: cp313-manylinux_*
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:x86_64
           CIBW_ENVIRONMENT_LINUX: >-
@@ -100,7 +100,7 @@ jobs:
             .cargo-ci/aarch64
             target/cibuildwheel-aarch64
           key: >-
-            cargo-cibuildwheel-${{ runner.os }}-aarch64-stable-${{
+            cargo-cibuildwheel-${{ runner.os }}-aarch64-rust-1.96.1-${{
             hashFiles('Cargo.lock', 'crates/**/Cargo.toml') }}
 
       - name: Sync package version from release tag
@@ -110,7 +110,7 @@ jobs:
       - name: Build wheel
         env:
           CIBW_ARCHS_LINUX: aarch64
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: cp313-manylinux_*
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_MANYLINUX_AARCH64_IMAGE: ${{ env.MANYLINUX_RUST_IMAGE }}:aarch64
           CIBW_ENVIRONMENT_LINUX: >-
@@ -196,7 +196,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.1
 
       - uses: actions/setup-python@v5
         with:

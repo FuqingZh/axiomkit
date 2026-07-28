@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.xlsx.spec import (  # noqa: E402
     SheetSlice,
     XlsxReport,
+    XlsxValuePolicy,
     XlsxWriteOptions,
 )
 
@@ -122,14 +124,28 @@ def test_xlsx_writer_rejects_non_dataframe_header(tmp_path: Path) -> None:
 
 def test_xlsx_write_options_accepts_should_prefixed_flags() -> None:
     cfg_write_options = XlsxWriteOptions(
+        should_use_zip64=False,
         should_keep_missing_values=True,
         should_infer_numeric_cols=False,
         should_infer_integer_cols=False,
     )
 
+    assert XlsxWriteOptions().should_use_zip64 is True
+    assert cfg_write_options.should_use_zip64 is False
     assert cfg_write_options.should_keep_missing_values is True
     assert cfg_write_options.should_infer_numeric_cols is False
     assert cfg_write_options.should_infer_integer_cols is False
+
+
+def test_xlsx_write_options_preserves_existing_positional_arguments() -> None:
+    value_policy = XlsxValuePolicy()
+    cfg_write_options = XlsxWriteOptions(value_policy, True, False, False)
+
+    assert cfg_write_options.value_policy is value_policy
+    assert cfg_write_options.should_keep_missing_values is True
+    assert cfg_write_options.should_infer_numeric_cols is False
+    assert cfg_write_options.should_infer_integer_cols is False
+    assert cfg_write_options.should_use_zip64 is True
 
 
 def test_xlsx_writer_accepts_options_write_keyword(tmp_path: Path) -> None:
@@ -143,6 +159,29 @@ def test_xlsx_writer_accepts_options_write_keyword(tmp_path: Path) -> None:
         inst_xlsx_writer.write_sheet(pl.DataFrame({"a": [1, None]}), "S")
 
     assert path_file_out.exists()
+
+
+def test_xlsx_writer_uses_zip64_by_default_and_allows_opt_out(
+    tmp_path: Path,
+) -> None:
+    if not is_rs_backend_available():
+        pytest.skip("Rust xlsx backend is unavailable")
+
+    path_file_default = tmp_path / "zip64_default.xlsx"
+    with XlsxWriter(path_file_default) as writer:
+        writer.write_sheet(pl.DataFrame({"a": [1]}), "S")
+
+    path_file_classic = tmp_path / "zip64_disabled.xlsx"
+    with XlsxWriter(
+        path_file_classic,
+        options_write=XlsxWriteOptions(should_use_zip64=False),
+    ) as writer:
+        writer.write_sheet(pl.DataFrame({"a": [1]}), "S")
+
+    with zipfile.ZipFile(path_file_default) as archive:
+        assert min(info.extract_version for info in archive.infolist()) >= 45
+    with zipfile.ZipFile(path_file_classic) as archive:
+        assert max(info.extract_version for info in archive.infolist()) < 45
 
 
 def test_xlsx_writer_rejects_legacy_write_options_keyword(tmp_path: Path) -> None:

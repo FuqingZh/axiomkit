@@ -161,9 +161,12 @@ impl XlsxWriter {
         fmt_header: CellFormatPatch,
         options_write: XlsxWriteOptions,
     ) -> Self {
+        let mut workbook = Workbook::new();
+        workbook.use_zip_large_file(options_write.should_use_zip64);
+
         Self {
             path_file_out,
-            workbook: Workbook::new(),
+            workbook,
             fmt_text,
             fmt_integer,
             fmt_decimal,
