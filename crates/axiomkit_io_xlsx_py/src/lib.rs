@@ -752,6 +752,9 @@ fn parse_xlsx_write_options(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Option<X
     if let Some(v) = extract_optional_attr::<bool>(obj, "should_keep_missing_values")? {
         cfg_options_write.should_keep_missing_values = v;
     }
+    if let Some(v) = extract_optional_attr::<bool>(obj, "should_use_zip64")? {
+        cfg_options_write.should_use_zip64 = v;
+    }
     if let Some(v) = extract_optional_attr::<bool>(obj, "should_infer_numeric_cols")? {
         cfg_options_write.should_infer_numeric_cols = v;
     }
