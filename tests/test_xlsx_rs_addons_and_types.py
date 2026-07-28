@@ -12,6 +12,7 @@ from axiomkit.io.xlsx._rs_bridge import is_rs_backend_available  # noqa: E402
 from axiomkit.io.xlsx.spec import (  # noqa: E402
     SheetSlice,
     XlsxReport,
+    XlsxValuePolicy,
     XlsxWriteOptions,
 )
 
@@ -134,6 +135,17 @@ def test_xlsx_write_options_accepts_should_prefixed_flags() -> None:
     assert cfg_write_options.should_keep_missing_values is True
     assert cfg_write_options.should_infer_numeric_cols is False
     assert cfg_write_options.should_infer_integer_cols is False
+
+
+def test_xlsx_write_options_preserves_existing_positional_arguments() -> None:
+    value_policy = XlsxValuePolicy()
+    cfg_write_options = XlsxWriteOptions(value_policy, True, False, False)
+
+    assert cfg_write_options.value_policy is value_policy
+    assert cfg_write_options.should_keep_missing_values is True
+    assert cfg_write_options.should_infer_numeric_cols is False
+    assert cfg_write_options.should_infer_integer_cols is False
+    assert cfg_write_options.should_use_zip64 is True
 
 
 def test_xlsx_writer_accepts_options_write_keyword(tmp_path: Path) -> None:

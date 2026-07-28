@@ -140,7 +140,6 @@ class XlsxRowChunkPolicy:
 @dataclass(frozen=True, slots=True)
 class XlsxWriteOptions:
     value_policy: XlsxValuePolicy = field(default_factory=XlsxValuePolicy)
-    should_use_zip64: bool = True
     should_keep_missing_values: bool = False
     should_infer_numeric_cols: bool = True
     should_infer_integer_cols: bool = True
@@ -152,6 +151,7 @@ class XlsxWriteOptions:
             border=0, top=0, bottom=0, left=0, right=0
         )
     )
+    should_use_zip64: bool = True
 
 
 @dataclass(frozen=True, slots=True)
